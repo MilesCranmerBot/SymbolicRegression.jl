@@ -6,7 +6,7 @@
     # Julia < 1.11 does not define Base.@unstable. Use a no-op fallback.
     if !isdefined(Base, Symbol("@unstable"))
         macro unstable(ex)
-            esc(ex)
+            return esc(ex)
         end
     end
 
@@ -197,12 +197,16 @@
     @test options.popmember_type == CustomPopMember
 
     hall_of_fame = equation_search(
+<<<<<<< HEAD
         X,
         y;
         options=options,
         guesses=["x1 - x2"],
         niterations=2,
         parallelism=:serial,
+=======
+        X, y; options=options, guesses=["x1 - x2"], niterations=2, parallelism=:serial
+>>>>>>> origin/master
     )
 
     # Verify that we got results
