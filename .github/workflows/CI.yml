@@ -161,5 +161,6 @@ jobs:
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           directory: ./coverage
-          fail_ci_if_error: true
+          # Fork runs don't have CODECOV_TOKEN; don't fail CI in that case.
+          fail_ci_if_error: false
           verbose: true
