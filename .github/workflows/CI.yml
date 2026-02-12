@@ -148,8 +148,7 @@ jobs:
     name: Upload Coverage to Codecov
     needs: [unit, integration]
     runs-on: ubuntu-latest
-    # Only upload when we actually have a token (fork runs don't get secrets).
-    if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository) && secrets.CODECOV_TOKEN != ''
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     steps:
       - uses: actions/checkout@v5
       - name: Download all coverage artifacts
@@ -158,9 +157,14 @@ jobs:
           pattern: coverage-*
           path: coverage
       - name: Upload to Codecov
+        if: ${{ secrets.CODECOV_TOKEN != '' }}
         uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           directory: ./coverage
           fail_ci_if_error: true
           verbose: true
+
+      - name: Skip Codecov (no token)
+        if: ${{ secrets.CODECOV_TOKEN == '' }}
+        run: echo "Skipping Codecov upload: CODECOV_TOKEN not available (e.g. fork runs)."
