@@ -148,7 +148,8 @@ jobs:
     name: Upload Coverage to Codecov
     needs: [unit, integration]
     runs-on: ubuntu-latest
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    # Only upload when we actually have a token (fork runs don't get secrets).
+    if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository) && secrets.CODECOV_TOKEN != ''
     steps:
       - uses: actions/checkout@v5
       - name: Download all coverage artifacts
