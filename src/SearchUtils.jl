@@ -26,6 +26,7 @@ using ..PopulationModule: Population
 using ..PopMemberModule: PopMember, AbstractPopMember
 using ..HallOfFameModule: HallOfFame, string_dominating_pareto_curve
 using ..ConstantOptimizationModule: optimize_constants
+using ..LossFunctionsModule: eval_cost
 using ..ProgressBarsModule: WrappedProgressBar, manually_iterate!, barlen
 using ..AdaptiveParsimonyModule: RunningSearchStatistics
 using ..ExpressionBuilderModule: strip_metadata
@@ -746,6 +747,46 @@ function update_hall_of_fame!(
         better_than_current = member.cost < hall_of_fame.members[size].cost
         if not_filled || better_than_current
             hall_of_fame.members[size] = copy(member)
+            hall_of_fame.exists[size] = true
+        end
+    end
+end
+
+"""Update the hall of fame, but scoring candidates on `full_dataset` rather than
+using the candidate's existing `cost`/`loss`.
+
+This is useful when evolution (including constant optimization) is run on a
+training subset, but we want the Pareto front to reflect performance on the
+combined train+validation data (i.e., the full dataset).
+
+Note: this does *not* change the evolution objective; it only affects what gets
+stored in the hall of fame.
+"""
+function update_hall_of_fame_full!(
+    hall_of_fame::HallOfFame,
+    members::Vector{PM},
+    options::AbstractOptions,
+    full_dataset::Dataset,
+) where {PM<:AbstractPopMember}
+    for member in members
+        size = compute_complexity(member, options)
+        valid_size = 0 < size <= options.maxsize
+        if !valid_size
+            continue
+        end
+        if !check_constraints(member.tree, options, options.maxsize, size)
+            continue
+        end
+
+        cost_full, loss_full = eval_cost(full_dataset, member, options; complexity=size)
+
+        not_filled = !hall_of_fame.exists[size]
+        better_than_current = cost_full < hall_of_fame.members[size].cost
+        if not_filled || better_than_current
+            stored = copy(member)
+            stored.cost = cost_full
+            stored.loss = loss_full
+            hall_of_fame.members[size] = stored
             hall_of_fame.exists[size] = true
         end
     end

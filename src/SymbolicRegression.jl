@@ -95,7 +95,7 @@ using Distributed
 using Printf: @printf, @sprintf
 using Pkg: Pkg
 using TOML: parsefile
-using Random: seed!, shuffle!
+using Random: seed!, shuffle!, randperm, default_rng, MersenneTwister
 using Reexport
 using ProgressMeter: finish!
 using DynamicExpressions:
@@ -341,6 +341,7 @@ using .SearchUtilsModule:
     save_to_file,
     get_cur_maxsize,
     update_hall_of_fame!,
+    update_hall_of_fame_full!,
     parse_guesses,
     logging_callback!,
     infer_popmember_type
@@ -494,6 +495,8 @@ function equation_search(
     y_units=nothing,
     extra::NamedTuple=NamedTuple(),
     guesses::Union{AbstractVector,AbstractVector{<:AbstractVector},Nothing}=nothing,
+    train_fraction::Union{Nothing,Real}=nothing,
+    shuffle_split::Bool=true,
     v_dim_out::Val{DIM_OUT}=Val(nothing),
     # Deprecated:
     multithreaded=nothing,
@@ -523,8 +526,22 @@ function equation_search(
         L,
     )
 
+    full_datasets = if train_fraction !== nothing && train_fraction < 1
+        datasets
+    else
+        nothing
+    end
+    train_datasets = if full_datasets === nothing
+        datasets
+    else
+        make_training_datasets(
+            datasets, options; train_fraction=Float64(train_fraction), shuffle_split
+        )
+    end
+
     return equation_search(
-        datasets;
+        train_datasets;
+        full_datasets=full_datasets,
         niterations=niterations,
         options=options,
         parallelism=parallelism,
@@ -556,14 +573,55 @@ function equation_search(dataset::Dataset; kws...)
     return equation_search([dataset]; kws..., v_dim_out=Val(1))
 end
 
+function make_training_datasets(
+    datasets::Vector{D}, options::AbstractOptions; train_fraction::Float64, shuffle_split::Bool
+) where {T<:DATA_TYPE,L<:LOSS_TYPE,D<:Dataset{T,L}}
+    if !(0 < train_fraction < 1)
+        throw(ArgumentError("`train_fraction` must satisfy 0 < train_fraction < 1."))
+    end
+    n = first(datasets).n
+    n_train = round(Int, train_fraction * n)
+    n_train = max(1, min(n - 1, n_train))
+
+    rng = options.seed === nothing ? default_rng() : MersenneTwister(options.seed)
+    perm = shuffle_split ? randperm(rng, n) : collect(1:n)
+    train_idx = perm[1:n_train]
+
+    return [
+        Dataset(
+            view(d.X, :, train_idx),
+            isnothing(d.y) ? nothing : view(d.y, train_idx),
+            L;
+            index=d.index,
+            weights=isnothing(d.weights) ? nothing : view(d.weights, train_idx),
+            variable_names=d.variable_names,
+            display_variable_names=d.display_variable_names,
+            y_variable_name=d.y_variable_name,
+            extra=d.extra,
+            X_units=d.X_units,
+            y_units=d.y_units,
+        ) for d in datasets
+    ]
+end
+
 function equation_search(
     datasets::Vector{D};
     options::AbstractOptions=Options(),
+    train_fraction::Union{Nothing,Real}=nothing,
+    shuffle_split::Bool=true,
+    full_datasets::Union{Nothing,AbstractVector{<:Dataset}}=nothing,
     saved_state=nothing,
     guesses::Union{AbstractVector,AbstractVector{<:AbstractVector},Nothing}=nothing,
     runtime_options::Union{AbstractRuntimeOptions,Nothing}=nothing,
     runtime_options_kws...,
 ) where {T<:DATA_TYPE,L<:LOSS_TYPE,D<:Dataset{T,L}}
+    if full_datasets === nothing && train_fraction !== nothing && train_fraction < 1
+        full_datasets = datasets
+        datasets = make_training_datasets(
+            datasets, options; train_fraction=Float64(train_fraction), shuffle_split
+        )
+    end
+
     _runtime_options = @something(
         runtime_options,
         RuntimeOptions(;
@@ -576,7 +634,9 @@ function equation_search(
     )
 
     # Underscores here mean that we have mutated the variable
-    return _equation_search(datasets, _runtime_options, options, saved_state, guesses)
+    return _equation_search(
+        datasets, _runtime_options, options, saved_state, guesses; full_datasets
+    )
 end
 
 @noinline function _equation_search(
@@ -584,20 +644,22 @@ end
     ropt::AbstractRuntimeOptions,
     options::AbstractOptions,
     saved_state,
-    guesses,
+    guesses;
+    full_datasets::Union{Nothing,AbstractVector{<:Dataset}}=nothing,
 ) where {D<:Dataset}
-    _validate_options(datasets, ropt, options)
+    _validate_options(datasets, ropt, options; full_datasets)
     state = _create_workers(datasets, ropt, options)
-    _initialize_search!(state, datasets, ropt, options, saved_state, guesses)
+    _initialize_search!(state, datasets, ropt, options, saved_state, guesses; full_datasets)
     _warmup_search!(state, datasets, ropt, options)
-    _main_search_loop!(state, datasets, ropt, options)
+    _main_search_loop!(state, datasets, ropt, options; full_datasets)
     _tear_down!(state, ropt, options)
     _info_dump(state, datasets, ropt, options)
     return _format_output(state, datasets, ropt, options)
 end
 
 function _validate_options(
-    datasets::Vector{D}, ropt::AbstractRuntimeOptions, options::AbstractOptions
+    datasets::Vector{D}, ropt::AbstractRuntimeOptions, options::AbstractOptions;
+    full_datasets::Union{Nothing,AbstractVector{<:Dataset}}=nothing,
 ) where {T,L,D<:Dataset{T,L}}
     example_dataset = first(datasets)
     nout = length(datasets)
@@ -617,6 +679,11 @@ function _validate_options(
     end
     for dataset in datasets
         update_baseline_loss!(dataset, options)
+    end
+    if full_datasets !== nothing
+        for dataset in full_datasets
+            update_baseline_loss!(dataset, options)
+        end
     end
     if options.define_helper_functions
         set_default_variable_names!(first(datasets).variable_names)
@@ -724,7 +791,8 @@ function _initialize_search!(
     ropt::AbstractRuntimeOptions,
     options::AbstractOptions,
     saved_state,
-    guesses::Union{AbstractVector,AbstractVector{<:AbstractVector},Nothing},
+    guesses::Union{AbstractVector,AbstractVector{<:AbstractVector},Nothing};
+    full_datasets=nothing,
 ) where {T,L,N}
     nout = length(datasets)
 
@@ -737,9 +805,10 @@ function _initialize_search!(
         # Recompute losses for the hall of fame, in
         # case the dataset changed:
         for j in eachindex(init_hall_of_fame, datasets, state.halls_of_fame)
-            hof = strip_metadata(init_hall_of_fame[j], options, datasets[j])
+            hof_dataset = full_datasets === nothing ? datasets[j] : full_datasets[j]
+            hof = strip_metadata(init_hall_of_fame[j], options, hof_dataset)
             for member in hof.members[hof.exists]
-                cost, result_loss = eval_cost(datasets[j], member, options)
+                cost, result_loss = eval_cost(hof_dataset, member, options)
                 member.cost = cost
                 member.loss = result_loss
             end
@@ -753,7 +822,13 @@ function _initialize_search!(
         )
         for j in 1:nout
             state.seed_members[j] = copy(parsed_seed_members[j])
-            update_hall_of_fame!(state.halls_of_fame[j], parsed_seed_members[j], options)
+            if full_datasets === nothing
+                update_hall_of_fame!(state.halls_of_fame[j], parsed_seed_members[j], options)
+            else
+                update_hall_of_fame_full!(
+                    state.halls_of_fame[j], parsed_seed_members[j], options, full_datasets[j]
+                )
+            end
         end
     end
 
@@ -884,7 +959,8 @@ function _main_search_loop!(
     state::AbstractSearchState{T,L,N},
     datasets,
     ropt::AbstractRuntimeOptions,
-    options::AbstractOptions,
+    options::AbstractOptions;
+    full_datasets=nothing,
 ) where {T,L,N}
     ropt.verbosity > 0 && @info "Started!"
     nout = length(datasets)
@@ -971,10 +1047,21 @@ function _main_search_loop!(
                 size = compute_complexity(member, options)
                 update_frequencies!(state.all_running_search_statistics[j]; size)
             end
-            #! format: off
-            update_hall_of_fame!(state.halls_of_fame[j], cur_pop.members, options)
-            update_hall_of_fame!(state.halls_of_fame[j], best_seen.members[best_seen.exists], options)
-            #! format: on
+            if full_datasets === nothing
+                #! format: off
+                update_hall_of_fame!(state.halls_of_fame[j], cur_pop.members, options)
+                update_hall_of_fame!(state.halls_of_fame[j], best_seen.members[best_seen.exists], options)
+                #! format: on
+            else
+                # When evolution runs on a training subset, update the hall of fame
+                # using losses/costs evaluated on the full (train+validation) dataset.
+                update_hall_of_fame_full!(
+                    state.halls_of_fame[j],
+                    best_seen.members[best_seen.exists],
+                    options,
+                    full_datasets[j],
+                )
+            end
 
             # Dominating pareto curve - must be better than all simpler equations
             dominating = calculate_pareto_frontier(state.halls_of_fame[j])
