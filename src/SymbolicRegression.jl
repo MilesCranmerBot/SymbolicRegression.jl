@@ -89,7 +89,13 @@ export Population,
     gamma,
     erf,
     erfc,
-    atanh_clip
+    atanh_clip,
+
+    # Progress file writer for Jupyter integration
+    ProgressWriter,
+    write_progress,
+    update_progress!,
+    close!,
 
 using Distributed
 using Printf: @printf, @sprintf
@@ -495,6 +501,7 @@ function equation_search(
     extra::NamedTuple=NamedTuple(),
     guesses::Union{AbstractVector,AbstractVector{<:AbstractVector},Nothing}=nothing,
     v_dim_out::Val{DIM_OUT}=Val(nothing),
+    progress_file::Union{String,Nothing}=nothing,
     # Deprecated:
     multithreaded=nothing,
 ) where {T<:DATA_TYPE,L,DIM_OUT}
@@ -543,6 +550,7 @@ function equation_search(
         progress=progress,
         guesses=guesses,
         v_dim_out=Val(DIM_OUT),
+        progress_file=progress_file,
     )
 end
 
@@ -562,6 +570,7 @@ function equation_search(
     saved_state=nothing,
     guesses::Union{AbstractVector,AbstractVector{<:AbstractVector},Nothing}=nothing,
     runtime_options::Union{AbstractRuntimeOptions,Nothing}=nothing,
+    progress_file::Union{String,Nothing}=nothing,
     runtime_options_kws...,
 ) where {T<:DATA_TYPE,L<:LOSS_TYPE,D<:Dataset{T,L}}
     _runtime_options = @something(
@@ -576,7 +585,7 @@ function equation_search(
     )
 
     # Underscores here mean that we have mutated the variable
-    return _equation_search(datasets, _runtime_options, options, saved_state, guesses)
+    return _equation_search(datasets, _runtime_options, options, saved_state, guesses; progress_file=progress_file)
 end
 
 @noinline function _equation_search(
@@ -584,13 +593,14 @@ end
     ropt::AbstractRuntimeOptions,
     options::AbstractOptions,
     saved_state,
-    guesses,
+    guesses;
+    progress_file::Union{String,Nothing}=nothing,
 ) where {D<:Dataset}
     _validate_options(datasets, ropt, options)
     state = _create_workers(datasets, ropt, options)
     _initialize_search!(state, datasets, ropt, options, saved_state, guesses)
     _warmup_search!(state, datasets, ropt, options)
-    _main_search_loop!(state, datasets, ropt, options)
+    _main_search_loop!(state, datasets, ropt, options; progress_file=progress_file)
     _tear_down!(state, ropt, options)
     _info_dump(state, datasets, ropt, options)
     return _format_output(state, datasets, ropt, options)
@@ -884,11 +894,20 @@ function _main_search_loop!(
     state::AbstractSearchState{T,L,N},
     datasets,
     ropt::AbstractRuntimeOptions,
-    options::AbstractOptions,
+    options::AbstractOptions;
+    progress_file::Union{String,Nothing}=nothing,
 ) where {T,L,N}
     ropt.verbosity > 0 && @info "Started!"
     nout = length(datasets)
     start_time = time()
+    
+    # Initialize progress writer if file path provided
+    progress_writer = if progress_file !== nothing
+        ProgressFileWriter.ProgressWriter(progress_file, ropt.niterations * options.populations)
+    else
+        nothing
+    end
+    
     progress_bar = if ropt.progress
         #TODO: need to iterate this on the max cycles remaining!
         sum_cycle_remaining = sum(state.cycles_remaining)
@@ -1052,6 +1071,13 @@ function _main_search_loop!(
                 options, total_cycles, cycles_remaining=state.cycles_remaining[j]
             )
             move_window!(state.all_running_search_statistics[j])
+            
+            # Update progress file if writer exists
+            if progress_writer !== nothing
+                cycles_elapsed = total_cycles - state.cycles_remaining[j]
+                ProgressFileWriter.update_progress!(progress_writer, cycles_elapsed, total_cycles)
+            end
+            
             if !isnothing(progress_bar)
                 head_node_occupation = estimate_work_fraction(resource_monitor)
                 update_progress_bar!(
@@ -1127,6 +1153,10 @@ function _main_search_loop!(
     end
     if !isnothing(progress_bar)
         finish!(progress_bar)
+    end
+    # Cleanup progress writer
+    if progress_writer !== nothing
+        ProgressFileWriter.close!(progress_writer)
     end
     return nothing
 end
@@ -1265,6 +1295,9 @@ function _info_dump(
     end
     return nothing
 end
+
+include("ProgressFileWriter.jl")
+using .ProgressFileWriter: ProgressWriter, write_progress, update_progress!, close!
 
 include("MLJInterface.jl")
 using .MLJInterfaceModule:
