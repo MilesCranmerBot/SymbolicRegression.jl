@@ -471,6 +471,8 @@ function equation_search(
     X::AbstractMatrix{T},
     y::AbstractMatrix;
     niterations::Int=100,
+    train_fraction::Real=1.0,
+    shuffle_split::Bool=true,
     weights::Union{AbstractMatrix{T},AbstractVector{T},Nothing}=nothing,
     options::AbstractOptions=Options(),
     variable_names::Union{AbstractVector{String},Nothing}=nothing,
@@ -495,8 +497,6 @@ function equation_search(
     y_units=nothing,
     extra::NamedTuple=NamedTuple(),
     guesses::Union{AbstractVector,AbstractVector{<:AbstractVector},Nothing}=nothing,
-    train_fraction::Union{Nothing,Real}=nothing,
-    shuffle_split::Bool=true,
     v_dim_out::Val{DIM_OUT}=Val(nothing),
     # Deprecated:
     multithreaded=nothing,
@@ -526,7 +526,7 @@ function equation_search(
         L,
     )
 
-    full_datasets = if train_fraction !== nothing && train_fraction < 1
+    full_datasets = if train_fraction < 1
         datasets
     else
         nothing
@@ -607,7 +607,7 @@ end
 function equation_search(
     datasets::Vector{D};
     options::AbstractOptions=Options(),
-    train_fraction::Union{Nothing,Real}=nothing,
+    train_fraction::Real=1.0,
     shuffle_split::Bool=true,
     full_datasets::Union{Nothing,AbstractVector{<:Dataset}}=nothing,
     saved_state=nothing,
@@ -615,7 +615,7 @@ function equation_search(
     runtime_options::Union{AbstractRuntimeOptions,Nothing}=nothing,
     runtime_options_kws...,
 ) where {T<:DATA_TYPE,L<:LOSS_TYPE,D<:Dataset{T,L}}
-    if full_datasets === nothing && train_fraction !== nothing && train_fraction < 1
+    if full_datasets === nothing && train_fraction < 1
         full_datasets = datasets
         datasets = make_training_datasets(
             datasets, options; train_fraction=Float64(train_fraction), shuffle_split
