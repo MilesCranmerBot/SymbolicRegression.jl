@@ -1057,6 +1057,12 @@ function _main_search_loop!(
                 # using losses/costs evaluated on the full (train+validation) dataset.
                 update_hall_of_fame_full!(
                     state.halls_of_fame[j],
+                    cur_pop.members,
+                    options,
+                    full_datasets[j],
+                )
+                update_hall_of_fame_full!(
+                    state.halls_of_fame[j],
                     best_seen.members[best_seen.exists],
                     options,
                     full_datasets[j],
