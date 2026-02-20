@@ -228,6 +228,7 @@ struct Options{
     migration::Bool
     hof_migration::Bool
     should_simplify::Bool
+    use_constants::Bool
     should_optimize_constants::Bool
     output_directory::Union{String,Nothing}
     populations::Int
@@ -343,6 +344,7 @@ function check_warm_start_compatibility(old_options::Options, new_options::Optio
         :nested_constraints,
         :complexity_mapping,
         :dimensionless_constants_only,
+        :use_constants,
         :maxsize,
         :maxdepth,
         :populations,
