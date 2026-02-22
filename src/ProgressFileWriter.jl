@@ -24,8 +24,25 @@ end
 function write_progress(writer::ProgressWriter, current::Int)
     writer.current = current
     try
-        open(writer.file_path, "w") do io
+        # Write atomically: avoid readers observing partially-written JSON.
+        dir = dirname(writer.file_path)
+        mkpath(dir)
+        (tmp, io) = mktemp(dir)
+        try
             JSON.print(io, Dict("current" => current, "total" => writer.total))
+            flush(io)
+            close(io)
+            mv(tmp, writer.file_path; force=true)
+        catch
+            try
+                close(io)
+            catch
+            end
+            try
+                isfile(tmp) && rm(tmp)
+            catch
+            end
+            rethrow()
         end
     catch
         # Ignore write errors
