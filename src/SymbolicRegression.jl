@@ -641,7 +641,7 @@ end
     PMType = infer_popmember_type(T, L, D, options)
     NT = expression_type(PMType)
     PopType = Population{T,L,NT,PMType}
-    HallOfFameType = HallOfFame{T,L,NT,PMType}
+    HallOfFameType = typeof(HallOfFame(options, example_dataset))
     WorkerOutputType = get_worker_output_type(
         Val(ropt.parallelism), PopType, HallOfFameType
     )
@@ -701,7 +701,7 @@ end
 
     seed_members = [Vector{PMType}() for j in 1:nout]
 
-    return SearchState{T,L,NT,PMType,WorkerOutputType,ChannelType}(;
+    return SearchState{T,L,NT,PMType,HallOfFameType,WorkerOutputType,ChannelType}(;
         procs=procs,
         we_created_procs=we_created_procs,
         worker_output=worker_output,
@@ -821,7 +821,7 @@ function _preserve_loaded_state!(
     prototype_pop = state.last_pops[1][1]
     PopType = typeof(prototype_pop)
     PM = popmember_type(PopType)
-    HallType = HallOfFame{T,L,N,PM}
+    HallType = typeof(state.halls_of_fame[1])
 
     for j in 1:nout, i in 1:(options.populations)
         (pop, _, _, _) = extract_from_worker(state.worker_output[j][i], PopType, HallType)
@@ -859,7 +859,7 @@ function _warmup_search!(
         prototype_pop = state.last_pops[j][i]
         PopType = typeof(prototype_pop)
         PM = popmember_type(PopType)
-        HallType = HallOfFame{T,L,N,PM}
+        HallType = typeof(state.halls_of_fame[j])
 
         updated_pop = @sr_spawner(
             begin
@@ -874,7 +874,7 @@ function _warmup_search!(
                     ropt.verbosity,
                     cur_maxsize,
                     running_search_statistics=c_rss,
-                )::DefaultWorkerOutputType{Population{T,L,N},HallOfFame{T,L,N}}
+                )::DefaultWorkerOutputType{Population{T,L,N,PM},HallType}
             end,
             parallelism = ropt.parallelism,
             worker_idx = worker_idx
@@ -953,16 +953,15 @@ function _main_search_loop!(
         population_ready &= (state.cycles_remaining[j] > 0)
         if population_ready
             # Take the fetch operation from the channel since its ready
-            (cur_pop, best_seen, cur_record, cur_num_evals) = if ropt.parallelism in
-                (
+            PopType = typeof(state.last_pops[j][i])
+            HallType = typeof(state.halls_of_fame[j])
+            (cur_pop, best_seen, cur_record, cur_num_evals) = if ropt.parallelism in (
                 :multiprocessing, :multithreading
             )
-                take!(
-                    state.channels[j][i]
-                )
+                take!(state.channels[j][i])
             else
                 state.worker_output[j][i]
-            end::DefaultWorkerOutputType{Population{T,L,N},HallOfFame{T,L,N}}
+            end::DefaultWorkerOutputType{PopType,HallType}
             state.last_pops[j][i] = copy(cur_pop)
             state.best_sub_pops[j][i] = best_sub_pop(cur_pop; topn=options.topn)
             @recorder state.record[] = recursive_merge(state.record[], cur_record)
@@ -1202,13 +1201,22 @@ end
     )
     num_evals += evals_from_optimize
     if options.batching
-        for i_member in 1:(options.maxsize)
-            if best_seen.exists[i_member]
-                cost, result_loss = eval_cost(dataset, best_seen.members[i_member], options)
-                best_seen.members[i_member].cost = cost
-                best_seen.members[i_member].loss = result_loss
+        for complexity in 1:(options.maxsize)
+            bucket = best_seen.cells[complexity]
+            if isempty(bucket)
+                continue
+            end
+            best_member = nothing
+            for member in values(bucket)
+                cost, result_loss = eval_cost(dataset, member, options)
+                member.cost = cost
+                member.loss = result_loss
+                if best_member === nothing || member.cost < best_member.cost
+                    best_member = member
+                end
                 num_evals += 1
             end
+            best_seen.members[complexity] = copy(best_member)
         end
     end
     return (out_pop, best_seen, record, num_evals)
