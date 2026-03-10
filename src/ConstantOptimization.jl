@@ -2,6 +2,7 @@ module ConstantOptimizationModule
 
 using LineSearches: LineSearches
 using Optim: Optim
+using Random: AbstractRNG, default_rng
 using ADTypes: AbstractADType, AutoEnzyme
 using DifferentiationInterface: value_and_gradient
 using DynamicExpressions:
@@ -55,7 +56,12 @@ end
 count_constants_for_optimization(ex::Expression) = count_scalar_constants(ex)
 
 function _optimize_constants(
-    dataset, member::P, options, algorithm, optimizer_options
+    dataset,
+    member::P,
+    options,
+    algorithm,
+    optimizer_options,
+    rng::AbstractRNG=default_rng(),
 )::Tuple{P,Float64} where {T,L,P<:PopMember{T,L}}
     tree = member.tree
     eval_fraction = dataset_fraction(dataset)
@@ -74,8 +80,8 @@ function _optimize_constants(
     # Try other initial conditions:
     for _ in 1:(options.optimizer_nrestarts)
         ET = eltype(x0)
-        eps = randn(ET, size(x0)...)
-        xt = @. x0 * (ET(1) + ET(1 // 2) * eps)
+        eps = randn(rng, ET, size(x0)...)
+        xt = @. x0 * (ET(1) + ET(1//2) * eps)
         tmpresult = Optim.optimize(obj, xt, algorithm, optimizer_options)
         num_evals += tmpresult.f_calls * eval_fraction
         # TODO: Does this need to take into account h_calls?
