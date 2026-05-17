@@ -62,6 +62,9 @@ jobs:
           cache-name: julia-cache;workflow=${{ github.workflow }};job=${{ github.job }};os=${{ matrix.os }};julia=${{ matrix.julia-version }};group=unit-${{ matrix.group }};project=${{ hashFiles('test/Project.toml') }}
       - name: "Build package"
         uses: julia-actions/julia-buildpkg@v1
+      - name: "Instantiate test environment"
+        run: julia --color=yes --project=test -e 'import Pkg; Pkg.instantiate()'
+        shell: bash
       - name: "Run unit tests (${{ matrix.group }})"
         env:
           TEST_GROUP: unit/${{ matrix.group }}
@@ -127,6 +130,9 @@ jobs:
         uses: julia-actions/cache@v3
         with:
           cache-name: julia-cache;workflow=${{ github.workflow }};job=${{ github.job }};group=integration-${{ steps.sanitize_integration_group.outputs.group }};julia=${{ matrix.julia-version }};project=${{ hashFiles(format('test/integration/{0}/Project.toml', matrix.group)) }}
+      - name: "Instantiate test environment"
+        run: julia --color=yes --project=test -e 'import Pkg; Pkg.instantiate()'
+        shell: bash
       - name: "Run integration test"
         env:
           TEST_GROUP: integration/${{ matrix.group }}
