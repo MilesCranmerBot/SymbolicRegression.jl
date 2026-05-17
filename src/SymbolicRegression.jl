@@ -8,6 +8,7 @@ export Population,
     OperatorEnum,
     Dataset,
     MutationWeights,
+    BacksolveOptions,
     Node,
     GraphNode,
     ParametricNode,
@@ -213,6 +214,9 @@ using DispatchDoctor: @stable
     include("DimensionalAnalysis.jl")
     include("CheckConstraints.jl")
     include("AdaptiveParsimony.jl")
+    include("InverseFunctions.jl")
+    include("EvaluateInverse.jl")
+    include("Backsolve.jl")
     include("MutationFunctions.jl")
     include("LossFunctions.jl")
     include("PopMember.jl")
@@ -245,6 +249,7 @@ using .CoreModule:
     AbstractOptions,
     Options,
     ComplexityMapping,
+    BacksolveOptions,
     WarmStartIncompatibleError,
     AbstractMutationWeights,
     MutationWeights,

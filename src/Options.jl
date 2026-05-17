@@ -38,7 +38,7 @@ using ..OperatorsModule:
     safe_atanh
 using ..MutationWeightsModule: AbstractMutationWeights, MutationWeights, mutations
 import ..OptionsStructModule: Options
-using ..OptionsStructModule: ComplexityMapping, operator_specialization
+using ..OptionsStructModule: ComplexityMapping, BacksolveOptions, operator_specialization
 using ..UtilsModule: @save_kwargs, @ignore
 using ..ExpressionSpecModule:
     AbstractExpressionSpec,
@@ -611,6 +611,8 @@ $(OPTION_DESCRIPTIONS)
     perturbation_factor::Union{Nothing,Real}=nothing,
     probability_negate_constant::Union{Real,Nothing}=nothing,
     skip_mutation_failures::Bool=true,
+    ## Backsolve rewrite mutation:
+    backsolve::Union{BacksolveOptions,Nothing}=nothing,
     ## 6. Tournament Selection
     ## 7. Constant Optimization:
     optimizer_algorithm::Union{AbstractString,Optim.AbstractOptimizer}=Optim.BFGS(;
@@ -1007,6 +1009,7 @@ $(OPTION_DESCRIPTIONS)
     end
 
     set_mutation_weights = create_mutation_weights(mutation_weights)
+    backsolve = something(backsolve, BacksolveOptions())
 
     @assert print_precision > 0
 
@@ -1110,6 +1113,7 @@ $(OPTION_DESCRIPTIONS)
         define_helper_functions,
         use_recorder,
         popmember_type,
+        backsolve,
     )
 
     return options
