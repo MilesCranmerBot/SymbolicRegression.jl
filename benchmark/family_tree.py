@@ -4,10 +4,10 @@ from tqdm import tqdm
 
 
 def load_pysr_graph(json_path, progress=True):
-    """Load a PySR recorder JSON file into a NetworkX directed graph.
+    """Load a PySR recorder JSONL file into a NetworkX directed graph.
 
     Args:
-        json_path: Path to pysr_recorder.json
+        json_path: Path to pysr_recorder.jsonl
         progress: Show progress bars
 
     Returns:
@@ -15,16 +15,30 @@ def load_pysr_graph(json_path, progress=True):
         - Node attributes: tree, cost, loss, parent
         - Edge attributes: type, time, mutation_details
     """
-    # Load JSON data
     with open(json_path) as f:
-        data = json.load(f)
+        entries = [json.loads(line) for line in f if line.strip()]
 
     G = nx.DiGraph()
 
-    # First pass: Create all nodes with their attributes
-    mutations = data.get("mutations", {})
+    members = {
+        entry["id"]: {
+            "tree": entry.get("tree"),
+            "cost": entry.get("cost"),
+            "loss": entry.get("loss"),
+            "parent": entry.get("parent"),
+            "events": [],
+        }
+        for entry in entries
+        if entry.get("kind") == "member"
+    }
+    for entry in entries:
+        if entry.get("kind") == "member_event":
+            members.setdefault(entry["member_id"], {"events": []}).setdefault(
+                "events", []
+            ).append(entry["event"])
+
     for member_id, member_data in tqdm(
-        mutations.items(),
+        members.items(),
         desc="Adding nodes" if progress else None,
         disable=not progress,
     ):
@@ -33,13 +47,13 @@ def load_pysr_graph(json_path, progress=True):
         G.add_node(member_id, **member_data)
 
     # Debug print - check a sample member's data
-    sample_id = next(iter(mutations))
+    sample_id = next(iter(members))
     print("\nSample member data:")
     print(f"ID: {sample_id}")
-    print(f"Parent: {mutations[sample_id].get('parent')}")
-    print(f"Events: {len(mutations[sample_id].get('events', []))}")
-    if mutations[sample_id].get("events"):
-        print("First event:", mutations[sample_id]["events"][0])
+    print(f"Parent: {members[sample_id].get('parent')}")
+    print(f"Events: {len(members[sample_id].get('events', []))}")
+    if members[sample_id].get("events"):
+        print("First event:", members[sample_id]["events"][0])
 
     # Count event types
     event_counts = {"mutate": 0, "crossover": 0, "tuning": 0, "other": 0}
@@ -47,7 +61,7 @@ def load_pysr_graph(json_path, progress=True):
 
     # Second pass: Create edges based on relationships
     for member_id_str, member_data in tqdm(
-        mutations.items(),
+        members.items(),
         desc="Processing edges" if progress else None,
         disable=not progress,
     ):
@@ -190,7 +204,7 @@ def simplify_graph(G):
 
 if __name__ == "__main__":
     # Example usage
-    G = load_pysr_graph("pysr_recorder.json")
+    G = load_pysr_graph("pysr_recorder.jsonl")
 
     # Basic stats
     print(f"Loaded graph with {len(G)} nodes and {G.size()} edges")

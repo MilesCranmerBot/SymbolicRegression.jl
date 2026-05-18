@@ -294,7 +294,7 @@ using .CoreModule:
     atanh_clip,
     create_expression,
     has_units
-using .UtilsModule: is_anonymous_function, recursive_merge, json3_write, @ignore
+using .UtilsModule: is_anonymous_function, @ignore
 using .ComplexityModule: compute_complexity
 using .CheckConstraintsModule: check_constraints
 using .AdaptiveParsimonyModule:
@@ -313,7 +313,15 @@ using .HallOfFameModule:
 using .MutateModule: mutate!, condition_mutation_weights!, MutationResult
 using .SingleIterationModule: s_r_cycle, optimize_and_simplify_population
 using .ProgressBarsModule: WrappedProgressBar
-using .RecorderModule: @recorder, find_iteration_from_record
+using .RecorderModule:
+    @recorder,
+    JSONLRecorder,
+    append_recordings!,
+    close_recording!,
+    ensure_member_recorded!,
+    next_iteration!,
+    record_options!,
+    record_population_iteration!
 using .MigrationModule: migrate!
 using .SearchUtilsModule:
     AbstractSearchState,
@@ -636,8 +644,8 @@ end
 ) where {T,L,D<:Dataset{T,L}}
     stdin_reader = watch_stream(options.input_stream)
     example_dataset = first(datasets)
-    record = RecordType()
-    @recorder record["options"] = "$(options)"
+    record = options.use_recorder ? JSONLRecorder(options.recorder_file) : JSONLRecorder()
+    @recorder record_options!(record, options)
 
     nout = length(datasets)
     PMType = infer_popmember_type(T, L, D, options)
@@ -779,7 +787,7 @@ function _initialize_search!(
                 copy_pop = copy(_saved_pop)
                 @sr_spawner(
                     begin
-                        (copy_pop, HallOfFame(options, datasets[j]), RecordType(), 0.0)
+                        (copy_pop, HallOfFame(options, datasets[j]), JSONLRecorder(), 0.0)
                     end,
                     parallelism = ropt.parallelism,
                     worker_idx = worker_idx
@@ -799,7 +807,7 @@ function _initialize_search!(
                                 nfeatures=max_features(datasets[j], options),
                             ),
                             HallOfFame(options, datasets[j]),
-                            RecordType(),
+                            JSONLRecorder(),
                             Float64(options.population_size),
                         )
                     end,
@@ -847,7 +855,6 @@ function _warmup_search!(
         dataset = datasets[j]
         running_search_statistics = state.all_running_search_statistics[j]
         cur_maxsize = state.cur_maxsizes[j]
-        @recorder state.record[]["out$(j)_pop$(i)"] = RecordType()
         worker_idx = assign_next_worker!(
             state.worker_assignment; out=j, pop=i, parallelism=ropt.parallelism, state.procs
         )
@@ -967,7 +974,7 @@ function _main_search_loop!(
             end::DefaultWorkerOutputType{Population{T,L,N},HallOfFame{T,L,N}}
             state.last_pops[j][i] = copy(cur_pop)
             state.best_sub_pops[j][i] = best_sub_pop(cur_pop; topn=options.topn)
-            @recorder state.record[] = recursive_merge(state.record[], cur_record)
+            @recorder append_recordings!(state.record[], cur_record)
             state.num_evals[j][i] += cur_num_evals
             dataset = datasets[j]
             cur_maxsize = state.cur_maxsizes[j]
@@ -1021,8 +1028,7 @@ function _main_search_loop!(
                 state.procs,
             )
             iteration = if options.use_recorder
-                key = "out$(j)_pop$(i)"
-                find_iteration_from_record(key, state.record[]) + 1
+                next_iteration!(state.record[], "out$(j)_pop$(i)")
             else
                 0
             end
@@ -1149,7 +1155,7 @@ function _tear_down!(
             wait(state.worker_output[j][i])
         end
     end
-    @recorder json3_write(state.record[], options.recorder_file)
+    @recorder close_recording!(state.record[])
     return nothing
 end
 function _format_output(
@@ -1182,10 +1188,11 @@ end
     cur_maxsize::Int,
     running_search_statistics,
 ) where {T,L,N}
-    record = RecordType()
-    @recorder record["out$(out)_pop$(pop)"] = RecordType(
-        "iteration$(iteration)" => record_population(in_pop, options)
-    )
+    record = JSONLRecorder()
+    @recorder begin
+        record_population_iteration!(record, out, pop, iteration, record_population(in_pop, options))
+        ensure_member_recorded!.(Ref(record), in_pop.members, Ref(options))
+    end
     num_evals = 0.0
     normalize_frequencies!(running_search_statistics)
     out_pop, best_seen, evals_from_cycle = s_r_cycle(

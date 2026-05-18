@@ -1,11 +1,11 @@
 module RegularizedEvolutionModule
 
-using DynamicExpressions: string_tree
 using ..CoreModule: AbstractOptions, Dataset, RecordType, DATA_TYPE, LOSS_TYPE
+using ..RecorderModule: JSONLRecorder
 using ..PopulationModule: Population, best_of_sample
 using ..AdaptiveParsimonyModule: RunningSearchStatistics
 using ..MutateModule: next_generation, crossover_generation
-using ..RecorderModule: @recorder
+using ..RecorderModule: @recorder, ensure_member_recorded!, record_member_event!
 using ..UtilsModule: argmin_fast
 
 # Pass through the population several times, replacing the oldest
@@ -17,7 +17,7 @@ function reg_evol_cycle(
     curmaxsize::Int,
     running_search_statistics::RunningSearchStatistics,
     options::AbstractOptions,
-    record::RecordType,
+    record::JSONLRecorder,
 )::Tuple{P,Float64} where {T<:DATA_TYPE,L<:LOSS_TYPE,P<:Population{T,L}}
     num_evals = 0.0
     n_evol_cycles = ceil(Int, pop.n / options.tournament_selection_n)
@@ -46,20 +46,7 @@ function reg_evol_cycle(
             oldest = argmin_fast([pop.members[member].birth for member in 1:(pop.n)])
 
             @recorder begin
-                if !haskey(record, "mutations")
-                    record["mutations"] = RecordType()
-                end
-                for member in [allstar, baby, pop.members[oldest]]
-                    if !haskey(record["mutations"], "$(member.ref)")
-                        record["mutations"]["$(member.ref)"] = RecordType(
-                            "events" => Vector{RecordType}(),
-                            "tree" => string_tree(member.tree, options),
-                            "cost" => member.cost,
-                            "loss" => member.loss,
-                            "parent" => member.parent,
-                        )
-                    end
-                end
+                ensure_member_recorded!.(Ref(record), [allstar, baby, pop.members[oldest]], Ref(options))
                 mutate_event = RecordType(
                     "type" => "mutate",
                     "time" => time(),
@@ -68,11 +55,8 @@ function reg_evol_cycle(
                 )
                 death_event = RecordType("type" => "death", "time" => time())
 
-                # Put in random key rather than vector; otherwise there are collisions!
-                push!(record["mutations"]["$(allstar.ref)"]["events"], mutate_event)
-                push!(
-                    record["mutations"]["$(pop.members[oldest].ref)"]["events"], death_event
-                )
+                record_member_event!(record, allstar.ref, mutate_event)
+                record_member_event!(record, pop.members[oldest].ref, death_event)
             end
 
             pop.members[oldest] = baby
@@ -104,27 +88,11 @@ function reg_evol_cycle(
             ])
 
             @recorder begin
-                if !haskey(record, "mutations")
-                    record["mutations"] = RecordType()
-                end
-                for member in [
-                    allstar1,
-                    allstar2,
-                    baby1,
-                    baby2,
-                    pop.members[oldest1],
-                    pop.members[oldest2],
-                ]
-                    if !haskey(record["mutations"], "$(member.ref)")
-                        record["mutations"]["$(member.ref)"] = RecordType(
-                            "events" => Vector{RecordType}(),
-                            "tree" => string_tree(member.tree, options),
-                            "cost" => member.cost,
-                            "loss" => member.loss,
-                            "parent" => member.parent,
-                        )
-                    end
-                end
+                ensure_member_recorded!.(
+                    Ref(record),
+                    [allstar1, allstar2, baby1, baby2, pop.members[oldest1], pop.members[oldest2]],
+                    Ref(options),
+                )
                 crossover_event = RecordType(
                     "type" => "crossover",
                     "time" => time(),
@@ -137,16 +105,10 @@ function reg_evol_cycle(
                 death_event1 = RecordType("type" => "death", "time" => time())
                 death_event2 = RecordType("type" => "death", "time" => time())
 
-                push!(record["mutations"]["$(allstar1.ref)"]["events"], crossover_event)
-                push!(record["mutations"]["$(allstar2.ref)"]["events"], crossover_event)
-                push!(
-                    record["mutations"]["$(pop.members[oldest1].ref)"]["events"],
-                    death_event1,
-                )
-                push!(
-                    record["mutations"]["$(pop.members[oldest2].ref)"]["events"],
-                    death_event2,
-                )
+                record_member_event!(record, allstar1.ref, crossover_event)
+                record_member_event!(record, allstar2.ref, crossover_event)
+                record_member_event!(record, pop.members[oldest1].ref, death_event1)
+                record_member_event!(record, pop.members[oldest2].ref, death_event2)
             end
 
             # Replace old members with new ones:

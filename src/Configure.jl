@@ -344,10 +344,10 @@ function test_entire_pipeline(
                     RunningSearchStatistics(; options=options);
                     verbosity=verbosity,
                     options=options,
-                    record=RecordType(),
+                    record=JSONLRecorder(),
                 )[1]
                 tmp_pop = optimize_and_simplify_population(
-                    dataset, tmp_pop, options, options.maxsize, RecordType()
+                    dataset, tmp_pop, options, options.maxsize, JSONLRecorder()
                 )
             end
         )

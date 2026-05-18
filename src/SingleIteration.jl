@@ -1,7 +1,7 @@
 module SingleIterationModule
 
 using ADTypes: AutoEnzyme
-using DynamicExpressions: AbstractExpression, string_tree, simplify_tree!, combine_operators
+using DynamicExpressions: AbstractExpression, simplify_tree!, combine_operators
 using ..UtilsModule: @threads_if
 using ..CoreModule: AbstractOptions, Dataset, RecordType, create_expression, batch
 using ..ComplexityModule: compute_complexity
@@ -12,7 +12,8 @@ using ..AdaptiveParsimonyModule: RunningSearchStatistics
 using ..RegularizedEvolutionModule: reg_evol_cycle
 using ..LossFunctionsModule: eval_cost
 using ..ConstantOptimizationModule: optimize_constants
-using ..RecorderModule: @recorder
+using ..RecorderModule:
+    @recorder, JSONLRecorder, ensure_member_recorded!, record_member_event!
 
 # Cycle through regularized evolution many times,
 # printing the fittest equation every 10% through
@@ -24,7 +25,7 @@ function s_r_cycle(
     running_search_statistics::RunningSearchStatistics;
     verbosity::Int=0,
     options::AbstractOptions,
-    record::RecordType,
+    record::JSONLRecorder,
 )::Tuple{
     P,HallOfFame{T,L,N},Float64
 } where {T,L,D<:Dataset{T,L},N<:AbstractExpression{T},P<:Population{T,L,N}}
@@ -66,7 +67,7 @@ function s_r_cycle(
 end
 
 function optimize_and_simplify_population(
-    dataset::D, pop::P, options::AbstractOptions, curmaxsize::Int, record::RecordType
+    dataset::D, pop::P, options::AbstractOptions, curmaxsize::Int, record::JSONLRecorder
 )::Tuple{P,Float64} where {T,L,D<:Dataset{T,L},P<:Population{T,L}}
     array_num_evals = zeros(Float64, pop.n)
     do_optimization = rand(pop.n) .< options.optimizer_probability
@@ -98,24 +99,17 @@ function optimize_and_simplify_population(
     # and optionally record which operations occurred.
     for j in 1:(pop.n)
         old_ref = pop.members[j].ref
+        old_parent = pop.members[j].parent
         new_ref = generate_reference()
         pop.members[j].parent = old_ref
         pop.members[j].ref = new_ref
 
         @recorder begin
-            # Same structure as in RegularizedEvolution.jl,
-            # except we assume that the record already exists.
-            @assert haskey(record, "mutations")
             member = pop.members[j]
-            if !haskey(record["mutations"], "$(member.ref)")
-                record["mutations"]["$(member.ref)"] = RecordType(
-                    "events" => Vector{RecordType}(),
-                    "tree" => string_tree(member.tree, options),
-                    "cost" => member.cost,
-                    "loss" => member.loss,
-                    "parent" => member.parent,
-                )
-            end
+            ensure_member_recorded!(
+                record, old_ref, member.tree, member.cost, member.loss, old_parent, options
+            )
+            ensure_member_recorded!(record, member, options)
             optimize_and_simplify_event = RecordType(
                 "type" => "tuning",
                 "time" => time(),
@@ -131,8 +125,8 @@ function optimize_and_simplify_population(
             )
             death_event = RecordType("type" => "death", "time" => time())
 
-            push!(record["mutations"]["$(old_ref)"]["events"], optimize_and_simplify_event)
-            push!(record["mutations"]["$(old_ref)"]["events"], death_event)
+            record_member_event!(record, old_ref, optimize_and_simplify_event)
+            record_member_event!(record, old_ref, death_event)
         end
     end
     return (pop, num_evals)

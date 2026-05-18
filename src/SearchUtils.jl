@@ -31,6 +31,7 @@ using ..AdaptiveParsimonyModule: RunningSearchStatistics
 using ..ExpressionBuilderModule: strip_metadata
 using ..InterfaceDynamicExpressionsModule: takes_eval_options
 using ..CheckConstraintsModule: check_constraints
+using ..RecorderModule: JSONLRecorder
 
 function logging_callback! end
 
@@ -281,7 +282,7 @@ function assign_next_worker!(
     end
 end
 
-const DefaultWorkerOutputType{P,H} = Tuple{P,H,RecordType,Float64}
+const DefaultWorkerOutputType{P,H} = Tuple{P,H,JSONLRecorder,Float64}
 
 function get_worker_output_type(
     ::Val{PARALLELISM}, ::Type{PopType}, ::Type{HallOfFameType}
@@ -614,7 +615,7 @@ Base.@kwdef struct SearchState{
     cycles_remaining::Vector{Int}
     cur_maxsizes::Vector{Int}
     stdin_reader::StdinReader
-    record::Base.RefValue{RecordType}
+    record::Base.RefValue{JSONLRecorder}
     seed_members::Vector{Vector{PM}}
 end
 
