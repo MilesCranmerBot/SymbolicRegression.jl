@@ -46,7 +46,9 @@ function reg_evol_cycle(
             oldest = argmin_fast([pop.members[member].birth for member in 1:(pop.n)])
 
             @recorder begin
-                ensure_member_recorded!.(Ref(record), [allstar, baby, pop.members[oldest]], Ref(options))
+                ensure_member_recorded!.(
+                    Ref(record), [allstar, baby, pop.members[oldest]], Ref(options)
+                )
                 mutate_event = RecordType(
                     "type" => "mutate",
                     "time" => time(),
@@ -90,7 +92,14 @@ function reg_evol_cycle(
             @recorder begin
                 ensure_member_recorded!.(
                     Ref(record),
-                    [allstar1, allstar2, baby1, baby2, pop.members[oldest1], pop.members[oldest2]],
+                    [
+                        allstar1,
+                        allstar2,
+                        baby1,
+                        baby2,
+                        pop.members[oldest1],
+                        pop.members[oldest2],
+                    ],
                     Ref(options),
                 )
                 crossover_event = RecordType(

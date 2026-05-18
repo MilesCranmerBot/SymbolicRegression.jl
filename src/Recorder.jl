@@ -51,8 +51,9 @@ function write_recording_entries!(recorder::JSONLRecorder, entries)
     return recorder
 end
 
-record_entry!(recorder::JSONLRecorder, entry::RecordType) =
+function record_entry!(recorder::JSONLRecorder, entry::RecordType)
     write_recording_entries!(recorder, (entry,))
+end
 
 close_recording!(::JSONLRecorder) = nothing
 
@@ -127,20 +128,16 @@ end
 
 function ensure_member_recorded!(recorder::JSONLRecorder, member, options)
     return ensure_member_recorded!(
-        recorder,
-        member.ref,
-        member.tree,
-        member.cost,
-        member.loss,
-        member.parent,
-        options,
+        recorder, member.ref, member.tree, member.cost, member.loss, member.parent, options
     )
 end
 
 function record_member_event!(recorder::JSONLRecorder, member_ref, event::RecordType)
     record_entry!(
         recorder,
-        RecordType("kind" => "member_event", "member_id" => string(member_ref), "event" => event),
+        RecordType(
+            "kind" => "member_event", "member_id" => string(member_ref), "event" => event
+        ),
     )
     return recorder
 end

@@ -1190,7 +1190,9 @@ end
 ) where {T,L,N}
     record = JSONLRecorder()
     @recorder begin
-        record_population_iteration!(record, out, pop, iteration, record_population(in_pop, options))
+        record_population_iteration!(
+            record, out, pop, iteration, record_population(in_pop, options)
+        )
         ensure_member_recorded!.(Ref(record), in_pop.members, Ref(options))
     end
     num_evals = 0.0
