@@ -106,6 +106,10 @@ using .PluginModule:
     mutation_acceptance_multiplier,
     fork_plugin_state,
     resolve_init_member,
-    default_adaptive_parsimony_plugin
+    wrap_mutation_step,
+    default_adaptive_parsimony_plugin,
+    default_adaptive_mutation_weights_plugin,
+    default_mutation_retry_plugin,
+    default_compound_mutation_plugin
 
 end

@@ -25,6 +25,9 @@ export Population,
     OptimizeMutation,
     DoNothingMutation,
     AdaptiveParsimonyPlugin,
+    AdaptiveMutationWeightsPlugin,
+    MutationRetryPlugin,
+    CompoundMutationPlugin,
     Node,
     GraphNode,
     ParametricNode,
@@ -207,6 +210,7 @@ using Compat: @compat, Fix
         on_generation_end!, on_cycle_end!, on_mutation_end!, init_member,
         tournament_cost_multiplier, mutation_acceptance_multiplier,
         fork_plugin_state,
+        wrap_mutation_step,
     )
 )
 #! format: on
@@ -261,6 +265,9 @@ using DispatchDoctor: @stable, @unstable
     include("TemplateExpressionMacro.jl")
     include("ParametricExpression.jl")
     include("plugins/AdaptiveParsimony.jl")
+    include("plugins/AdaptiveMutationWeights.jl")
+    include("plugins/MutationRetry.jl")
+    include("plugins/CompoundMutation.jl")
 
     __dispatch_doctor_unsable_test() = Val(rand(1:10))
 end
@@ -347,7 +354,8 @@ using .CoreModule:
     resolve_init_member,
     tournament_cost_multiplier,
     mutation_acceptance_multiplier,
-    fork_plugin_state
+    fork_plugin_state,
+    wrap_mutation_step
 using .UtilsModule: is_anonymous_function, recursive_merge, json3_write, @ignore
 using .ComplexityModule: compute_complexity
 using .CheckConstraintsModule: check_constraints
@@ -419,6 +427,9 @@ using .ExpressionBuilderModule: embed_metadata, strip_metadata
 using .ParametricExpressionModule: ParametricExpressionSpec
 using .TemplateExpressionMacroModule: @template_spec
 using .AdaptiveParsimonyModule: AdaptiveParsimonyPlugin
+using .AdaptiveMutationWeightsModule: AdaptiveMutationWeightsPlugin
+using .MutationRetryModule: MutationRetryPlugin
+using .CompoundMutationModule: CompoundMutationPlugin
 
 @stable default_mode = "disable" begin
     include("deprecates.jl")
