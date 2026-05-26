@@ -1,7 +1,7 @@
 module PluginModule
 
 using DispatchDoctor: @unstable
-using ..MutationsModule: AbstractMutation
+using ..MutationsModule: AbstractMutation, ConstantMutation, ConstantMutationContext
 
 # ────────────────────────────────────────────────────────────────────────────
 # Hook naming taxonomy
@@ -251,16 +251,20 @@ function tournament_cost_multiplier(_, ::AbstractPlugin, member, options)
 end
 
 """
-    mutation_acceptance_multiplier(state, plugin, parent_member, new_tree, options) -> Real
+    mutation_acceptance_multiplier(state, plugin, parent_member, new_tree, before_cost, after_cost, options) -> Real
 
-Per-plugin multiplier applied to `probChange` inside `next_generation`, after
-the annealing factor (if any) is folded in. Plugins compose multiplicatively;
-defaults to `1.0` (no adjustment).
+Per-plugin multiplicative contribution to the engine's per-mutation accept
+probability. The engine takes the product across all plugins and draws
+**one** rand against it — so multiple plugins compose without
+introducing independent rand draws. Default returns `1.0`.
+
+Plugins that need cycle-progress / temperature in their multiplier should
+maintain their own mutable state and update it in [`on_cycle_start!`](@ref).
 
 !!! warning "Experimental"
 """
 function mutation_acceptance_multiplier(
-    _, ::AbstractPlugin, parent_member, new_tree, options
+    _, ::AbstractPlugin, parent_member, new_tree, before_cost, after_cost, options
 )
     return 1.0
 end
@@ -326,6 +330,66 @@ end
 end
 
 """
+    on_cycle_start!(state, plugin, cycle_idx, options)
+
+Observer hook fired at the start of each evolution cycle (1-based
+`cycle_idx`, total `options.ncycles_per_iteration` per outer iteration).
+Plugins update their own mutable state here from the cycle position —
+e.g. `SimulatedAnnealingPlugin` recomputes its `temperature` once per
+cycle and consumes it later in `mutation_acceptance_multiplier` and
+`condition_mutation!`.
+
+Default is a no-op.
+
+!!! warning "Experimental"
+"""
+function on_cycle_start!(_, ::AbstractPlugin, cycle_idx::Int, options)
+    return nothing
+end
+
+"""
+    prepare_mutation_context(mutation::AbstractMutation)
+
+Build a fresh per-call mutable context for `mutation`, called inside the
+function-barrier of `_next_generation` immediately **after** mutation
+sampling — so only the selected mutation pays the construction cost.
+
+Default returns `nothing` (no context — the mutation runs directly from
+its immutable fields). Override for any mutation type that wants plugins
+to layer per-call configuration on top of its base values.
+
+Example:
+
+```julia
+mutable struct MyMutationContext
+    perturbation_factor::Float64
+end
+SymbolicRegression.prepare_mutation_context(m::MyMutation) = MyMutationContext(m.perturbation_factor)
+```
+
+!!! warning "Experimental"
+"""
+prepare_mutation_context(::AbstractMutation) = nothing
+function prepare_mutation_context(m::ConstantMutation)
+    return ConstantMutationContext(m.perturbation_factor)
+end
+
+"""
+    condition_mutation!(context, state, plugin, mutation, options)
+
+In-place plugin modification of the per-call `context` produced by
+[`prepare_mutation_context`](@ref). Only fires for the mutation that was
+selected this cycle. Composes by sequential mutation in tuple order.
+
+Default is a no-op.
+
+!!! warning "Experimental"
+"""
+function condition_mutation!(::Any, _, ::AbstractPlugin, ::AbstractMutation, options)
+    return nothing
+end
+
+"""
     wrap_mutation_step(state, plugin, parent_member, next_step) -> (member, accepted, num_evals)
 
 Middleware-style hook around `next_generation`. The engine builds a thunk
@@ -357,8 +421,8 @@ end
 # `nothing` (when the legacy kwarg is off).
 function default_adaptive_parsimony_plugin end
 function default_adaptive_mutation_weights_plugin end
-function default_mutation_retry_plugin end
-function default_compound_mutation_plugin end
+function default_mutation_loop_plugin end
+function default_simulated_annealing_plugin end
 
 
 # Append defaults whose type isn't already in the user tuple. Each default

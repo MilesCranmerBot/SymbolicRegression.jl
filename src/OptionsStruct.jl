@@ -199,7 +199,6 @@ struct Options{
     parsimony::Float64
     dimensional_constraint_penalty::Union{Float64,Nothing}
     dimensionless_constants_only::Bool
-    alpha::Float64
     maxsize::Int
     maxdepth::Int
     turbo::Val{_turbo}
@@ -210,8 +209,7 @@ struct Options{
     should_optimize_constants::Bool
     output_directory::Union{String,Nothing}
     populations::Int
-    perturbation_factor::Float64
-    annealing::Bool
+    perturbation_factor::Float32
     batching::Bool
     batch_size::Int
     mutations::Vector{Pair{AbstractMutation,Float64}}

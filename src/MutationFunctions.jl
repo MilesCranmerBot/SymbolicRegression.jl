@@ -19,7 +19,7 @@ using DynamicExpressions:
     max_degree
 using Statistics: median
 using ..CoreModule:
-    AbstractOptions, DATA_TYPE, init_value, sample_value, Dataset, ConstantMutation
+    AbstractOptions, DATA_TYPE, init_value, sample_value, Dataset, ConstantMutation, ConstantMutationContext
 using ..EvaluateInverseModule: eval_inverse_tree_array, is_bad_array
 using ..BacksolveModule: fit_sparse_expression, configured_backsolve
 
@@ -119,62 +119,49 @@ function mutate_operator(
     return tree
 end
 
-"""Randomly perturb a constant"""
+"""Randomly perturb a constant. The mutation reads its perturbation
+parameters from the per-call [`ConstantMutationContext`](@ref) so that
+plugins (e.g. simulated annealing) can layer on cycle-progress scaling
+without the engine threading any annealing-specific state."""
 function mutate_constant(
     ex::AbstractExpression{T},
-    temperature,
+    ctx::ConstantMutationContext,
+    m::ConstantMutation,
     options::AbstractOptions,
-    m::ConstantMutation=ConstantMutation(),
     rng::AbstractRNG=default_rng(),
 ) where {T<:DATA_TYPE}
     tree, context = get_contents_for_mutation(ex, rng)
     ex = with_contents_for_mutation(
-        ex, mutate_constant(tree, temperature, options, m, rng), context
+        ex, mutate_constant(tree, ctx, m, options, rng), context
     )
     return ex
 end
-Base.@noinline function mutate_constant(
-    ex::AbstractExpression{T}, temperature, options::AbstractOptions, rng::AbstractRNG
-) where {T<:DATA_TYPE}
-    Base.depwarn(
-        "Passing `rng` as the fourth positional argument to `mutate_constant` is deprecated. Pass `ConstantMutation()` before `rng`.",
-        :mutate_constant,
-    )
-    return mutate_constant(ex, temperature, options, ConstantMutation(), rng)
-end
 function mutate_constant(
     tree::AbstractExpressionNode{T},
-    temperature,
+    ctx::ConstantMutationContext,
+    m::ConstantMutation,
     options::AbstractOptions,
-    m::ConstantMutation=ConstantMutation(),
     rng::AbstractRNG=default_rng(),
 ) where {T<:DATA_TYPE}
     if !(has_constants(tree))
         return tree
     end
     node = rand(rng, NodeSampler(; tree, filter=t -> (t.degree == 0 && t.constant)))
-    node.val = mutate_value(rng, node.val, temperature, m)
+    node.val = mutate_value(rng, node.val, ctx, m)
     return tree
-end
-Base.@noinline function mutate_constant(
-    tree::AbstractExpressionNode{T}, temperature, options::AbstractOptions, rng::AbstractRNG
-) where {T<:DATA_TYPE}
-    Base.depwarn(
-        "Passing `rng` as the fourth positional argument to `mutate_constant` is deprecated. Pass `ConstantMutation()` before `rng`.",
-        :mutate_constant,
-    )
-    return mutate_constant(tree, temperature, options, ConstantMutation(), rng)
 end
 
 function mutate_value(
-    rng::AbstractRNG, val::Number, temperature, m::ConstantMutation=ConstantMutation()
+    rng::AbstractRNG, val::Number, ctx::ConstantMutationContext, m::ConstantMutation
 )
-    return val * mutate_factor(typeof(val), temperature, m, rng)
+    return val * mutate_factor(typeof(val), ctx, m, rng)
 end
 
-function mutate_factor(::Type{T}, temperature, m::ConstantMutation, rng) where {T<:Number}
+function mutate_factor(
+    ::Type{T}, ctx::ConstantMutationContext, m::ConstantMutation, rng
+) where {T<:Number}
     bottom = 1//10
-    maxChange = m.perturbation_factor * temperature + 1 + bottom
+    maxChange = ctx.perturbation_factor + 1 + bottom
     factor = T(maxChange^rand(rng, T))
     makeConstBigger = rand(rng, Bool)
 
