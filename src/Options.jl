@@ -417,8 +417,8 @@ const OPTION_DESCRIPTIONS = """- `defaults`: What set of defaults to use for `Op
     guess expressions at the end of each cycle.
 - `should_simplify`: Whether to simplify equations. If you
     pass a custom objective, this will be set to `false`.
-- `use_constants`: Whether to allow real-valued constants in expressions.
-    If `false`, random generation will only create variable leaves.
+- `use_constants`: Whether to allow constant-valued leaves in expressions.
+    If `false`, random generation will only create non-constant leaves.
 - `should_optimize_constants`: Whether to use an optimization algorithm
     to periodically optimize constants in equations.
 - `optimizer_algorithm`: Select algorithm to use for optimizing constants. Default
@@ -1015,12 +1015,6 @@ $(OPTION_DESCRIPTIONS)
     backsolve = something(backsolve, BacksolveOptions())
 
     if !use_constants
-        if hasproperty(set_mutation_weights, :mutate_constant)
-            set_mutation_weights.mutate_constant = 0.0
-        end
-        if hasproperty(set_mutation_weights, :optimize)
-            set_mutation_weights.optimize = 0.0
-        end
         should_optimize_constants = false
         probability_negate_constant = 0.0
     end

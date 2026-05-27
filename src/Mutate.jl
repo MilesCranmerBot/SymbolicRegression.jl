@@ -112,6 +112,10 @@ function condition_mutation_weights!(
         weights.form_connection = 0.0
         weights.break_connection = 0.0
     end
+    if !options.use_constants
+        weights.optimize = 0.0
+        weights.mutate_constant = 0.0
+    end
     if tree.degree == 0
         # If equation is too small, don't delete operators
         # or simplify

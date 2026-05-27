@@ -137,8 +137,6 @@ end
     @test options.use_constants == false
     @test options.should_optimize_constants == false
     @test options.probability_negate_constant == 0.0f0
-    @test options.mutation_weights.mutate_constant == 0.0
-    @test options.mutation_weights.optimize == 0.0
 
     rng = MersenneTwister(0)
     for _ in 1:20
