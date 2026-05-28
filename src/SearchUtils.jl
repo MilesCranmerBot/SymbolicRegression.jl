@@ -349,8 +349,8 @@ function init_dummy_pops(
 end
 
 mutable struct StdinReader
-    can_read_user_input::Bool
-    stream::IO
+    const can_read_user_input::Bool
+    const stream::IO
     saw_quit_char::Bool
 end
 function StdinReader(can_read_user_input::Bool, stream::IO)
