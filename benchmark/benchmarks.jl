@@ -175,7 +175,6 @@ function create_utils_benchmark()
                 ]
             )
         )
-    )
     elseif new_engine_sig && !has_temperature
         @benchmarkable(
             let
@@ -213,8 +212,7 @@ function create_utils_benchmark()
                     _ in 1:100
                 ];
                 expressions=[
-                    Expression(tree; operators=options.operators, variable_names=["x1"])
-                    for tree in trees
+                    Expression(tree; operators=options.operators, variable_names=["x1"]) for tree in trees
                 ];
                 members=[
                     PopMember(dataset, expression, options; deterministic=false) for
