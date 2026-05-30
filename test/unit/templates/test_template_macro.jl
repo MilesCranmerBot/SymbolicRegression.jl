@@ -3,8 +3,9 @@
     using DynamicExpressions: OperatorEnum, Node
 
     # Test basic parameter/expression handling
-    expr_spec = @template_spec(
-    parameters = (p1=10, p2=10, p3=1),  expressions = (f, g))  do x1, x2, class
+    expr_spec = @template_spec(parameters=(p1=10, p2=10, p3=1),  expressions=(f, g))  do x1,
+    x2,
+    class
         return p1[class] * x1^2 + f(x1, x2, p2[class]) - g(p3[1] * x1)
     end
 
@@ -92,8 +93,9 @@ end
     using Test
 
     # Multi-output template with parameter reuse
-    template = @template_spec(
-    parameters = (coeff=5,),  expressions = (base, modifier))  do x, y, class
+    template = @template_spec(parameters=(coeff=5,),  expressions=(base, modifier))  do x,
+    y,
+    class
         base_val = base(x, coeff[class])
         modified = modifier(y, coeff[class])
         return coeff[class] * x * base_val + modified
