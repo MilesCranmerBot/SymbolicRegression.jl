@@ -8,7 +8,7 @@
     variable_names = ["x1", "x2"]
 
     # Create a simple template using @template_spec macro
-    template = @template_spec(expressions = (f, g)) do x1, x2
+    template = @template_spec(expressions = (f, g))  do x1, x2
         f(x1, x2) * g(x1, x2)  # Simple multiplication combination
     end
     options = Options(; operators, expression_spec=template)

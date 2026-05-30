@@ -25,14 +25,15 @@ function setup_parametric_test(rng)
     dataset = Dataset(X, y; extra=(; class))
 
     # Calculate the reference values using AutoZygote
-    (true_val, (true_d_params, true_d_constants)) =
-        value_and_gradient(AutoZygote(), (init_params, init_constants)) do (params, c)
-            pred = [
-                X[1, i] * X[1, i] - cos(c[1] * X[2, i] + c[2]) + params[1, class[i]] for
-                i in 1:32
-            ]
-            sum(abs2, pred .- y) / length(y)
-        end
+    (true_val, (true_d_params, true_d_constants)) = value_and_gradient(
+        AutoZygote(), (init_params, init_constants)
+    ) do (params, c)
+        pred = [
+            X[1, i] * X[1, i] - cos(c[1] * X[2, i] + c[2]) + params[1, class[i]] for
+            i in 1:32
+        ]
+        sum(abs2, pred .- y) / length(y)
+    end
 
     return X,
     dataset, init_params, init_constants, true_val, true_d_params,

@@ -50,7 +50,7 @@
     end
 
     @testset "TemplateExpression" begin
-        spec = @template_spec(expressions = (f, g)) do x, y, z
+        spec = @template_spec(expressions = (f, g))  do x, y, z
             f(x, y) + 2.0 * g(3.0 * z)
         end
         options = Options(; default_args..., expression_spec=spec)
@@ -93,7 +93,7 @@
     end
 
     @testset "TemplateExpression with parameters" begin
-        spec = @template_spec(expressions = (f, g), parameters = (p=1,),) do x, y, z, w
+        spec = @template_spec(expressions = (f, g),  parameters = (p=1,),)  do x, y, z, w
             f(x, y) + g(3.0 * z) + p[1] * w
         end
         options = Options(; default_args..., expression_spec=spec)

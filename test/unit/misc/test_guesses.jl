@@ -37,7 +37,7 @@ end
 
     # Create template options
     operators = OperatorEnum(; binary_operators=[+, -, *], unary_operators=[])
-    template = @template_spec(expressions = (f, g)) do x1, x2
+    template = @template_spec(expressions = (f, g))  do x1, x2
         f(x1, x2) + g(x1, x2)
     end
     options = Options(; operators=operators, expression_spec=template)
@@ -89,7 +89,7 @@ end
 
     # Create template with parameters
     operators = OperatorEnum(; binary_operators=[+, -, *], unary_operators=[])
-    template = @template_spec(expressions = (f,), parameters = (p=2,)) do x1, x2
+    template = @template_spec(expressions = (f,),  parameters = (p=2,))  do x1, x2
         f(x1, x2) + p[1] * x1 + p[2]
     end
     options = Options(; operators=operators, expression_spec=template)
@@ -119,7 +119,7 @@ end
     variable_names = ["input1", "input2", "input3"]
 
     # Create template using @template_spec macro
-    template = @template_spec(expressions = (term1, term2)) do input1, input2, input3
+    template = @template_spec(expressions = (term1, term2))  do input1, input2, input3
         term1(input1, input2, input3) + term2(input1, input2, input3)
     end
 
@@ -311,7 +311,7 @@ end
     operators = OperatorEnum(;
         binary_operators=[+, -, *, pythag_pos, custom_mul], unary_operators=[]
     )
-    template = @template_spec(expressions = (f, g)) do x1, x2
+    template = @template_spec(expressions = (f, g))  do x1, x2
         f(x1, x2) + g(x1, x2)
     end
     options = Options(; operators=operators, expression_spec=template)
@@ -346,7 +346,7 @@ end
 
     # Template expressions
     operators = OperatorEnum(; binary_operators=[+, -, *], unary_operators=[])
-    template = @template_spec(expressions = (f,)) do x1, x2
+    template = @template_spec(expressions = (f,))  do x1, x2
         f(x1, x2)
     end
     options = Options(;

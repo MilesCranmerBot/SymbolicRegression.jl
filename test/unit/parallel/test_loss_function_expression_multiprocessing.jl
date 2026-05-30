@@ -5,7 +5,7 @@
 
     defs = quote
         early_stop(loss, c) = ((loss <= 1e-10) && (c <= 4))
-        expression_spec = @template_spec(expressions = (f,),) do x1, x2, x3, x4, x5
+        expression_spec = @template_spec(expressions = (f,),)  do x1, x2, x3, x4, x5
             f(x1, x2, x3, x4, x5)
         end
         function my_loss_expression(

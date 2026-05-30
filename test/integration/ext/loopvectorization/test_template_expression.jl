@@ -523,7 +523,7 @@ end
     @test eval_loss(ex, d, options; idx=idx) < 1e-10
 
     # Test with template expressions
-    template = @template_spec(expressions = (f,), parameters = (p=2,)) do x
+    template = @template_spec(expressions = (f,),  parameters = (p=2,))  do x
         f(x) + sum(p)
     end
 
@@ -576,7 +576,7 @@ end
         return sum(abs2, output .- dataset.y) / length(dataset.y)
     end
 
-    template = @template_spec(expressions = (f,), parameters = (p=2,)) do x
+    template = @template_spec(expressions = (f,),  parameters = (p=2,))  do x
         f(x) + sum(p)
     end
 
@@ -633,7 +633,7 @@ end
     X = Float64[1.0 2.0; 3.0 4.0]
     y = Float64[5.0, 6.0]
     dataset = Dataset(X, y)
-    template = @template_spec(expressions = (f, g)) do x1, x2
+    template = @template_spec(expressions = (f, g))  do x1, x2
         f(x1, x2) + g(x1, x2)
     end
     options = Options(; expression_spec=template)
@@ -698,7 +698,7 @@ end
     using SymbolicRegression: eval_loss
     using SymbolicRegression.TemplateExpressionModule: _match_input_eltype
 
-    template = @template_spec(expressions = (f,)) do x1, x2
+    template = @template_spec(expressions = (f,))  do x1, x2
         0.5 * f(x1, x2)  # 0.5 is Float64 literal
     end
 
