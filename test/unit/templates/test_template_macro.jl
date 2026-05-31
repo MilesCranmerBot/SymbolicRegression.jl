@@ -3,11 +3,13 @@
     using DynamicExpressions: OperatorEnum, Node
 
     # Test basic parameter/expression handling
-    expr_spec = @template_spec(parameters=(p1=10, p2=10, p3=1),  expressions=(f, g))  do x1,
-    x2,
-    class
+    #! format: off
+    expr_spec = @template_spec(
+        parameters = (p1=10, p2=10, p3=1), expressions = (f, g)
+    ) do x1, x2, class
         return p1[class] * x1^2 + f(x1, x2, p2[class]) - g(p3[1] * x1)
     end
+    #! format: on
 
     # Verify spec structure
     @test expr_spec.structure isa TemplateStructure{(:f, :g),(:p1, :p2, :p3)}
@@ -93,13 +95,15 @@ end
     using Test
 
     # Multi-output template with parameter reuse
-    template = @template_spec(parameters=(coeff=5,),  expressions=(base, modifier))  do x,
-    y,
-    class
+    #! format: off
+    template = @template_spec(
+        parameters = (coeff=5,), expressions = (base, modifier)
+    ) do x, y, class
         base_val = base(x, coeff[class])
         modified = modifier(y, coeff[class])
         return coeff[class] * x * base_val + modified
     end
+    #! format: on
 
     # Verify structure
     @test template.structure isa TemplateStructure{(:base, :modifier),(:coeff,)}
@@ -128,9 +132,11 @@ end
     using DynamicExpressions: OperatorEnum, Node
 
     # Test template without parameters
-    expr_spec = @template_spec(expressions = (f, g))  do x1, x2
+    #! format: off
+    expr_spec = @template_spec(expressions = (f, g)) do x1, x2
         return x1^2 + f(x1, x2) - g(x1)
     end
+    #! format: on
 
     # Verify spec structure
     @test expr_spec.structure isa TemplateStructure{(:f, :g),()}
@@ -194,9 +200,11 @@ end
     using DynamicExpressions: OperatorEnum, Node
 
     # Test template with num_features
-    expr_spec = @template_spec(expressions = (f,),  num_features = (f=5,))  do x1, x2
+    #! format: off
+    expr_spec = @template_spec(expressions = (f,), num_features = (f=5,)) do x1, x2
         return x1^2 + f(x1, x2)  # Normal inference would infer (f=2,)
     end
+    #! format: on
 
     @test expr_spec.structure.num_features == (f=5,)
 end
