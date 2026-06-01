@@ -129,9 +129,10 @@ end
         compute_complexity(custom_op(cos(1 * x1), 1 * x1), options)
 
     # Check that every cos(...) which contains x1 also has complexity
-    has_cos(tree) = any(get_tree(tree)) do t
-        t.degree == 1 && options.operators.unaops[t.op] == cos
-    end
+    has_cos(tree) =
+        any(get_tree(tree)) do t
+            t.degree == 1 && options.operators.unaops[t.op] == cos
+        end
     valid_trees = [
         !has_cos(member.tree) || any(
             t ->

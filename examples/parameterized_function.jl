@@ -58,9 +58,9 @@ stop_at = Ref(1e-4)  #src
 n_categories = length(unique(X.class))
 
 # Create a template expression specification with 2 parameters
-expression_spec = @template_spec(expressions=(f,),  parameters=(
-    p1=n_categories, p2=n_categories
-))  do x1, x2, class
+expression_spec = @template_spec(
+    expressions=(f,), parameters=(p1=n_categories, p2=n_categories)
+) do x1, x2, class
     f(x1, x2, p1[class], p2[class])
 end
 test_kwargs = if get(ENV, "SYMBOLIC_REGRESSION_IS_TESTING", "false") == "true"  #src

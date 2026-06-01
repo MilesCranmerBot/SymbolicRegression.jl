@@ -158,14 +158,9 @@ end
 
     tree_prototype = Node(Float64; val=1.0)
     nfeatures = 2
-    fit(target_values=y, fit_dataset=dataset, fit_nfeatures=nfeatures; kws...) =
-        fit_sparse_expression(
-            tree_prototype,
-            target_values,
-            fit_dataset,
-            make_options(; kws...),
-            fit_nfeatures,
-        )
+    fit(target_values=y, fit_dataset=dataset, fit_nfeatures=nfeatures; kws...) = fit_sparse_expression(
+        tree_prototype, target_values, fit_dataset, make_options(; kws...), fit_nfeatures
+    )
     function fit_mse(tree, target_values=y, fit_X=X)
         predicted, _ = eval_tree_array(tree, fit_X, options.operators)
         return sum(abs2, predicted .- target_values) / length(target_values)
