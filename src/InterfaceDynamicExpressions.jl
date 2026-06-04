@@ -151,15 +151,16 @@ to every constant in the expression.
 """
 function DE.eval_grad_tree_array(
     tree::Union{AbstractExpression,AbstractExpressionNode},
-    X::AbstractArray,
+    X::AbstractArray{T},
     options::AbstractOptions;
     kws...,
-)
+) where {T}
     A = expected_array_type(X, typeof(tree))
     out, grad, complete = DE.eval_grad_tree_array(
         tree, X, DE.get_operators(tree, options); kws...
     )
-    return out::A, grad::AbstractArray, complete::Bool
+    grad = Matrix{T}(grad)::Matrix{T}
+    return out::A, grad::Matrix{T}, complete::Bool
 end
 
 """
