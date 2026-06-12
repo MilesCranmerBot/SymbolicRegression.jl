@@ -1,6 +1,6 @@
 @testitem "Test backsolve mutation" tags = [:part1] begin
     using SymbolicRegression
-    using SymbolicRegression.InverseFunctionsModule: approx_inverse
+    using SymbolicRegression.InverseFunctionsModule: approx_inverse, PartialFunction
     using SymbolicRegression.EvaluateInverseModule:
         eval_inverse_tree_array, _eval_inverse_tree_array
     using SymbolicRegression.MutationFunctionsModule: backsolve_rewrite_random_node
@@ -116,6 +116,12 @@
         end
     end
 
+    @testset "InverseFunctions - Ternary fma operators" begin
+        @test isapprox(approx_inverse(PartialFunction{1}(fma, (0.0, 3.0, 5.0)))(17.0), 4.0)
+        @test isapprox(approx_inverse(PartialFunction{2}(fma, (4.0, 0.0, 5.0)))(17.0), 3.0)
+        @test isapprox(approx_inverse(PartialFunction{3}(fma, (4.0, 3.0, 0.0)))(17.0), 5.0)
+    end
+
     @testset "EvaluateInverse - Simple unary tree" begin
         operators = OperatorEnum(; binary_operators=[+, *], unary_operators=[sin])
         x_node = Node(Float64; feature=1)
@@ -178,6 +184,44 @@
         @test success
         @test length(inverted) == 3
         @test isapprox(inverted, [1.0, 2.0, 3.0]; atol=1e-10)
+    end
+
+    @testset "EvaluateInverse - Ternary fma tree" begin
+        operators = OperatorEnum(1 => (), 2 => (+, *), 3 => (fma,))
+        x1 = Node{Float64,3}(; feature=1)
+        x2 = Node{Float64,3}(; feature=2)
+        x3 = Node{Float64,3}(; feature=3)
+        tree = Node{Float64,3}(; op=1, children=(x1, x2, x3))
+
+        X = Float64[2.0 6.0; 3.0 4.0; 5.0 1.0]
+        y = Float64[17.0, 25.0]
+
+        inverted_x1, success_x1 = eval_inverse_tree_array(tree, X, operators, x1, y)
+        inverted_x2, success_x2 = eval_inverse_tree_array(tree, X, operators, x2, y)
+        inverted_x3, success_x3 = eval_inverse_tree_array(tree, X, operators, x3, y)
+
+        @test success_x1
+        @test success_x2
+        @test success_x3
+        @test isapprox(inverted_x1, [4.0, 6.0]; atol=1e-10)
+        @test isapprox(inverted_x2, [6.0, 4.0]; atol=1e-10)
+        @test isapprox(inverted_x3, [11.0, 1.0]; atol=1e-10)
+    end
+
+    @testset "EvaluateInverse - Unsupported ternary inverse" begin
+        sum3 = (a, b, c) -> a + b + c
+        operators = OperatorEnum(1 => (), 2 => (), 3 => (sum3,))
+        x1 = Node{Float64,3}(; feature=1)
+        x2 = Node{Float64,3}(; feature=2)
+        x3 = Node{Float64,3}(; feature=3)
+        tree = Node{Float64,3}(; op=1, children=(x1, x2, x3))
+
+        X = reshape(Float64[1.0, 2.0, 3.0], 3, 1)
+        y = Float64[6.0]
+
+        _, success = eval_inverse_tree_array(tree, X, operators, x1, y)
+
+        @test !success
     end
 
     @testset "EvaluateInverse - Target node not found" begin
@@ -255,6 +299,27 @@
         @test mutated_tree !== nothing
     end
 
+    @testset "backsolve_rewrite_random_node - Ternary fma tree" begin
+        X = Float64[1.0 2.0 3.0; 2.0 2.0 2.0; 1.0 1.0 1.0]
+        y = Float64[3.0, 5.0, 7.0]
+        dataset = Dataset(X, y)
+
+        operators = OperatorEnum(1 => (), 2 => (+, *), 3 => (fma,))
+        options = Options(; operators)
+
+        tree = Node{Float64,3}(;
+            op=1,
+            children=(
+                Node{Float64,3}(; feature=1),
+                Node{Float64,3}(; feature=2),
+                Node{Float64,3}(; feature=3),
+            ),
+        )
+        mutated_tree = backsolve_rewrite_random_node(tree, dataset, options, rng)
+
+        @test mutated_tree !== nothing
+    end
+
     @testset "MutationWeights - backsolve field" begin
         weights = MutationWeights()
         @test hasfield(typeof(weights), :backsolve)
@@ -265,39 +330,6 @@
     end
 
     @testset "Helpful errors" begin
-        operators3 = OperatorEnum(1 => (sin,), 2 => (+, *), 3 => ((a, b, c) -> a + b + c,))
-        x1 = Node{Float64,3}(; feature=1)
-        x2 = Node{Float64,3}(; feature=2)
-        x3 = Node{Float64,3}(; feature=3)
-        ternary_tree = Node{Float64,3}(; op=1, children=(x1, x2, x3))
-        X3 = reshape(Float64[1.0, 2.0, 3.0], 3, 1)
-        y3 = Float64[6.0]
-
-        @test_throws(
-            "eval_inverse_tree_array only supports AbstractExpressionNode{T,2}",
-            eval_inverse_tree_array(ternary_tree, X3, operators3, x1, y3)
-        )
-        @test !hasmethod(
-            _eval_inverse_tree_array,
-            Tuple{
-                typeof(ternary_tree),
-                typeof(X3),
-                typeof(operators3),
-                typeof(x1),
-                typeof(y3),
-                NamedTuple{(),Tuple{}},
-            },
-        )
-        @test_throws(
-            "backsolve_rewrite_random_node only supports AbstractExpressionNode{T,2}",
-            backsolve_rewrite_random_node(
-                ternary_tree,
-                Dataset(X3, y3),
-                Options(; binary_operators=(+, *), unary_operators=(sin,)),
-                rng,
-            )
-        )
-
         operators_no_unary = OperatorEnum(1 => (), 2 => (+,))
         unary_tree_without_operator = Node(
             Float64; op=1, children=(Node(Float64; feature=1),)

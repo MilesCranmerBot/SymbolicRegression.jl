@@ -672,12 +672,12 @@ function backsolve_rewrite_random_node(
 end
 
 function backsolve_rewrite_random_node(
-    tree::AbstractExpressionNode{T,2},
+    tree::AbstractExpressionNode{T,D},
     dataset::Dataset{T},
     options::AbstractOptions,
     rng::AbstractRNG=default_rng();
     population_for_backsolve=nothing,
-) where {T<:DATA_TYPE}
+) where {T<:DATA_TYPE,D}
     if !(T <: Union{AbstractFloat,Complex{<:AbstractFloat}})
         throw(
             ArgumentError(
@@ -720,20 +720,6 @@ function backsolve_rewrite_random_node(
     parent, idx = _find_parent(tree, node_to_invert)
     set_child!(parent, new_node, idx)
     return tree
-end
-
-function backsolve_rewrite_random_node(
-    tree::AbstractExpressionNode{T,D},
-    dataset::Dataset{T},
-    options::AbstractOptions,
-    rng::AbstractRNG=default_rng();
-    population_for_backsolve=nothing,
-) where {T<:DATA_TYPE,D}
-    throw(
-        ArgumentError(
-            "backsolve_rewrite_random_node only supports AbstractExpressionNode{T,2}; got $(typeof(tree)).",
-        ),
-    )
 end
 
 end

@@ -10,6 +10,17 @@ using ..CoreModule:
     logical_and, gamma, erf, erfc, atanh_clip
 #! format: on
 
+struct PartialFunction{I,F,A}
+    op::F
+    args::A
+end
+
+PartialFunction{I}(op::F, args::A) where {I,F,A} = PartialFunction{I,F,A}(op, args)
+
+function (f::PartialFunction{I})(x) where {I}
+    return f.op(ntuple(j -> j == I ? x : f.args[j], Val(length(f.args)))...)
+end
+
 """
     approx_inverse(f::Function)
 
@@ -101,6 +112,16 @@ approx_inverse(f::Base.Fix2{typeof(safe_pow)}) = Base.Fix2(safe_pow, inv(f.x))
 # mod is not invertible: mod(x, m) = mod(x + k*m, m) for any integer k
 approx_inverse(::Base.Fix1{typeof(mod)}) = nothing
 approx_inverse(::Base.Fix2{typeof(mod)}) = nothing
+###########################################################################
+
+###########################################################################
+## Ternary operators ######################################################
+###########################################################################
+
+approx_inverse(::PartialFunction) = nothing
+approx_inverse(f::PartialFunction{1,typeof(fma)}) = y -> (y - f.args[3]) / f.args[2]
+approx_inverse(f::PartialFunction{2,typeof(fma)}) = y -> (y - f.args[3]) / f.args[1]
+approx_inverse(f::PartialFunction{3,typeof(fma)}) = y -> y - f.args[1] * f.args[2]
 ###########################################################################
 
 end
