@@ -27,6 +27,23 @@
     @test_throws AssertionError Options(; loss_scale=:cubic)
 end
 
+@testitem "Test default input stream selection" begin
+    using SymbolicRegression
+    using SymbolicRegression.CoreModule.OptionsModule: is_wsl
+
+    @test is_wsl() == occursin(
+        r"microsoft|wsl"i,
+        try
+            read("/proc/version", String)
+        catch
+            ""
+        end,
+    )
+
+    @test Options(; input_stream=stdin).input_stream === stdin
+    @test Options(; input_stream=devnull).input_stream === devnull
+end
+
 @testitem "Test backsolve options" begin
     using SymbolicRegression
 
