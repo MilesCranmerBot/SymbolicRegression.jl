@@ -156,7 +156,7 @@ function DE.eval_grad_tree_array(
     kws...,
 )
     A = expected_array_type(X, typeof(tree))
-    dA = Matrix{eltype(X)}
+    dA = typeof(similar(X))
     out, grad, complete = DE.eval_grad_tree_array(
         tree, X, DE.get_operators(tree, options); kws...
     )
