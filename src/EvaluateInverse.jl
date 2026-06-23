@@ -1,11 +1,7 @@
 module EvaluateInverseModule
 
 using DynamicExpressions:
-    OperatorEnum,
-    AbstractExpressionNode,
-    eval_tree_array,
-    get_children,
-    preserve_sharing
+    OperatorEnum, AbstractExpressionNode, eval_tree_array, get_children, preserve_sharing
 
 using ..InverseFunctionsModule: approx_inverse, PartialFunction
 
@@ -139,14 +135,7 @@ function dispatch_degn(
     )
     target_child_index === nothing && return ResultOk(y, false)
     return dispatch_degn_target(
-        children,
-        Val(target_child_index),
-        X,
-        op,
-        operators,
-        node_to_invert_at,
-        y,
-        eval_kws,
+        children, Val(target_child_index), X, op, operators, node_to_invert_at, y, eval_kws
     )
 end
 
@@ -180,8 +169,9 @@ end
 partial_function(op::F, args::Tuple, ::Val{1}, ::Val{1}) where {F} = op
 partial_function(op::F, args::Tuple, ::Val{1}, ::Val{2}) where {F} = Base.Fix2(op, args[2])
 partial_function(op::F, args::Tuple, ::Val{2}, ::Val{2}) where {F} = Base.Fix1(op, args[1])
-partial_function(op::F, args::Tuple, ::Val{I}, ::Val{degree}) where {I,degree,F} =
+function partial_function(op::F, args::Tuple, ::Val{I}, ::Val{degree}) where {I,degree,F}
     PartialFunction{I}(op, args)
+end
 
 function degn_invert!(
     y::AbstractVector, inputs::NTuple{degree,AbstractVector}, ::Val{target_idx}, op::F
