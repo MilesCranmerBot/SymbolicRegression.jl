@@ -272,13 +272,11 @@ function _apply_operator(op::F, x::Vararg{Any,N}) where {F<:Function,N}
 end
 
 function _apply_operator(op::F, x::ValidVector, y::Number) where {F<:Function}
-    T = eltype(x.x)
-    return _apply_operator_values(op, x.x, convert(T, y))
+    return _apply_operator_values(op, x.x, y)
 end
 
 function _apply_operator(op::F, x::Number, y::ValidVector) where {F<:Function}
-    T = eltype(y.x)
-    return _apply_operator_values(op, convert(T, x), y.x)
+    return _apply_operator_values(op, x, y.x)
 end
 
 function apply_operator(op::F, x::Vararg{Any,N}) where {F<:Function,N}
