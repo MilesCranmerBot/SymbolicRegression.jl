@@ -149,13 +149,13 @@ jobs:
     timeout-minutes: 20
     continue-on-error: true
     steps:
-     - uses: actions/checkout@v7
+      - uses: actions/checkout@v7
       - name: "Install WSL"
         shell: pwsh
         run: |
           wsl --install -d Ubuntu --no-launch
           wsl --set-default-version 2
-     - name: "Test default_input_stream in WSL"
+      - name: "Test default_input_stream in WSL"
         shell: pwsh
         run: |
           wsl -- bash -c '
