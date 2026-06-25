@@ -52,6 +52,7 @@ using .OperatorsModule:
     safe_acos,
     safe_acosh,
     safe_atanh,
+    safe_tan,
     neg,
     greater,
     less,

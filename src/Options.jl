@@ -35,7 +35,8 @@ using ..OperatorsModule:
     safe_asin,
     safe_acos,
     safe_acosh,
-    safe_atanh
+    safe_atanh,
+    safe_tan
 using ..MutationWeightsModule: AbstractMutationWeights, MutationWeights, mutations
 import ..OptionsStructModule: Options
 using ..OptionsStructModule: ComplexityMapping, BacksolveOptions, operator_specialization
@@ -199,6 +200,7 @@ const OP_MAP = Dict{Any,Any}(
     acos => safe_acos,
     acosh => safe_acosh,
     atanh => safe_atanh,
+    tan => safe_tan,
 )
 const INVERSE_OP_MAP = Dict{Any,Any}(
     safe_pow => (^),
@@ -215,6 +217,7 @@ const INVERSE_OP_MAP = Dict{Any,Any}(
     safe_acos => acos,
     safe_acosh => acosh,
     safe_atanh => atanh,
+    safe_tan => tan,
 )
 
 opmap(@nospecialize(op)) = get(OP_MAP, op, op)

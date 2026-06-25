@@ -61,6 +61,11 @@
         @test isnan(safe_log2(zero(T)))
         @test isnan(safe_log10(zero(T)))
         @test isnan(safe_log1p(T(-2.0)))
+        @test isnan(safe_tan(T(Inf)))
+        @test isnan(safe_tan(T(-Inf)))
+        @test isnan(safe_tan(T(NaN)))
+        @test safe_tan(T(0.0)) == T(0.0)
+        @test abs(safe_tan(val) - tan(val)) < 1e-6
         @test greater(val, val2) == T(0.0)
         @test greater(val2, val) == T(1.0)
         @test relu(-val) == T(0.0)
@@ -251,6 +256,7 @@ end
         safe_acos,
         safe_atanh,
         safe_acosh,
+        safe_tan,
         safe_pow
     using ForwardDiff
 
@@ -265,6 +271,7 @@ end
         (safe_acos, 0.5, 2.0),
         (safe_atanh, 0.5, 2.0),
         (safe_acosh, 2.0, 0.5),
+        (safe_tan, 0.5, Inf),
     ]
 
     for (op, valid_x, invalid_x) in safe_operators

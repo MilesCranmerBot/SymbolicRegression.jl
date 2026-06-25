@@ -74,6 +74,9 @@ end
 function safe_sqrt(x::T)::T where {T<:FloatOrDual}
     return x >= zero(x) ? sqrt(x) : T(NaN)
 end
+function safe_tan(x::T)::T where {T<:FloatOrDual}
+    return isfinite(x) ? tan(x) : T(NaN)
+end
 # TODO: Should the above be made more generic, for, e.g., compatibility with units?
 
 # Do not change the names of these operators, as
@@ -94,6 +97,7 @@ safe_acos(x) = acos(x)
 safe_atanh(x) = atanh(x)
 safe_acosh(x) = acosh(x)
 safe_sqrt(x) = sqrt(x)
+safe_tan(x) = tan(x)
 
 function neg(x)
     return -x
@@ -135,6 +139,7 @@ DE.get_op_name(::typeof(safe_acos)) = "acos"
 DE.get_op_name(::typeof(safe_acosh)) = "acosh"
 DE.get_op_name(::typeof(safe_atanh)) = "atanh"
 DE.get_op_name(::typeof(safe_sqrt)) = "sqrt"
+DE.get_op_name(::typeof(safe_tan)) = "tan"
 
 # Strings that only get printed for pretty printing,
 # but not when saving to the file
@@ -158,6 +163,7 @@ DE.declare_operator_alias(::typeof(safe_acos), ::Val{1}) = acos
 DE.declare_operator_alias(::typeof(safe_acosh), ::Val{1}) = acosh
 DE.declare_operator_alias(::typeof(safe_atanh), ::Val{1}) = atanh
 DE.declare_operator_alias(::typeof(safe_sqrt), ::Val{1}) = sqrt
+DE.declare_operator_alias(::typeof(safe_tan), ::Val{1}) = tan
 
 # Deprecated operations:
 @deprecate pow(x, y) safe_pow(x, y)
@@ -179,6 +185,7 @@ get_safe_op(::typeof(acos)) = safe_acos
 get_safe_op(::typeof(sqrt)) = safe_sqrt
 get_safe_op(::typeof(acosh)) = safe_acosh
 get_safe_op(::typeof(atanh)) = safe_atanh
+get_safe_op(::typeof(tan)) = safe_tan
 get_safe_op(::typeof(>)) = greater
 get_safe_op(::typeof(<)) = less
 get_safe_op(::typeof(>=)) = greater_equal
