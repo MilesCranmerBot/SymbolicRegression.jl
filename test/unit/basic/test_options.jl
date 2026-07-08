@@ -29,16 +29,24 @@ end
 
 @testitem "Test default input stream selection" begin
     using SymbolicRegression
-    using SymbolicRegression.CoreModule.OptionsModule: is_wsl
+    using SymbolicRegression.CoreModule.OptionsModule:
+        can_use_stdin_by_default, default_input_stream, is_wsl, is_wsl_version
 
-    @test is_wsl() == occursin(
-        r"microsoft|wsl"i,
-        try
-            read("/proc/version", String)
-        catch
-            ""
-        end,
-    )
+    @test is_wsl_version("Linux version 1.0.0-microsoft-standard-WSL2")
+    @test !is_wsl_version("Linux version 1.0.0-generic")
+
+    proc_version = try
+        read("/proc/version", String)
+    catch
+        ""
+    end
+    @test is_wsl() == is_wsl_version(proc_version)
+
+    @test !can_use_stdin_by_default(stdin; is_windows=true, running_in_wsl=false)
+    @test !can_use_stdin_by_default(stdin; is_windows=false, running_in_wsl=true)
+    @test !can_use_stdin_by_default(devnull; is_windows=false, running_in_wsl=false)
+
+    @test default_input_stream() === (can_use_stdin_by_default() ? stdin : devnull)
 
     @test Options(; input_stream=stdin).input_stream === stdin
     @test Options(; input_stream=devnull).input_stream === devnull

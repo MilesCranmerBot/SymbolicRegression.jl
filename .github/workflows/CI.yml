@@ -143,37 +143,6 @@ jobs:
           path: lcov.info
           retention-days: 1
 
-  wsl:
-    name: wsl/input-stream
-    runs-on: windows-latest
-    timeout-minutes: 20
-    continue-on-error: true
-    steps:
-      - uses: actions/checkout@v7
-      - name: "Install WSL"
-        shell: pwsh
-        run: |
-          wsl --install -d Ubuntu --no-launch
-          wsl --set-default-version 2
-      - name: "Test default_input_stream in WSL"
-        shell: pwsh
-        run: |
-          wsl -- bash -c '
-            set -e
-            wget -q https://julialang-s3.julialang.org/bin/linux/x64/1.11/julia-1.11.5-linux-x86_64.tar.gz
-            tar xf julia-1.11.5-linux-x86_64.tar.gz
-            export PATH="$PWD/julia-1.11.5/bin:$PATH"
-            julia --color=yes --project=. -e "
-              using Pkg
-              Pkg.instantiate()
-              using SymbolicRegression
-              using SymbolicRegression.CoreModule.OptionsModule: is_wsl, default_input_stream
-              @assert is_wsl() "is_wsl() returned false on WSL"
-              @assert default_input_stream() === devnull "default_input_stream should be devnull on WSL"
-              println("WSL test passed")
-            "
-          '
-
   upload-coverage:
     name: Upload Coverage to Codecov
     needs: [unit, integration]

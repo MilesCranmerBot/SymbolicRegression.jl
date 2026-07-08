@@ -473,9 +473,9 @@ const OPTION_DESCRIPTIONS = """- `defaults`: What set of defaults to use for `Op
     Function - a function taking (loss, complexity) as arguments and returning true or false.
 - `timeout_in_seconds`: Float64 - the time in seconds after which to exit (as an alternative to the number of iterations).
 - `max_evals`: Int (or Nothing) - the maximum number of evaluations of expressions to perform.
-- `input_stream`: the stream to read user input from. By default, this is `devnull` on Windows/WSL
-    and `stdin` otherwise. If you want to use interactive input on Windows/WSL, you can pass `stdin`
-    explicitly.
+- `input_stream`: the stream to read user input from. By default, this is `stdin` only on
+    POSIX terminal sessions where interactive input is expected to be safe; otherwise it is
+    `devnull`. If you want to force interactive input, pass `stdin` explicitly.
 - `skip_mutation_failures`: Whether to simply skip over mutations that fail or are rejected, rather than to replace the mutated
     expression with the original expression and proceed normally.
 - `nested_constraints`: Specifies how many times a combination of operators can be nested. For example,
@@ -504,8 +504,9 @@ https://github.com/MilesCranmer/PySR/discussions/115.
 $(OPTION_DESCRIPTIONS)
 """
 
-is_wsl() = occursin(
-    r"microsoft|wsl"i,
+is_wsl_version(version::AbstractString) = occursin(r"microsoft|wsl"i, version)
+
+is_wsl() = is_wsl_version(
     try
         read("/proc/version", String)
     catch
@@ -513,7 +514,16 @@ is_wsl() = occursin(
     end,
 )
 
-@unstable default_input_stream() = Sys.iswindows() || is_wsl() ? devnull : stdin
+function can_use_stdin_by_default(
+    stream::IO=stdin; is_windows::Bool=Sys.iswindows(), running_in_wsl::Bool=is_wsl()
+)
+    (is_windows || running_in_wsl) && return false
+    isreadable(stream) || return false
+    isopen(stream) || return false
+    return stream isa Base.TTY
+end
+
+@unstable default_input_stream() = can_use_stdin_by_default() ? stdin : devnull
 
 @unstable @save_kwargs DEFAULT_OPTIONS function Options(;
     # Note: We can only `@nospecialize` on the first 32 arguments, which is why
