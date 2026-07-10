@@ -1018,6 +1018,7 @@ $(OPTION_DESCRIPTIONS)
     backsolve = something(backsolve, BacksolveOptions())
 
     @assert print_precision > 0
+    @assert final_optimizer_iterations >= 0
 
     _autodiff_backend = if autodiff_backend isa Union{Nothing,AbstractADType}
         autodiff_backend
