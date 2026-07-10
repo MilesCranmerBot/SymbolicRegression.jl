@@ -47,6 +47,11 @@
     hof = HallOfFame(options, dataset)
     update_hall_of_fame!(hof, [m1, m3, m5], options)
 
+    @test :members in propertynames(hof)
+    @test :exists in propertynames(hof)
+    @test_throws ArgumentError (hof.members[1] = m1)
+    @test_throws ArgumentError (hof.exists[1] = false)
+
     members = collect(defined_members(hof))
     @test length(members) == 3
     @test length(defined_members(hof)) == 3

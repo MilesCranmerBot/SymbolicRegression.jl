@@ -1,8 +1,19 @@
 module OptionsModule
 
-# Set by HallOfFameModule after it is loaded, so Options() can default to a
-# concrete criteria type without introducing a load-order dependency.
-const DEFAULT_HALL_OF_FAME_CRITERIA = Ref{Any}(nothing)
+abstract type AbstractHallOfFameCriteria end
+
+struct HallOfFameCriteria{N} <: AbstractHallOfFameCriteria
+    extra_axes::NTuple{N,Symbol}
+end
+
+function HallOfFameCriteria(extra_axes::Vararg{Symbol,N}) where {N}
+    any(==(:complexity), extra_axes) && throw(
+        ArgumentError("Do not include :complexity in HallOfFameCriteria; it is implicit."),
+    )
+    length(extra_axes) == length(unique(extra_axes)) ||
+        throw(ArgumentError("HallOfFameCriteria extra_axes must be unique"))
+    return HallOfFameCriteria{N}(extra_axes)
+end
 
 using DispatchDoctor: @unstable
 using Optim: Optim
@@ -658,7 +669,7 @@ $(OPTION_DESCRIPTIONS)
     una_constraints=nothing,
     terminal_width::Union{Nothing,Integer}=nothing,
     use_recorder::Bool=false,
-    hall_of_fame_criteria::Any=DEFAULT_HALL_OF_FAME_CRITERIA[],
+    hall_of_fame_criteria::AbstractHallOfFameCriteria=HallOfFameCriteria(),
     recorder_file::AbstractString="pysr_recorder.json",
     popmember_type::Type=default_popmember_type(),
     ### Not search options; just construction options:

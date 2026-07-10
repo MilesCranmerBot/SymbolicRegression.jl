@@ -10,33 +10,14 @@ using ..ComplexityModule: compute_complexity
 using ..PopMemberModule: AbstractPopMember, PopMember
 using ..CheckConstraintsModule: check_constraints
 using ..InterfaceDynamicExpressionsModule: format_dimensions, WILDCARD_UNIT_STRING
-import ..CoreModule.OptionsModule: DEFAULT_HALL_OF_FAME_CRITERIA
+using ..CoreModule.OptionsModule: AbstractHallOfFameCriteria, HallOfFameCriteria
 using Printf: @sprintf
-
-"""Abstract strategy for hall-of-fame keying."""
-abstract type AbstractHallOfFameCriteria end
 
 """Built-in hall-of-fame criteria defined by axis symbols.
 
 Complexity is always included as the first axis (it defines the outer bucket).
 The `extra_axes` define additional archive dimensions within each complexity bucket.
 """
-struct HallOfFameCriteria{N} <: AbstractHallOfFameCriteria
-    extra_axes::NTuple{N,Symbol}
-end
-
-function HallOfFameCriteria(extra_axes::Vararg{Symbol,N}) where {N}
-    any(==(:complexity), extra_axes) && throw(
-        ArgumentError("Do not include :complexity in HallOfFameCriteria; it is implicit."),
-    )
-    length(extra_axes) == length(unique(extra_axes)) ||
-        throw(ArgumentError("HallOfFameCriteria extra_axes must be unique"))
-    return HallOfFameCriteria{N}(extra_axes)
-end
-
-# So Options() can default to a concrete criteria (Options is defined/loaded earlier).
-DEFAULT_HALL_OF_FAME_CRITERIA[] = HallOfFameCriteria()
-
 @inline function _criterion_value(axis::Symbol, member, options)::Int
     if !(axis in (:complexity, :depth, :nconsts))
         @noinline throw(
@@ -68,7 +49,8 @@ For backward compatibility we still expose:
 - `hof.exists`: a derived boolean vector indicating which complexity buckets are non-empty.
 - `hof.members`: a derived vector-like view giving the best member per complexity.
 
-Both are *derived*; mutate `hof.cells` (or call `update_hall_of_fame!`) instead.
+Both are derived, read-only compatibility views. Use `update_hall_of_fame!` to
+insert members and mutate `hof.cells` only when working with the keyed archive API.
 """
 struct HallOfFame{
     T<:DATA_TYPE,
@@ -124,7 +106,7 @@ function Base.getproperty(hof::HallOfFame, name::Symbol)
 end
 
 function Base.propertynames(::HallOfFame, private::Bool=false)
-    private ? (:criteria, :cells, :members, :exists) : (:criteria, :cells)
+    return (:criteria, :cells, :members, :exists)
 end
 
 function Base.show(
