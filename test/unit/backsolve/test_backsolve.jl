@@ -416,7 +416,7 @@ end
     @test success_complex
     @test maximum(abs.(theta_complex * coefficients_complex - y_complex)) < 1e-12
 
-    X_complex = ComplexF64[1.0 + 1.0im 2.0 - 1.0im 3.0 + 2.0im 4.0 - 3.0im]
+    X_complex = ComplexF64[1.0+1.0im 2.0-1.0im 3.0+2.0im 4.0-3.0im]
     y_fit_complex = (2.0 + 1.0im) .* X_complex[1, :]
     dataset_complex = Dataset(X_complex, y_fit_complex)
     tree_prototype_complex = Node(ComplexF64; feature=1)
