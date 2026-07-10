@@ -38,7 +38,7 @@ using ..OperatorsModule:
     safe_atanh
 using ..MutationWeightsModule: AbstractMutationWeights, MutationWeights, mutations
 import ..OptionsStructModule: AbstractOptions, Options
-using ..OptionsStructModule: ComplexityMapping, operator_specialization
+using ..OptionsStructModule: ComplexityMapping, BacksolveOptions, operator_specialization
 using ..UtilsModule: @ignore, @save_kwargs
 using ..ExpressionSpecModule:
     AbstractExpressionSpec,
@@ -440,9 +440,9 @@ const OPTION_DESCRIPTIONS = """- `defaults`: What set of defaults to use for `Op
     an instance of `AbstractADType` (see `ADTypes.jl`).
     Default is `nothing`, which means `Optim.jl` will estimate gradients (likely
     with finite differences). You can also pass a symbolic version of the backend
-    type, such as `:Enzyme` for Enzyme.jl (*experimental/unstable*; may fail on
-    some platforms and may be allowed to fail in CI), `:Mooncake` for Mooncake.jl,
-    or `:Zygote` for Zygote.jl. Most backends will not work, and many will never
+    type, such as `:Zygote` for Zygote.jl, `:ForwardDiff` for ForwardDiff.jl,
+    or experimental/partially-supported bridges such as `:Enzyme` for Enzyme.jl or
+    `:Mooncake` for Mooncake.jl. Most backends will not
     work due to incompatibilities, though support for some is gradually being added.
 - `perturbation_factor`: When mutating a constant, either
     multiply or divide by (1+perturbation_factor)^(rand()+1).
@@ -631,6 +631,8 @@ $(OPTION_DESCRIPTIONS)
     perturbation_factor::Union{Nothing,Real}=nothing,
     probability_negate_constant::Union{Real,Nothing}=nothing,
     skip_mutation_failures::Bool=true,
+    ## Backsolve rewrite mutation:
+    backsolve::Union{BacksolveOptions,Nothing}=nothing,
     ## 6. Tournament Selection
     ## 7. Constant Optimization:
     optimizer_algorithm::Union{AbstractString,Optim.AbstractOptimizer}=Optim.BFGS(;
@@ -1053,6 +1055,7 @@ $(OPTION_DESCRIPTIONS)
     end
 
     set_mutation_weights = create_mutation_weights(mutation_weights)
+    backsolve = something(backsolve, BacksolveOptions())
 
     @assert print_precision > 0
 
@@ -1157,6 +1160,7 @@ $(OPTION_DESCRIPTIONS)
         define_helper_functions,
         use_recorder,
         popmember_type,
+        backsolve,
     )
 
     return options
