@@ -109,12 +109,7 @@ jobs:
           - ext/loopvectorization
         exclude:
           - julia-version: "1"
-            group: ad/enzyme
-          - julia-version: "1"
             group: ad/mooncake
-        include:
-          - julia-version: "1.12"
-            group: ad/enzyme
     steps:
       - uses: actions/checkout@v7
       - name: "Set up Julia"
