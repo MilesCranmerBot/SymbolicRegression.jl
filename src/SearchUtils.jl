@@ -309,11 +309,20 @@ function read_available_nonblocking(stream::IO)::Vector{UInt8}
     try
         return readavailable(stream)
     catch err
-        if err isa MethodError || err isa Base.IOError || err isa EOFError
+        if err isa Base.IOError || err isa EOFError
             return UInt8[]
         else
             rethrow(err)
         end
+    end
+end
+
+function read_available_nonblocking(stream::Base.LibuvStream)::Vector{UInt8}
+    Base.iolock_begin()
+    try
+        return take!(stream.buffer)
+    finally
+        Base.iolock_end()
     end
 end
 

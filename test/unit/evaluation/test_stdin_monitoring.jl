@@ -25,6 +25,10 @@
     Base.start_reading(::FakeInputStream) = nothing
     Base.stop_reading(::FakeInputStream) = nothing
 
+    struct UnsupportedReadableIO <: IO end
+    Base.isreadable(::UnsupportedReadableIO) = true
+    Base.start_reading(::UnsupportedReadableIO) = nothing
+
     Base.bytesavailable(stream::FakeInputStream) =
         isempty(stream.chunks) ? 0 : stream.reported_bytes
 
@@ -58,6 +62,9 @@
         () -> SymbolicRegression.watch_stream(watch_stream_input)
     )
     @test quick_watch
+
+    unsupported_reader = SymbolicRegression.watch_stream(UnsupportedReadableIO())
+    @test !unsupported_reader.can_read_user_input
 
     # Reproducer for freeze path in check_for_user_quit.
     slow_input = FakeInputStream(["x"]; reported_bytes=1, read_delay_s=0.2)
