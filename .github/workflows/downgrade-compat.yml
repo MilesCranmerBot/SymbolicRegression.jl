@@ -19,15 +19,15 @@ jobs:
       TEST_GROUP: unit/basic
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Set up Julia
-        uses: julia-actions/setup-julia@v2
+        uses: julia-actions/setup-julia@v3
         with:
           version: "1.10"
 
       - name: Cache dependencies
-        uses: julia-actions/cache@v2
+        uses: julia-actions/cache@v3
 
       - name: Downgrade compat
         uses: julia-actions/julia-downgrade-compat@v2
