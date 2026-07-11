@@ -47,8 +47,7 @@ end
     )
     dataset = Dataset(X, y)
     raw_tree = Node{Float64,2}(;
-        op=1,
-        children=(Node{Float64,2}(; val=0.5), Node{Float64,2}(; feature=1)),
+        op=1, children=(Node{Float64,2}(; val=0.5), Node{Float64,2}(; feature=1))
     )
     tree = create_expression(raw_tree, options, dataset)
     member = PopMember(dataset, tree, options; deterministic=true)
