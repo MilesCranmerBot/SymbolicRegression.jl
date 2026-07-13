@@ -1,4 +1,4 @@
-name: CI
+name: CI Extended
 
 on:
   push:
@@ -6,19 +6,28 @@ on:
       - master
       - release-*
     paths:
-      - "**"
+      - "src/**"
+      - "ext/**"
+      - "test/**"
+      - "Project.toml"
+      - "coverage.jl"
+      - ".github/workflows/CI*.yml"
   pull_request:
     branches:
       - master
       - release-*
     paths:
-      - "**"
+      - "src/**"
+      - "ext/**"
+      - "test/**"
+      - "Project.toml"
+      - "coverage.jl"
+      - ".github/workflows/CI*.yml"
   workflow_dispatch:
+
 concurrency:
-  # Skip intermediate builds: always.
-  # Cancel intermediate builds: only if it is a pull request build.
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ startsWith(github.ref, 'refs/pull/') }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   unit:
@@ -49,6 +58,16 @@ jobs:
             julia-version: "1.10"
           - os: windows-latest
             julia-version: "1.10"
+          # Already covered by the required CI workflow
+          - os: ubuntu-latest
+            julia-version: "1"
+            group: basic
+          - os: macOS-latest
+            julia-version: "1"
+            group: basic
+          - os: windows-latest
+            julia-version: "1"
+            group: basic
 
     steps:
       - uses: actions/checkout@v7
