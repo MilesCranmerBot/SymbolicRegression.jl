@@ -137,8 +137,9 @@ end
 """
     on_search_end!(plugin, state, search_state, dataset, options, ropt)
 
-Lifecycle hook called on the head node after all workers have completed,
-before tearing down processes/threads. Called once per (plugin, output) pair.
+Lifecycle hook called on the head node after the main search loop exits and
+before tearing down processes/threads. Multiprocessing cycles may still be
+running when this hook is called. Called once per (plugin, output) pair.
 
 Override by dispatching on your plugin type. Default is a no-op.
 

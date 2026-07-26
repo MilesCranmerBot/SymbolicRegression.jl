@@ -1,4 +1,4 @@
-@testitem "Plugin interface: on_search_end! runs before owned workers are removed" begin
+@testitem "Plugin interface: teardown does not wait for unfinished multiprocessing cycles" begin
     using Distributed
     using DynamicExpressions: AbstractExpression, Node
     using SymbolicRegression
@@ -16,7 +16,7 @@
     struct TeardownProbeState
         called::Base.RefValue{Bool}
         workers_alive::Base.RefValue{Bool}
-        outputs_ready::Base.RefValue{Bool}
+        outputs_pending::Base.RefValue{Bool}
     end
     function SymbolicRegression.on_search_end!(
         state::TeardownProbeState,
@@ -28,7 +28,9 @@
     )
         state.called[] = true
         state.workers_alive[] = all(in(workers()), search_state.procs)
-        state.outputs_ready[] = all(isready, Iterators.flatten(search_state.worker_output))
+        state.outputs_pending[] = any(
+            !isready, Iterators.flatten(search_state.worker_output)
+        )
         return nothing
     end
 
@@ -47,8 +49,8 @@
 
     called = Ref(false)
     workers_alive = Ref(false)
-    outputs_ready = Ref(false)
-    plugin_state = TeardownProbeState(called, workers_alive, outputs_ready)
+    outputs_pending = Ref(false)
+    plugin_state = TeardownProbeState(called, workers_alive, outputs_pending)
     options = Options(;
         binary_operators=[+, *],
         use_frequency=false,
@@ -60,7 +62,7 @@
 
     proc = only(addprocs(1))
     try
-        future = remotecall(sleep, proc, 0.25)
+        future = Future(proc)
         search_state = TeardownProbeSearchState(
             [proc],
             true,
@@ -70,12 +72,15 @@
             Ref(RecordType()),
         )
 
-        SymbolicRegression._tear_down!(search_state, [nothing], ropt, options)
+        elapsed = @elapsed SymbolicRegression._tear_down!(
+            search_state, [nothing], ropt, options
+        )
 
         @test called[]
-        @test outputs_ready[]
+        @test outputs_pending[]
         @test workers_alive[]
         @test proc ∉ workers()
+        @test elapsed < 10
     finally
         proc in workers() && rmprocs(proc)
     end
