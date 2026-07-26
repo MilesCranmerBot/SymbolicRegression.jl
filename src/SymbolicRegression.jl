@@ -77,6 +77,7 @@ export Population,
     get_metadata,
     with_contents,
     with_metadata,
+    default_mutations,
 
     #Operators
     plus,

@@ -9,6 +9,13 @@ using ..CoreModule: AbstractOptions, DATA_TYPE, Dataset, Backsolve
 
 const STLSQ_DATA_TYPE = Union{AbstractFloat,Complex{<:AbstractFloat}}
 
+function configured_backsolve(options::AbstractOptions)
+    for (mutation, weight) in options.mutations
+        mutation isa Backsolve && weight > 0.0 && return mutation
+    end
+    return Backsolve()
+end
+
 function _solve_library(
     theta::AbstractMatrix{T}, y::AbstractVector{T}
 ) where {T<:STLSQ_DATA_TYPE}
@@ -318,7 +325,7 @@ operator set, since the output is structurally a weighted sum.
     dataset::Dataset{T},
     options::AbstractOptions,
     nfeatures::Int;
-    backsolve_options::Backsolve,
+    backsolve_options::Backsolve=configured_backsolve(options),
     population_for_backsolve=nothing,
 ) where {T<:STLSQ_DATA_TYPE}
     _has_weighted_sum_operators(options) || return nothing

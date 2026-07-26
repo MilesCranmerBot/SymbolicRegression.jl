@@ -6,7 +6,6 @@ using DynamicExpressions:
     AbstractOperatorEnum, AbstractExpressionNode, AbstractExpression, OperatorEnum
 using LossFunctions: SupervisedLoss
 
-import ..MutationWeightsModule: AbstractMutationWeights
 using ..MutationsModule: AbstractMutation
 
 """
@@ -183,7 +182,6 @@ struct Options{
     N<:AbstractExpressionNode,
     E<:AbstractExpression,
     EO<:NamedTuple,
-    MW<:AbstractMutationWeights,
     PT<:Tuple,
     PM,
     _turbo,
@@ -216,7 +214,6 @@ struct Options{
     annealing::Bool
     batching::Bool
     batch_size::Int
-    mutation_weights::MW
     mutations::Vector{Pair{AbstractMutation,Float64}}
     crossover_probability::Float64
     warmup_maxsize_by::Float64
@@ -273,13 +270,8 @@ function Base.print(io::IO, @nospecialize(options::Options))
         *
         join(
             [
-                if fieldname in (
-                    :optimizer_algorithm,
-                    :optimizer_options,
-                    :mutation_weights,
-                    :plugins,
-                    :backsolve,
-                )
+                if fieldname in
+                    (:optimizer_algorithm, :optimizer_options, :plugins, :backsolve)
                     "$(fieldname)=..."
                 else
                     "$(fieldname)=$(getfield(options, fieldname))"

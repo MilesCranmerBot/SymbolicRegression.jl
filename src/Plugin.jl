@@ -227,12 +227,7 @@ Default is a no-op.
 !!! warning "Experimental"
 """
 function on_mutation_end!(
-    _,
-    ::AbstractPlugin,
-    ::AbstractMutation,
-    ::MutationEvent,
-    dataset,
-    options,
+    _, ::AbstractPlugin, ::AbstractMutation, ::MutationEvent, dataset, options
 )
     return nothing
 end

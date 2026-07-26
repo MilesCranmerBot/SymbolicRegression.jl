@@ -9,13 +9,17 @@
         loss=L2DistLoss(),
     )
 
-    @test options.mutation_weights.mutate_constant == 0.0
+    @test only(
+        weight for (mutation, weight) in options.mutations if mutation isa MutateConstant
+    ) == 0.0
     @test options.fraction_replaced_hof == 0.01f0
     @test options.should_optimize_constants == true
     @test options.elementwise_loss == L2DistLoss()
 
     options = Options(; mutationWeights=[1.0 for i in 1:8])
-    @test options.mutation_weights.add_node == 1.0
+    @test only(
+        weight for (mutation, weight) in options.mutations if mutation isa AddNode
+    ) == 1.0
 
     # Test score_func deprecation
     X = randn(3, 5)

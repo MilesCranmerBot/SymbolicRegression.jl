@@ -21,7 +21,9 @@ function SymbolicRegression.mutate!(
 end
 ```
 
-Then include it in `Options(; mutations = [default_mutations()..., MyMutation() => 0.1])`.
+Then include it in `Options(; mutations = [MyMutation() => 0.1])`. Custom
+mutations are appended to the defaults. Pass `default_mutations=()` to use
+only the custom list.
 
 !!! warning "Experimental"
 """
@@ -96,7 +98,7 @@ struct DoNothing <: AbstractMutation end
 """
     default_mutations() -> Vector{Pair{AbstractMutation,Float64}}
 
-Default mutation list with the historical `MutationWeights` weights. The
+Default mutation list with the `MutationWeights()` weights. The
 weights match `MutationWeights`' field defaults but the order is keyed by
 type, not by the field-name order — conversion from `MutationWeights` is
 done by `_mutations_from_weights` via an explicit symbol → type mapping.

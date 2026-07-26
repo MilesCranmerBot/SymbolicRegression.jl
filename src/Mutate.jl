@@ -12,7 +12,6 @@ using DynamicExpressions:
     allocate_container
 using ..CoreModule:
     AbstractOptions,
-    AbstractMutationWeights,
     AbstractMutation,
     MutateConstant,
     MutateOperator,
@@ -31,7 +30,6 @@ using ..CoreModule:
     DoNothing,
     Dataset,
     RecordType,
-    sample_mutation,
     max_features,
     dataset_fraction,
     AbstractPlugin,
@@ -205,13 +203,7 @@ engine's legality conditioning. Default is a no-op.
 !!! warning "Experimental"
 """
 function condition_mutation_weights!(
-    weights::AbstractVector,
-    _,
-    ::AbstractPlugin,
-    member,
-    options,
-    curmaxsize,
-    nfeatures,
+    weights::AbstractVector, _, ::AbstractPlugin, member, options, curmaxsize, nfeatures
 )
     return nothing
 end
@@ -231,6 +223,26 @@ function condition_mutate_constant!(
     return nothing
 end
 
+@unstable function _sample_mutation(
+    mutations::AbstractVector{Pair{AbstractMutation,Float64}}
+)
+    total_weight = 0.0
+    for (_, weight) in mutations
+        weight >= 0.0 || throw(ArgumentError("Mutation weights must be nonnegative."))
+        total_weight += weight
+    end
+    total_weight > 0.0 ||
+        throw(ArgumentError("At least one mutation weight must be positive."))
+
+    threshold = rand() * total_weight
+    cumulative_weight = 0.0
+    for (mutation, weight) in mutations
+        cumulative_weight += weight
+        threshold < cumulative_weight && return mutation
+    end
+    return last(mutations).first
+end
+
 # Go through one simulated options.annealing mutation cycle
 @inline function _fire_on_mutation_end!(
     options::AbstractOptions,
@@ -243,6 +255,42 @@ end
         on_mutation_end!(pstate, plugin, mutation, event, dataset, options)
     end
     return nothing
+end
+
+@inline function _dispatch_next_generation(mutation::AbstractMutation, args...)
+    if mutation isa MutateConstant
+        return _next_generation(mutation, args...)
+    elseif mutation isa MutateOperator
+        return _next_generation(mutation, args...)
+    elseif mutation isa MutateFeature
+        return _next_generation(mutation, args...)
+    elseif mutation isa SwapOperands
+        return _next_generation(mutation, args...)
+    elseif mutation isa AddNode
+        return _next_generation(mutation, args...)
+    elseif mutation isa InsertNode
+        return _next_generation(mutation, args...)
+    elseif mutation isa DeleteNode
+        return _next_generation(mutation, args...)
+    elseif mutation isa FormConnection
+        return _next_generation(mutation, args...)
+    elseif mutation isa BreakConnection
+        return _next_generation(mutation, args...)
+    elseif mutation isa RotateTree
+        return _next_generation(mutation, args...)
+    elseif mutation isa Backsolve
+        return _next_generation(mutation, args...)
+    elseif mutation isa Simplify
+        return _next_generation(mutation, args...)
+    elseif mutation isa Randomize
+        return _next_generation(mutation, args...)
+    elseif mutation isa Optimize
+        return _next_generation(mutation, args...)
+    elseif mutation isa DoNothing
+        return _next_generation(mutation, args...)
+    else
+        return _next_generation(mutation, args...)
+    end
 end
 
 #  exp(-delta/T) defines probability of accepting a change
@@ -275,12 +323,10 @@ end
         )
     end
 
-    mutation_choice = sample_mutation(weights)
+    mutation_choice = _sample_mutation(weights)
 
-    # Function barrier: dispatch once on the concrete type of `mutation_choice`,
-    # then every `mutate!` / `on_mutation_end!` call inside `_next_generation`
-    # is statically resolved.
-    return _next_generation(
+    # Preserve concrete mutation dispatch through the hot path.
+    return _dispatch_next_generation(
         mutation_choice,
         dataset,
         member,

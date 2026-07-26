@@ -29,13 +29,29 @@ end
 
 @testitem "Test backsolve options" begin
     using SymbolicRegression
+    using SymbolicRegression.BacksolveModule: configured_backsolve
 
     # Backsolve config is inlined on the Backsolve mutation now.
     default_backsolve = first(p.first for p in Options().mutations if p.first isa Backsolve)
     @test default_backsolve == Backsolve()
 
-    custom = Options(; mutations=[Backsolve(; lambda=0.2) => 1.0])
+    custom = Options(; default_mutations=(), mutations=[Backsolve(; lambda=0.2) => 1.0])
+    @test length(custom.mutations) == 1
     @test custom.mutations[1].first.lambda == 0.2
+
+    with_addition = Options(; mutations=(Backsolve(; lambda=0.3) => 1.0,))
+    @test length(with_addition.mutations) == length(default_mutations()) + 1
+    @test last(with_addition.mutations).first == Backsolve(; lambda=0.3)
+    @test configured_backsolve(with_addition).lambda == 0.3
+
+    @test isempty(Options(; default_mutations=()).mutations)
+    @test default_mutations() == SymbolicRegression.default_mutations()
+
+    struct CustomMutationWeights <: SymbolicRegression.AbstractMutationWeights end
+    @test_throws ArgumentError Options(; mutation_weights=CustomMutationWeights())
+    @test_throws ArgumentError Options(;
+        mutation_weights=MutationWeights(), default_mutations=()
+    )
 end
 
 @testitem "Test operators parameter conflicts" begin

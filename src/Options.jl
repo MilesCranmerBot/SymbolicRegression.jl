@@ -454,9 +454,10 @@ const OPTION_DESCRIPTIONS = """- `defaults`: What set of defaults to use for `Op
     multiply or divide by (1+perturbation_factor)^(rand()+1).
 - `probability_negate_constant`: Probability of negating a constant in the equation
     when mutating it.
-- `mutation_weights`: Relative probabilities of the mutations. The struct
-    `MutationWeights` (or any `AbstractMutationWeights`) should be passed to these options.
-    See its documentation on `MutationWeights` for the different weights.
+- `mutation_weights`: Built-in mutation weights, converted to `default_mutations`.
+- `default_mutations`: Weighted built-in mutation list. Pass `()` to disable
+    every default mutation.
+- `mutations`: Weighted custom mutations appended to `default_mutations`.
 - `crossover_probability`: Probability of performing crossover.
 - `annealing`: Whether to use simulated annealing.
 - `warmup_maxsize_by`: Whether to slowly increase the max size from 5 up to
@@ -553,7 +554,8 @@ $(OPTION_DESCRIPTIONS)
         mutation_weights::Union{AbstractMutationWeights,AbstractVector,NamedTuple,Nothing} =
             nothing
     ),
-    @nospecialize(mutations::Union{AbstractVector,Nothing} = nothing),
+    @nospecialize(default_mutations::Union{AbstractVector,Tuple,Nothing} = nothing),
+    @nospecialize(mutations::Union{AbstractVector,Tuple,Nothing} = nothing),
     @nospecialize(crossover_probability::Union{Real,Nothing} = nothing),
     @nospecialize(annealing::Union{Bool,Nothing} = nothing),
     @nospecialize(alpha::Union{Nothing,Real} = nothing),
@@ -743,6 +745,7 @@ $(OPTION_DESCRIPTIONS)
             "Unknown deprecated keyword argument: $k. Please update `Options(;)` to transfer this key.",
         )
     end
+    mutation_weights_were_provided = mutation_weights !== nothing
     if npop !== nothing
         Base.depwarn("`npop` is deprecated. Use `population_size` instead.", :Options)
         population_size = npop
@@ -1019,10 +1022,15 @@ $(OPTION_DESCRIPTIONS)
     end
 
     set_mutation_weights = create_mutation_weights(mutation_weights)
-    _resolved_mutations = if mutations === nothing
+    if mutation_weights_were_provided && default_mutations !== nothing
+        throw(
+            ArgumentError(
+                "`mutation_weights` and `default_mutations` cannot be used together."
+            ),
+        )
+    end
+    _default_mutations = if default_mutations === nothing
         base = MutationWeightsModule._mutations_from_weights(set_mutation_weights)
-        # Backwards compat: plumb `perturbation_factor` and
-        # `probability_negate_constant` kwargs into the default MutateConstant.
         for i in eachindex(base)
             if base[i].first isa MutationsModule.MutateConstant
                 base[i] =
@@ -1035,9 +1043,13 @@ $(OPTION_DESCRIPTIONS)
         base
     else
         Pair{MutationsModule.AbstractMutation,Float64}[
-            p.first => Float64(p.second) for p in mutations
+            p.first => Float64(p.second) for p in default_mutations
         ]
     end
+    _custom_mutations = Pair{MutationsModule.AbstractMutation,Float64}[
+        p.first => Float64(p.second) for p in something(mutations, ())
+    ]
+    _resolved_mutations = vcat(_default_mutations, _custom_mutations)
 
     user_plugin_tuple = Tuple(plugins)
     default_plugin_tuple = if default_plugins === nothing
@@ -1073,7 +1085,6 @@ $(OPTION_DESCRIPTIONS)
         node_type,
         expression_type,
         typeof(expression_options),
-        typeof(set_mutation_weights),
         typeof(plugin_tuple),
         popmember_type,
         turbo,
@@ -1106,7 +1117,6 @@ $(OPTION_DESCRIPTIONS)
         annealing,
         batching,
         batch_size,
-        set_mutation_weights,
         _resolved_mutations,
         crossover_probability,
         warmup_maxsize_by,

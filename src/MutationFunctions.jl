@@ -21,7 +21,7 @@ using Statistics: median
 using ..CoreModule:
     AbstractOptions, DATA_TYPE, init_value, sample_value, Dataset, MutateConstant
 using ..EvaluateInverseModule: eval_inverse_tree_array, is_bad_array
-using ..BacksolveModule: fit_sparse_expression
+using ..BacksolveModule: fit_sparse_expression, configured_backsolve
 
 import ..CoreModule: mutate_value
 
@@ -134,6 +134,15 @@ function mutate_constant(
     return ex
 end
 function mutate_constant(
+    ex::AbstractExpression{T}, temperature, options::AbstractOptions, rng::AbstractRNG
+) where {T<:DATA_TYPE}
+    Base.depwarn(
+        "Passing `rng` as the fourth positional argument to `mutate_constant` is deprecated. Pass `MutateConstant()` before `rng`.",
+        :mutate_constant,
+    )
+    return mutate_constant(ex, temperature, options, MutateConstant(), rng)
+end
+function mutate_constant(
     tree::AbstractExpressionNode{T},
     temperature,
     options::AbstractOptions,
@@ -146,6 +155,15 @@ function mutate_constant(
     node = rand(rng, NodeSampler(; tree, filter=t -> (t.degree == 0 && t.constant)))
     node.val = mutate_value(rng, node.val, temperature, m)
     return tree
+end
+function mutate_constant(
+    tree::AbstractExpressionNode{T}, temperature, options::AbstractOptions, rng::AbstractRNG
+) where {T<:DATA_TYPE}
+    Base.depwarn(
+        "Passing `rng` as the fourth positional argument to `mutate_constant` is deprecated. Pass `MutateConstant()` before `rng`.",
+        :mutate_constant,
+    )
+    return mutate_constant(tree, temperature, options, MutateConstant(), rng)
 end
 
 function mutate_value(
@@ -651,7 +669,7 @@ function backsolve_rewrite_random_node(
     dataset::Dataset{T},
     options::AbstractOptions,
     rng::AbstractRNG=default_rng();
-    backsolve_options,
+    backsolve_options=configured_backsolve(options),
     population_for_backsolve=nothing,
 ) where {T<:DATA_TYPE}
     throw(
@@ -666,7 +684,7 @@ function backsolve_rewrite_random_node(
     dataset::Dataset{T},
     options::AbstractOptions,
     rng::AbstractRNG=default_rng();
-    backsolve_options,
+    backsolve_options=configured_backsolve(options),
     population_for_backsolve=nothing,
 ) where {T<:DATA_TYPE}
     tree = get_contents(ex)
@@ -681,7 +699,7 @@ function backsolve_rewrite_random_node(
     dataset::Dataset{T},
     options::AbstractOptions,
     rng::AbstractRNG=default_rng();
-    backsolve_options,
+    backsolve_options=configured_backsolve(options),
     population_for_backsolve=nothing,
 ) where {T<:DATA_TYPE}
     if !(T <: Union{AbstractFloat,Complex{<:AbstractFloat}})
@@ -739,7 +757,7 @@ function backsolve_rewrite_random_node(
     dataset::Dataset{T},
     options::AbstractOptions,
     rng::AbstractRNG=default_rng();
-    backsolve_options,
+    backsolve_options=configured_backsolve(options),
     population_for_backsolve=nothing,
 ) where {T<:DATA_TYPE,D}
     throw(

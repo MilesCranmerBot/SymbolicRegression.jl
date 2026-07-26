@@ -357,22 +357,36 @@ end
 
     # Plugin that zeroes out `mutate_constant` from its dispatched method.
     # Verifies the engine layers plugin conditioning on top of its own.
-    struct ZeroConstPlugin <: AbstractPlugin end
-    mutable struct ZeroConstState end
-    SymbolicRegression.init_plugin_state(::ZeroConstPlugin, o, d) = ZeroConstState()
+    struct ZeroConstPlugin <: AbstractPlugin
+        calls::Base.RefValue{Int}
+    end
+    mutable struct ZeroConstState
+        calls::Base.RefValue{Int}
+    end
+    SymbolicRegression.init_plugin_state(plugin::ZeroConstPlugin, o, d) = ZeroConstState(
+        plugin.calls
+    )
+    SymbolicRegression.fork_plugin_state(
+        state::ZeroConstState, ::ZeroConstPlugin, dataset
+    ) = state
     function SymbolicRegression.condition_mutation_weights!(
-        weights::SymbolicRegression.AbstractMutationWeights,
-        ::ZeroConstState,
+        weights::AbstractVector,
+        state::ZeroConstState,
         ::ZeroConstPlugin,
         member,
         options,
         curmaxsize,
         nfeatures,
     )
-        weights.mutate_constant = 0.0
+        state.calls[] += 1
+        for i in eachindex(weights)
+            mutation, weight = weights[i]
+            mutation isa MutateConstant && (weights[i] = mutation => zero(weight))
+        end
         return nothing
     end
 
+    calls = Ref(0)
     opts = Options(;
         binary_operators=[+, *],
         populations=2,
@@ -380,10 +394,11 @@ end
         progress=false,
         use_frequency=false,
         use_frequency_in_tournament=false,
-        plugins=(ZeroConstPlugin(),),
+        plugins=(ZeroConstPlugin(calls),),
     )
     X = rand(Float32, 2, 20)
     y = X[1, :] .+ X[2, :]
     hof = equation_search(X, y; options=opts, niterations=2, parallelism=:serial)
     @test hof isa SymbolicRegression.HallOfFame
+    @test calls[] > 0
 end

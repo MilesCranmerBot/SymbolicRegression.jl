@@ -20,7 +20,6 @@ using ..CoreModule:
     Dataset,
     SubDataset,
     DATA_TYPE,
-    AbstractMutationWeights,
     MutateConstant,
     AbstractExpressionSpec,
     get_indices,
@@ -175,20 +174,33 @@ function MF.mutate_constant(
     ex::ParametricExpression{T},
     temperature,
     options::AbstractOptions,
+    mutation::MutateConstant=MutateConstant(),
     rng::AbstractRNG=default_rng(),
 ) where {T<:DATA_TYPE}
     if rand(rng, Bool)
         # Normal mutation of inner constant
         tree = get_contents(ex)
-        return with_contents(ex, MF.mutate_constant(tree, temperature, options, rng))
+        return with_contents(
+            ex, MF.mutate_constant(tree, temperature, options, mutation, rng)
+        )
     else
         # Mutate parameters
         parameter_index = rand(rng, 1:(options.expression_options.max_parameters))
         # We mutate all the parameters at once
-        factor = MF.mutate_factor(T, temperature, MutateConstant(), rng)
+        factor = MF.mutate_factor(T, temperature, mutation, rng)
         get_metadata(ex).parameters[parameter_index, :] .*= factor
         return ex
     end
+end
+
+function MF.mutate_constant(
+    ex::ParametricExpression{T}, temperature, options::AbstractOptions, rng::AbstractRNG
+) where {T<:DATA_TYPE}
+    Base.depwarn(
+        "Passing `rng` as the fourth positional argument to `mutate_constant` is deprecated. Pass `MutateConstant()` before `rng`.",
+        :mutate_constant,
+    )
+    return MF.mutate_constant(ex, temperature, options, MutateConstant(), rng)
 end
 
 # ParametricExpression handles class columns

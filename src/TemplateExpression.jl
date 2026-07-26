@@ -37,7 +37,6 @@ using ..CoreModule:
     Options,
     Dataset,
     CoreModule as CM,
-    AbstractMutationWeights,
     MutateConstant,
     has_units,
     DATA_TYPE,
@@ -940,13 +939,14 @@ function MF.mutate_constant(
     ex::TemplateExpression{T},
     temperature,
     options::AbstractOptions,
+    mutation::MutateConstant=MutateConstant(),
     rng::AbstractRNG=default_rng(),
 ) where {T<:DATA_TYPE}
     regular_constant_mutation = !has_params(ex) || (has_constants(ex) && rand(rng, Bool))
     if regular_constant_mutation
         # Normal mutation of inner constant
         tree, context = MF.get_contents_for_mutation(ex, rng)
-        new_tree = MF.mutate_constant(tree, temperature, options, rng)
+        new_tree = MF.mutate_constant(tree, temperature, options, mutation, rng)
         return MF.with_contents_for_mutation(ex, new_tree, context)
     else # Mutate parameters
 
@@ -961,14 +961,22 @@ function MF.mutate_constant(
             rng, 1:num_params, num_params_to_mutate; replace=false
         )
         parameters = get_metadata(ex).parameters[key_to_mutate]::ParamVector
-        factors = [
-            MF.mutate_factor(T, temperature, MutateConstant(), rng) for _ in idx_to_mutate
-        ]
+        factors = [MF.mutate_factor(T, temperature, mutation, rng) for _ in idx_to_mutate]
         @inbounds for (i, f) in zip(idx_to_mutate, factors)
             parameters._data[i] *= f
         end
         return ex
     end
+end
+
+function MF.mutate_constant(
+    ex::TemplateExpression{T}, temperature, options::AbstractOptions, rng::AbstractRNG
+) where {T<:DATA_TYPE}
+    Base.depwarn(
+        "Passing `rng` as the fourth positional argument to `mutate_constant` is deprecated. Pass `MutateConstant()` before `rng`.",
+        :mutate_constant,
+    )
+    return MF.mutate_constant(ex, temperature, options, MutateConstant(), rng)
 end
 # TODO: Look at other ParametricExpression behavior
 

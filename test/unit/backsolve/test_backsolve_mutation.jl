@@ -7,55 +7,6 @@
     using DynamicExpressions: Node, OperatorEnum, count_nodes, Expression, get_child
     using StableRNGs: StableRNG
 
-    import SymbolicRegression: sample_mutation
-
-    mutable struct BacksolveOnlyWeights <: SymbolicRegression.AbstractMutationWeights
-        counter::Base.RefValue{Int}
-        mutate_constant::Float64
-        mutate_operator::Float64
-        mutate_feature::Float64
-        swap_operands::Float64
-        rotate_tree::Float64
-        add_node::Float64
-        insert_node::Float64
-        delete_node::Float64
-        simplify::Float64
-        randomize::Float64
-        do_nothing::Float64
-        optimize::Float64
-        backsolve::Float64
-        form_connection::Float64
-        break_connection::Float64
-    end
-
-    function BacksolveOnlyWeights(counter::Base.RefValue{Int})
-        return BacksolveOnlyWeights(
-            counter,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            1.0,
-            0.0,
-            0.0,
-        )
-    end
-
-    Base.copy(weights::BacksolveOnlyWeights) = weights
-
-    function sample_mutation(weights::BacksolveOnlyWeights)
-        weights.counter[] += 1
-        return :backsolve
-    end
-
     rng = StableRNG(0)
 
     @testset "InverseFunctions - Unary operators" begin
@@ -385,13 +336,7 @@
         member = PopMember(dataset, tree, options; deterministic=true)
 
         result = mutate!(
-            ex,
-            member,
-            Val(:backsolve),
-            options.mutation_weights,
-            options;
-            recorder=Dict{String,Any}(),
-            dataset=dataset,
+            ex, member, Backsolve(), options; recorder=Dict{String,Any}(), dataset=dataset
         )
 
         @test result isa SymbolicRegression.MutateModule.MutationResult
@@ -399,14 +344,14 @@
     end
 
     @testset "Integration - backsolve in equation_search" begin
-        counter = Ref(0)
         X = reshape(Float64[1.0, 2.0, 3.0, 4.0], 1, 4)
         y = 2 .* vec(X) .+ 1
 
         options = Options(;
             binary_operators=(+, *, -),
             unary_operators=(sin,),
-            mutation_weights=BacksolveOnlyWeights(counter),
+            default_mutations=(),
+            mutations=(Backsolve() => 1.0,),
             population_size=20,
             populations=1,
             ncycles_per_iteration=20,
@@ -421,7 +366,6 @@
             X, y; niterations=1, options, parallelism=:serial, guesses=["x1 + 1.0"]
         )
 
-        @test counter[] > 0
         @test !isempty(hall_of_fame.members)
         @test any(member -> isfinite(member.loss), hall_of_fame.members)
     end
