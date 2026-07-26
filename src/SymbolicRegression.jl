@@ -1199,9 +1199,13 @@ function _tear_down!(
 )
     close_reader!(state.stdin_reader)
     if ropt.parallelism in (:multiprocessing, :multithreading)
-        nout = length(state.worker_output)
-        for j in 1:nout, i in eachindex(state.worker_output[j])
-            wait(state.worker_output[j][i])
+        outputs = Iterators.flatten(state.worker_output)
+        if ropt.parallelism == :multiprocessing
+            timedwait(() -> all(isready, outputs), 5.0; pollint=0.01)
+        else
+            for output in outputs
+                wait(output)
+            end
         end
     end
     for j in eachindex(datasets, state.plugin_states)
