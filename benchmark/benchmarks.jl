@@ -28,6 +28,7 @@ function create_search_benchmark()
         extra_kws = merge(extra_kws, (define_helper_functions=false,))
     end
     option_kws = (;
+        defaults=v"1.0.0",
         binary_operators=(+, -, /, *),
         unary_operators=(exp, abs),
         maxsize=30,
@@ -86,7 +87,9 @@ end
 function create_utils_benchmark()
     suite = BenchmarkGroup()
 
-    options = Options(; unary_operators=[sin, cos], binary_operators=[+, -, *, /])
+    options = Options(;
+        defaults=v"1.0.0", unary_operators=[sin, cos], binary_operators=[+, -, *, /]
+    )
 
     # The pre-plugin-interface signature took an `rss::RunningSearchStatistics`
     # positional arg in both `best_of_sample` and `next_generation`. The
@@ -151,6 +154,7 @@ function create_utils_benchmark()
                     break_connection=0.0,
                 );
                 options=Options(;
+                    defaults=v"1.0.0",
                     unary_operators=[sin, cos],
                     binary_operators=[+, -, *, /],
                     mutation_weights,
@@ -203,6 +207,7 @@ function create_utils_benchmark()
                     break_connection=0.0,
                 );
                 options=Options(;
+                    defaults=v"1.0.0",
                     unary_operators=[sin, cos],
                     binary_operators=[+, -, *, /],
                     mutation_weights,
@@ -250,6 +255,7 @@ function create_utils_benchmark()
     suite["compute_complexity_x10"] = let s = BenchmarkGroup()
         for T in (Float64, Int, nothing)
             options = Options(;
+                defaults=v"1.0.0",
                 unary_operators=[sin, cos],
                 binary_operators=[+, -, *, /],
                 complexity_of_constants=T === nothing ? T : T(1),
@@ -304,6 +310,7 @@ function create_utils_benchmark()
 
     ntrees = 10
     options = Options(;
+        defaults=v"1.0.0",
         unary_operators=[sin, cos],
         binary_operators=[+, -, *, /],
         maxsize=30,
