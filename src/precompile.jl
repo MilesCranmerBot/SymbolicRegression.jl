@@ -33,7 +33,7 @@ end
 """`mode=:precompile` will use `@precompile_*` directives; `mode=:compile` runs."""
 function do_precompilation(::Val{mode}) where {mode}
     @maybe_setup_workload mode begin
-        for T in [Float32, Float64], nout in 1:2
+        for T in (Float32,), nout in (1,)
             start = nout == 1
             N = 30
             X = randn(T, 3, N)
