@@ -23,9 +23,9 @@ function SymbolicRegression.mutate!(
 end
 ```
 
-Then include it in `Options(; mutations = [MyMutation() => 0.1])`. Custom
-mutations are appended to the defaults. Pass `default_mutations=()` to use
-only the custom list.
+Then include it in `Options(; mutations = [MyMutation() => 0.1])`. An explicit
+mutation replaces a default of the same type; new mutation types are added.
+Pass `default_mutations=()` to disable every automatic default.
 
 !!! warning "Experimental"
 """

@@ -29,7 +29,7 @@ will be normalized to sum to 1.0 after initialization.
 
 !!! warning
     `MutationWeights` is deprecated. Pass weighted mutation instances through
-    `Options(; default_mutations=...)`.
+    `Options(; mutations=...)`.
 
 # Arguments
 
@@ -127,7 +127,7 @@ end
 
 function MutationWeights(; kws...)
     Base.depwarn(
-        "`MutationWeights` is deprecated. Pass weighted mutation instances through `Options(; default_mutations=...)`.",
+        "`MutationWeights` is deprecated. Pass weighted mutation instances through `Options(; mutations=...)`.",
         :MutationWeights,
     )
     return _mutation_weights(; kws...)

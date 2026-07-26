@@ -453,10 +453,12 @@ const OPTION_DESCRIPTIONS = """- `defaults`: What set of defaults to use for `Op
     multiply or divide by (1+perturbation_factor)^(rand()+1).
 - `probability_negate_constant`: Probability of negating a constant in the equation
     when mutating it.
-- `mutation_weights`: Built-in mutation weights, converted to `default_mutations`.
-- `default_mutations`: Weighted built-in mutation list. Pass `()` to disable
-    every default mutation.
-- `mutations`: Weighted custom mutations appended to `default_mutations`.
+- `mutation_weights`: Deprecated built-in mutation weights, converted to
+    `default_mutations`.
+- `mutations`: Explicit weighted mutations. An entry replaces a default mutation
+    of the same type; new mutation types are added.
+- `default_mutations`: Default weighted mutations considered after `mutations`.
+    Pass `()` to disable every automatic default.
 - `crossover_probability`: Probability of performing crossover.
 - `annealing`: Whether to use simulated annealing.
 - `warmup_maxsize_by`: Whether to slowly increase the max size from 5 up to
@@ -1042,10 +1044,15 @@ $(OPTION_DESCRIPTIONS)
             p.first => Float64(p.second) for p in default_mutations
         ]
     end
-    _custom_mutations = Pair{MutationsModule.AbstractMutation,Float64}[
+    _explicit_mutations = Pair{MutationsModule.AbstractMutation,Float64}[
         p.first => Float64(p.second) for p in something(mutations, ())
     ]
-    _resolved_mutations = vcat(_default_mutations, _custom_mutations)
+    _remaining_defaults = filter(
+        default ->
+            !any(explicit -> explicit.first isa typeof(default.first), _explicit_mutations),
+        _default_mutations,
+    )
+    _resolved_mutations = vcat(_explicit_mutations, _remaining_defaults)
 
     user_plugin_tuple = Tuple(plugins)
     default_plugin_tuple = if default_plugins === nothing
