@@ -134,7 +134,7 @@ function _optimize_constants_inner(
         xt = let
             ET = eltype(x0)
             eps = randn(rng, ET, size(x0)...)
-            @. x0 * (ET(1) + ET(1 // 2) * eps)
+            @. ifelse(iszero(x0), eps, x0 * (ET(1) + ET(1 // 2) * eps))
         end
         tmpresult = Optim.optimize(obj, xt, algorithm, optimizer_options)
         num_evals += tmpresult.f_calls * eval_fraction
