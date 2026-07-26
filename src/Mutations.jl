@@ -32,46 +32,46 @@ only the custom list.
 abstract type AbstractMutation end
 
 """
-    MutateConstant(; perturbation_factor=0.086, probability_negate=0.01)
+    ConstantMutation(; perturbation_factor=0.086, probability_negate=0.01)
 
 Perturb a random constant. `perturbation_factor` scales the magnitude
 (modulated by temperature); `probability_negate` is the chance of
 flipping the constant's sign.
 """
-Base.@kwdef struct MutateConstant <: AbstractMutation
+Base.@kwdef struct ConstantMutation <: AbstractMutation
     perturbation_factor::Float64 = 0.086
     probability_negate::Float64 = 0.01
 end
 
 """Swap a random operator for another of the same arity."""
-struct MutateOperator <: AbstractMutation end
+struct OperatorMutation <: AbstractMutation end
 
 """Reassign a random variable leaf to a different input feature."""
-struct MutateFeature <: AbstractMutation end
+struct FeatureMutation <: AbstractMutation end
 
 """Swap the operands of a random binary operator."""
-struct SwapOperands <: AbstractMutation end
+struct SwapOperandsMutation <: AbstractMutation end
 
 """Append a random new operator (with fresh leaves) at a random leaf."""
-struct AddNode <: AbstractMutation end
+struct AddNodeMutation <: AbstractMutation end
 
 """Insert a random new operator between an existing node and its parent."""
-struct InsertNode <: AbstractMutation end
+struct InsertNodeMutation <: AbstractMutation end
 
 """Delete a random non-leaf node, replacing it with one of its children."""
-struct DeleteNode <: AbstractMutation end
+struct DeleteNodeMutation <: AbstractMutation end
 
 """Form a shared-subtree connection between two nodes (graph-mode only)."""
-struct FormConnection <: AbstractMutation end
+struct FormConnectionMutation <: AbstractMutation end
 
 """Break a shared-subtree connection by deep-copying one of the references."""
-struct BreakConnection <: AbstractMutation end
+struct BreakConnectionMutation <: AbstractMutation end
 
 """Rotate a random subtree (rebalancing the AST)."""
-struct RotateTree <: AbstractMutation end
+struct RotateTreeMutation <: AbstractMutation end
 
 """
-    Backsolve(; max_library_size=500, lambda=0.01, max_iter=10)
+    BacksolveMutation(; max_library_size=500, lambda=0.01, max_iter=10)
 
 Invert a random non-root node by solving for its target values, then
 replace it with a sparse-expression fit (STLSQ).
@@ -79,40 +79,40 @@ replace it with a sparse-expression fit (STLSQ).
 !!! warning
     Experimental. May change in minor version increments.
 """
-Base.@kwdef struct Backsolve <: AbstractMutation
+Base.@kwdef struct BacksolveMutation <: AbstractMutation
     max_library_size::Int = 500
     lambda::Float64 = 0.01
     max_iter::Int = 10
 end
 
 """Algebraically simplify the tree (e.g. fold constants)."""
-struct Simplify <: AbstractMutation end
+struct SimplifyMutation <: AbstractMutation end
 
 """Replace the tree with a freshly generated random tree."""
-struct Randomize <: AbstractMutation end
+struct RandomizeMutation <: AbstractMutation end
 
 """Run gradient-based constant optimization on the tree (reads optimizer settings from `options`)."""
-struct Optimize <: AbstractMutation end
+struct OptimizeMutation <: AbstractMutation end
 
 """No-op mutation: copy the parent unchanged (acts as a sampling weight reserve)."""
-struct DoNothing <: AbstractMutation end
+struct DoNothingMutation <: AbstractMutation end
 
 const BUILTIN_MUTATION_TYPES = (
-    MutateConstant,
-    MutateOperator,
-    MutateFeature,
-    SwapOperands,
-    AddNode,
-    InsertNode,
-    DeleteNode,
-    FormConnection,
-    BreakConnection,
-    RotateTree,
-    Backsolve,
-    Simplify,
-    Randomize,
-    Optimize,
-    DoNothing,
+    ConstantMutation,
+    OperatorMutation,
+    FeatureMutation,
+    SwapOperandsMutation,
+    AddNodeMutation,
+    InsertNodeMutation,
+    DeleteNodeMutation,
+    FormConnectionMutation,
+    BreakConnectionMutation,
+    RotateTreeMutation,
+    BacksolveMutation,
+    SimplifyMutation,
+    RandomizeMutation,
+    OptimizeMutation,
+    DoNothingMutation,
 )
 
 """
@@ -123,21 +123,21 @@ derives its defaults from this list.
 """
 function default_mutations()
     return Pair{AbstractMutation,Float64}[
-        MutateConstant() => 0.0353,
-        MutateOperator() => 3.63,
-        MutateFeature() => 0.1,
-        SwapOperands() => 0.00608,
-        RotateTree() => 1.42,
-        AddNode() => 0.0771,
-        InsertNode() => 2.44,
-        DeleteNode() => 0.369,
-        Simplify() => 0.00148,
-        Randomize() => 0.00695,
-        DoNothing() => 0.431,
-        Optimize() => 0.0,
-        Backsolve() => 0.0,
-        FormConnection() => 0.5,
-        BreakConnection() => 0.1,
+        ConstantMutation() => 0.0353,
+        OperatorMutation() => 3.63,
+        FeatureMutation() => 0.1,
+        SwapOperandsMutation() => 0.00608,
+        RotateTreeMutation() => 1.42,
+        AddNodeMutation() => 0.0771,
+        InsertNodeMutation() => 2.44,
+        DeleteNodeMutation() => 0.369,
+        SimplifyMutation() => 0.00148,
+        RandomizeMutation() => 0.00695,
+        DoNothingMutation() => 0.431,
+        OptimizeMutation() => 0.0,
+        BacksolveMutation() => 0.0,
+        FormConnectionMutation() => 0.5,
+        BreakConnectionMutation() => 0.1,
     ]
 end
 

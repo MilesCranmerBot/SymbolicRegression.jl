@@ -9,7 +9,7 @@
 
     rng = StableRNG(0)
     options_with_backsolve(; kws...) = Options(;
-        default_mutations=(), mutations=(Backsolve() => 1.0,), kws...
+        default_mutations=(), mutations=(BacksolveMutation() => 1.0,), kws...
     )
 
     @testset "InverseFunctions - Unary operators" begin
@@ -343,7 +343,12 @@
         member = PopMember(dataset, tree, options; deterministic=true)
 
         result = mutate!(
-            ex, member, Backsolve(), options; recorder=Dict{String,Any}(), dataset=dataset
+            ex,
+            member,
+            BacksolveMutation(),
+            options;
+            recorder=Dict{String,Any}(),
+            dataset=dataset,
         )
 
         @test result isa SymbolicRegression.MutateModule.MutationResult
@@ -358,7 +363,7 @@
             binary_operators=(+, *, -),
             unary_operators=(sin,),
             default_mutations=(),
-            mutations=(Backsolve() => 1.0,),
+            mutations=(BacksolveMutation() => 1.0,),
             population_size=20,
             populations=1,
             ncycles_per_iteration=20,

@@ -35,7 +35,7 @@
     @test on_generation_end!(s, p, nothing, nothing, opts, nothing, nothing) === nothing
     @test on_cycle_end!(s, p, nothing, nothing, nothing, opts) === nothing
     @test on_mutation_end!(
-        s, p, MutateConstant(), MutationEvent(true, 0.5, 0.4), nothing, opts
+        s, p, ConstantMutation(), MutationEvent(true, 0.5, 0.4), nothing, opts
     ) === nothing
     @test MutationEvent(false, 1, nothing) isa MutationEvent{Int}
 
@@ -382,7 +382,7 @@ end
         state.calls[] += 1
         for i in eachindex(weights)
             mutation, weight = weights[i]
-            mutation isa MutateConstant && (weights[i] = mutation => zero(weight))
+            mutation isa ConstantMutation && (weights[i] = mutation => zero(weight))
         end
         return nothing
     end

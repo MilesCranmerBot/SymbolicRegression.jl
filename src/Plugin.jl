@@ -219,7 +219,7 @@ end
 Lifecycle hook called on the WORKER immediately before each return from
 `next_generation`, after the final accept/reject decision for a mutation.
 Called once per plugin per mutation. Plugins can dispatch on the mutation
-type (e.g. `::MutateConstant`) for type-specific handling, or
+type (e.g. `::ConstantMutation`) for type-specific handling, or
 `::AbstractMutation` for a generic catch-all.
 
 Default is a no-op.

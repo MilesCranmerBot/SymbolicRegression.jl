@@ -16,7 +16,7 @@
     )
 
     @test only(
-        weight for (mutation, weight) in options.mutations if mutation isa MutateConstant
+        weight for (mutation, weight) in options.mutations if mutation isa ConstantMutation
     ) == 0.0
     @test options.fraction_replaced_hof == 0.01f0
     @test options.should_optimize_constants == true
@@ -24,7 +24,7 @@
 
     options = Options(; mutationWeights=[1.0 for i in 1:8])
     @test only(
-        weight for (mutation, weight) in options.mutations if mutation isa AddNode
+        weight for (mutation, weight) in options.mutations if mutation isa AddNodeMutation
     ) == 1.0
 
     # Test score_func deprecation

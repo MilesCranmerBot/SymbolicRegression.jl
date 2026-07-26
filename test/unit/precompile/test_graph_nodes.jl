@@ -92,7 +92,9 @@ end
 
     dataset = Dataset(randn(3, 8), randn(8))
     member = PopMember(dataset, ex, options; deterministic=true)
-    result = mutate!(copy(ex), member, BreakConnection(), options; recorder=RecordType())
+    result = mutate!(
+        copy(ex), member, BreakConnectionMutation(), options; recorder=RecordType()
+    )
     @test result.tree isa typeof(ex)
 end
 
@@ -140,6 +142,8 @@ end
 
     dataset = Dataset(randn(2, 8), randn(8))
     member = PopMember(dataset, ex, options; deterministic=true)
-    result = mutate!(copy(ex), member, FormConnection(), options; recorder=RecordType())
+    result = mutate!(
+        copy(ex), member, FormConnectionMutation(), options; recorder=RecordType()
+    )
     @test result.tree isa typeof(ex)
 end

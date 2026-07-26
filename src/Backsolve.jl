@@ -5,15 +5,15 @@ using DispatchDoctor: @unstable
 using DynamicExpressions:
     AbstractExpressionNode, constructorof, eval_tree_array, get_tree, string_tree
 
-using ..CoreModule: AbstractOptions, DATA_TYPE, Dataset, Backsolve
+using ..CoreModule: AbstractOptions, DATA_TYPE, Dataset, BacksolveMutation
 
 const STLSQ_DATA_TYPE = Union{AbstractFloat,Complex{<:AbstractFloat}}
 
 function configured_backsolve(options::AbstractOptions)
     for (mutation, weight) in options.mutations
-        mutation isa Backsolve && weight > 0.0 && return mutation
+        mutation isa BacksolveMutation && weight > 0.0 && return mutation
     end
-    throw(ArgumentError("Backsolve is not enabled in `options.mutations`."))
+    throw(ArgumentError("BacksolveMutation is not enabled in `options.mutations`."))
 end
 
 function _solve_library(
@@ -325,7 +325,7 @@ operator set, since the output is structurally a weighted sum.
     dataset::Dataset{T},
     options::AbstractOptions,
     nfeatures::Int;
-    backsolve_options::Backsolve=configured_backsolve(options),
+    backsolve_options::BacksolveMutation=configured_backsolve(options),
     population_for_backsolve=nothing,
 ) where {T<:STLSQ_DATA_TYPE}
     _has_weighted_sum_operators(options) || return nothing

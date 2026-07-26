@@ -1,4 +1,4 @@
-@testitem "Simplify mutation updates cost with complexity" begin
+@testitem "SimplifyMutation updates cost with complexity" begin
     using SymbolicRegression
     using SymbolicRegression: Dataset, RecordType, MutationWeights
     using SymbolicRegression.LossFunctionsModule: loss_to_cost
@@ -24,7 +24,7 @@
     result = mutate!(
         copy(member.tree),
         member,
-        Simplify(),
+        SimplifyMutation(),
         options;
         recorder=RecordType(),
         dataset=dataset,

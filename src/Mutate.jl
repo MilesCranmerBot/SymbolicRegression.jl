@@ -13,21 +13,21 @@ using DynamicExpressions:
 using ..CoreModule:
     AbstractOptions,
     AbstractMutation,
-    MutateConstant,
-    MutateOperator,
-    MutateFeature,
-    SwapOperands,
-    AddNode,
-    InsertNode,
-    DeleteNode,
-    FormConnection,
-    BreakConnection,
-    RotateTree,
-    Backsolve,
-    Simplify,
-    Randomize,
-    Optimize,
-    DoNothing,
+    ConstantMutation,
+    OperatorMutation,
+    FeatureMutation,
+    SwapOperandsMutation,
+    AddNodeMutation,
+    InsertNodeMutation,
+    DeleteNodeMutation,
+    FormConnectionMutation,
+    BreakConnectionMutation,
+    RotateTreeMutation,
+    BacksolveMutation,
+    SimplifyMutation,
+    RandomizeMutation,
+    OptimizeMutation,
+    DoNothingMutation,
     BUILTIN_MUTATION_TYPES,
     Dataset,
     RecordType,
@@ -155,41 +155,41 @@ function condition_mutation_weights!(
 ) where {T,L,N<:AbstractExpression,P<:AbstractPopMember{T,L,N}}
     tree = get_tree(member.tree)
     if !preserve_sharing(typeof(member.tree))
-        _set_weight!(weights, FormConnection, 0.0)
-        _set_weight!(weights, BreakConnection, 0.0)
+        _set_weight!(weights, FormConnectionMutation, 0.0)
+        _set_weight!(weights, BreakConnectionMutation, 0.0)
     end
     if tree.degree == 0
-        _set_weight!(weights, MutateOperator, 0.0)
-        _set_weight!(weights, SwapOperands, 0.0)
-        _set_weight!(weights, DeleteNode, 0.0)
-        _set_weight!(weights, Simplify, 0.0)
+        _set_weight!(weights, OperatorMutation, 0.0)
+        _set_weight!(weights, SwapOperandsMutation, 0.0)
+        _set_weight!(weights, DeleteNodeMutation, 0.0)
+        _set_weight!(weights, SimplifyMutation, 0.0)
         if !tree.constant
-            _set_weight!(weights, Optimize, 0.0)
-            _set_weight!(weights, MutateConstant, 0.0)
+            _set_weight!(weights, OptimizeMutation, 0.0)
+            _set_weight!(weights, ConstantMutation, 0.0)
         else
-            _set_weight!(weights, MutateFeature, 0.0)
+            _set_weight!(weights, FeatureMutation, 0.0)
         end
         return nothing
     end
 
     if !any(node -> node.degree == 2, tree)
-        _set_weight!(weights, SwapOperands, 0.0)
+        _set_weight!(weights, SwapOperandsMutation, 0.0)
     end
 
     condition_mutate_constant!(typeof(member.tree), weights, member, options, curmaxsize)
 
     if nfeatures <= 1
-        _set_weight!(weights, MutateFeature, 0.0)
+        _set_weight!(weights, FeatureMutation, 0.0)
     end
 
     complexity = compute_complexity(member, options)
     if complexity >= curmaxsize
-        _set_weight!(weights, AddNode, 0.0)
-        _set_weight!(weights, InsertNode, 0.0)
+        _set_weight!(weights, AddNodeMutation, 0.0)
+        _set_weight!(weights, InsertNodeMutation, 0.0)
     end
 
     if !options.should_simplify
-        _set_weight!(weights, Simplify, 0.0)
+        _set_weight!(weights, SimplifyMutation, 0.0)
     end
 
     return nothing
@@ -220,7 +220,7 @@ function condition_mutate_constant!(
     curmaxsize::Int,
 )
     n_constants = count_scalar_constants(member.tree)
-    _scale_weight!(weights, MutateConstant, min(8, n_constants) / 8.0)
+    _scale_weight!(weights, ConstantMutation, min(8, n_constants) / 8.0)
     return nothing
 end
 
@@ -561,7 +561,7 @@ end
 function mutate!(
     new_tree::N,
     parent_member::P,
-    m::MutateConstant,
+    m::ConstantMutation,
     options::AbstractOptions;
     recorder::RecordType,
     temperature,
@@ -575,7 +575,7 @@ end
 function mutate!(
     new_tree::N,
     parent_member::P,
-    ::MutateOperator,
+    ::OperatorMutation,
     options::AbstractOptions;
     recorder::RecordType,
     kws...,
@@ -588,7 +588,7 @@ end
 function mutate!(
     new_tree::N,
     parent_member::P,
-    ::MutateFeature,
+    ::FeatureMutation,
     options::AbstractOptions;
     recorder::RecordType,
     nfeatures,
@@ -602,7 +602,7 @@ end
 function mutate!(
     new_tree::N,
     parent_member::P,
-    ::SwapOperands,
+    ::SwapOperandsMutation,
     options::AbstractOptions;
     recorder::RecordType,
     kws...,
@@ -615,7 +615,7 @@ end
 function mutate!(
     new_tree::N,
     parent_member::P,
-    ::AddNode,
+    ::AddNodeMutation,
     options::AbstractOptions;
     recorder::RecordType,
     nfeatures,
@@ -634,7 +634,7 @@ end
 function mutate!(
     new_tree::N,
     parent_member::P,
-    ::InsertNode,
+    ::InsertNodeMutation,
     options::AbstractOptions;
     recorder::RecordType,
     nfeatures,
@@ -648,7 +648,7 @@ end
 function mutate!(
     new_tree::N,
     parent_member::P,
-    ::DeleteNode,
+    ::DeleteNodeMutation,
     options::AbstractOptions;
     recorder::RecordType,
     kws...,
@@ -661,7 +661,7 @@ end
 function mutate!(
     new_tree::N,
     parent_member::P,
-    ::FormConnection,
+    ::FormConnectionMutation,
     options::AbstractOptions;
     recorder::RecordType,
     kws...,
@@ -674,7 +674,7 @@ end
 function mutate!(
     new_tree::N,
     parent_member::P,
-    ::BreakConnection,
+    ::BreakConnectionMutation,
     options::AbstractOptions;
     recorder::RecordType,
     kws...,
@@ -687,7 +687,7 @@ end
 function mutate!(
     new_tree::N,
     parent_member::P,
-    ::RotateTree,
+    ::RotateTreeMutation,
     options::AbstractOptions;
     recorder::RecordType,
     kws...,
@@ -700,7 +700,7 @@ end
 function mutate!(
     new_tree::N,
     parent_member::P,
-    m::Backsolve,
+    m::BacksolveMutation,
     options::AbstractOptions;
     recorder::RecordType,
     dataset::Dataset,
@@ -722,7 +722,7 @@ end
 function mutate!(
     new_tree::N,
     parent_member::P,
-    ::Simplify,
+    ::SimplifyMutation,
     options::AbstractOptions;
     recorder::RecordType,
     dataset::Dataset,
@@ -757,7 +757,7 @@ end
 function mutate!(
     new_tree::N,
     ::P,
-    ::Randomize,
+    ::RandomizeMutation,
     options::AbstractOptions;
     recorder::RecordType,
     curmaxsize,
@@ -772,7 +772,7 @@ end
 function mutate!(
     new_tree::N,
     parent_member::P,
-    ::Optimize,
+    ::OptimizeMutation,
     options::AbstractOptions;
     recorder::RecordType,
     dataset::Dataset,
@@ -788,7 +788,7 @@ end
 function mutate!(
     new_tree::N,
     parent_member::P,
-    ::DoNothing,
+    ::DoNothingMutation,
     options::AbstractOptions;
     recorder::RecordType,
     parent_ref,

@@ -35,9 +35,9 @@
         copy(member.tree), member, MissingMutation(), options
     )
 
-    weighted_mutations = [DoNothing() => 1.0]
-    @test sample_mutation(weighted_mutations) isa DoNothing
+    weighted_mutations = [DoNothingMutation() => 1.0]
+    @test sample_mutation(weighted_mutations) isa DoNothingMutation
 
     seed!(4)
-    @test _sample_mutation([DoNothing() => nextfloat(0.0)]) isa DoNothing
+    @test _sample_mutation([DoNothingMutation() => nextfloat(0.0)]) isa DoNothingMutation
 end

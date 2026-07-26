@@ -1028,9 +1028,9 @@ $(OPTION_DESCRIPTIONS)
     _default_mutations = if default_mutations === nothing
         base = MutationWeightsModule._mutations_from_weights(set_mutation_weights)
         for i in eachindex(base)
-            if base[i].first isa MutationsModule.MutateConstant
+            if base[i].first isa MutationsModule.ConstantMutation
                 base[i] =
-                    MutationsModule.MutateConstant(;
+                    MutationsModule.ConstantMutation(;
                         perturbation_factor=Float64(perturbation_factor),
                         probability_negate=Float64(probability_negate_constant),
                     ) => base[i].second

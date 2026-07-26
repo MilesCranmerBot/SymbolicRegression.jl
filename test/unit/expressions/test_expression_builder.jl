@@ -117,13 +117,15 @@ end
     @test embedded_ex isa ParametricExpression
     @test ex == embedded_ex
 
-    configured_mutation = MutateConstant(; perturbation_factor=10.0, probability_negate=1.0)
+    configured_mutation = ConstantMutation(;
+        perturbation_factor=10.0, probability_negate=1.0
+    )
     @test any(1:20) do seed
         configured_ex = mutate_constant(
             copy(ex), 1.0, options, configured_mutation, MersenneTwister(seed)
         )
         default_ex = mutate_constant(
-            copy(ex), 1.0, options, MutateConstant(), MersenneTwister(seed)
+            copy(ex), 1.0, options, ConstantMutation(), MersenneTwister(seed)
         )
         configured_ex.metadata.parameters != default_ex.metadata.parameters
     end

@@ -31,17 +31,21 @@ end
     using SymbolicRegression
     using SymbolicRegression.BacksolveModule: configured_backsolve
 
-    # Backsolve config is inlined on the Backsolve mutation now.
-    default_backsolve = first(p.first for p in Options().mutations if p.first isa Backsolve)
-    @test default_backsolve == Backsolve()
+    # Backsolve configuration lives on BacksolveMutation.
+    default_backsolve = first(
+        p.first for p in Options().mutations if p.first isa BacksolveMutation
+    )
+    @test default_backsolve == BacksolveMutation()
 
-    custom = Options(; default_mutations=(), mutations=[Backsolve(; lambda=0.2) => 1.0])
+    custom = Options(;
+        default_mutations=(), mutations=[BacksolveMutation(; lambda=0.2) => 1.0]
+    )
     @test length(custom.mutations) == 1
     @test custom.mutations[1].first.lambda == 0.2
 
-    with_addition = Options(; mutations=(Backsolve(; lambda=0.3) => 1.0,))
+    with_addition = Options(; mutations=(BacksolveMutation(; lambda=0.3) => 1.0,))
     @test length(with_addition.mutations) == length(default_mutations()) + 1
-    @test last(with_addition.mutations).first == Backsolve(; lambda=0.3)
+    @test last(with_addition.mutations).first == BacksolveMutation(; lambda=0.3)
     @test configured_backsolve(with_addition).lambda == 0.3
     @test_throws ArgumentError configured_backsolve(Options(; default_mutations=()))
 

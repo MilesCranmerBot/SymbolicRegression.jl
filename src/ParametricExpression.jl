@@ -20,7 +20,7 @@ using ..CoreModule:
     Dataset,
     SubDataset,
     DATA_TYPE,
-    MutateConstant,
+    ConstantMutation,
     AbstractExpressionSpec,
     get_indices,
     ExpressionSpecModule as ES
@@ -174,7 +174,7 @@ function MF.mutate_constant(
     ex::ParametricExpression{T},
     temperature,
     options::AbstractOptions,
-    mutation::MutateConstant=MutateConstant(),
+    mutation::ConstantMutation=ConstantMutation(),
     rng::AbstractRNG=default_rng(),
 ) where {T<:DATA_TYPE}
     if rand(rng, Bool)
@@ -197,10 +197,10 @@ Base.@noinline function MF.mutate_constant(
     ex::ParametricExpression{T}, temperature, options::AbstractOptions, rng::AbstractRNG
 ) where {T<:DATA_TYPE}
     Base.depwarn(
-        "Passing `rng` as the fourth positional argument to `mutate_constant` is deprecated. Pass `MutateConstant()` before `rng`.",
+        "Passing `rng` as the fourth positional argument to `mutate_constant` is deprecated. Pass `ConstantMutation()` before `rng`.",
         :mutate_constant,
     )
-    return MF.mutate_constant(ex, temperature, options, MutateConstant(), rng)
+    return MF.mutate_constant(ex, temperature, options, ConstantMutation(), rng)
 end
 
 # ParametricExpression handles class columns

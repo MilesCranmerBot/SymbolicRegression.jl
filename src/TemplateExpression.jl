@@ -37,7 +37,7 @@ using ..CoreModule:
     Options,
     Dataset,
     CoreModule as CM,
-    MutateConstant,
+    ConstantMutation,
     has_units,
     DATA_TYPE,
     AbstractExpressionSpec,
@@ -818,25 +818,25 @@ function MM.condition_mutation_weights!(
     nfeatures::Int,
 ) where {T,L,N<:TemplateExpression,P<:AbstractPopMember{T,L,N}}
     if !preserve_sharing(typeof(member.tree))
-        MM._set_weight!(weights, MM.FormConnection, 0.0)
-        MM._set_weight!(weights, MM.BreakConnection, 0.0)
+        MM._set_weight!(weights, MM.FormConnectionMutation, 0.0)
+        MM._set_weight!(weights, MM.BreakConnectionMutation, 0.0)
     end
 
     MM.condition_mutate_constant!(typeof(member.tree), weights, member, options, curmaxsize)
 
     if nfeatures <= 1
-        MM._set_weight!(weights, MM.MutateFeature, 0.0)
+        MM._set_weight!(weights, MM.FeatureMutation, 0.0)
     end
 
     complexity = ComplexityModule.compute_complexity(member, options)
 
     if complexity >= curmaxsize
-        MM._set_weight!(weights, MM.AddNode, 0.0)
-        MM._set_weight!(weights, MM.InsertNode, 0.0)
+        MM._set_weight!(weights, MM.AddNodeMutation, 0.0)
+        MM._set_weight!(weights, MM.InsertNodeMutation, 0.0)
     end
 
     if !options.should_simplify
-        MM._set_weight!(weights, MM.Simplify, 0.0)
+        MM._set_weight!(weights, MM.SimplifyMutation, 0.0)
     end
     return nothing
 end
@@ -939,7 +939,7 @@ function MF.mutate_constant(
     ex::TemplateExpression{T},
     temperature,
     options::AbstractOptions,
-    mutation::MutateConstant=MutateConstant(),
+    mutation::ConstantMutation=ConstantMutation(),
     rng::AbstractRNG=default_rng(),
 ) where {T<:DATA_TYPE}
     regular_constant_mutation = !has_params(ex) || (has_constants(ex) && rand(rng, Bool))
@@ -973,10 +973,10 @@ Base.@noinline function MF.mutate_constant(
     ex::TemplateExpression{T}, temperature, options::AbstractOptions, rng::AbstractRNG
 ) where {T<:DATA_TYPE}
     Base.depwarn(
-        "Passing `rng` as the fourth positional argument to `mutate_constant` is deprecated. Pass `MutateConstant()` before `rng`.",
+        "Passing `rng` as the fourth positional argument to `mutate_constant` is deprecated. Pass `ConstantMutation()` before `rng`.",
         :mutate_constant,
     )
-    return MF.mutate_constant(ex, temperature, options, MutateConstant(), rng)
+    return MF.mutate_constant(ex, temperature, options, ConstantMutation(), rng)
 end
 # TODO: Look at other ParametricExpression behavior
 
