@@ -31,7 +31,6 @@ using ..CoreModule:
     AbstractOptions,
     Options,
     Dataset,
-    AbstractMutationWeights,
     MutationWeights,
     LOSS_TYPE,
     ComplexityMapping,

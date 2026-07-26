@@ -26,7 +26,7 @@ using .DatasetModule:
     get_indices,
     get_full_dataset,
     dataset_fraction
-using .MutationWeightsModule: AbstractMutationWeights, MutationWeights, sample_mutation
+using .MutationWeightsModule: MutationWeights, sample_mutation
 using .MutationsModule:
     AbstractMutation,
     MutateConstant,

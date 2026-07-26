@@ -47,8 +47,6 @@ end
     @test isempty(Options(; default_mutations=()).mutations)
     @test default_mutations() == SymbolicRegression.default_mutations()
 
-    struct CustomMutationWeights <: SymbolicRegression.AbstractMutationWeights end
-    @test_throws ArgumentError Options(; mutation_weights=CustomMutationWeights())
     @test_throws ArgumentError Options(;
         mutation_weights=MutationWeights(), default_mutations=()
     )

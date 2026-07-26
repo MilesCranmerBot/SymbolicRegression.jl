@@ -257,39 +257,32 @@ end
     return nothing
 end
 
-@inline function _dispatch_next_generation(mutation::AbstractMutation, args...)
-    if mutation isa MutateConstant
-        return _next_generation(mutation, args...)
-    elseif mutation isa MutateOperator
-        return _next_generation(mutation, args...)
-    elseif mutation isa MutateFeature
-        return _next_generation(mutation, args...)
-    elseif mutation isa SwapOperands
-        return _next_generation(mutation, args...)
-    elseif mutation isa AddNode
-        return _next_generation(mutation, args...)
-    elseif mutation isa InsertNode
-        return _next_generation(mutation, args...)
-    elseif mutation isa DeleteNode
-        return _next_generation(mutation, args...)
-    elseif mutation isa FormConnection
-        return _next_generation(mutation, args...)
-    elseif mutation isa BreakConnection
-        return _next_generation(mutation, args...)
-    elseif mutation isa RotateTree
-        return _next_generation(mutation, args...)
-    elseif mutation isa Backsolve
-        return _next_generation(mutation, args...)
-    elseif mutation isa Simplify
-        return _next_generation(mutation, args...)
-    elseif mutation isa Randomize
-        return _next_generation(mutation, args...)
-    elseif mutation isa Optimize
-        return _next_generation(mutation, args...)
-    elseif mutation isa DoNothing
-        return _next_generation(mutation, args...)
-    else
-        return _next_generation(mutation, args...)
+const BUILTIN_MUTATION_TYPES = (
+    MutateConstant,
+    MutateOperator,
+    MutateFeature,
+    SwapOperands,
+    AddNode,
+    InsertNode,
+    DeleteNode,
+    FormConnection,
+    BreakConnection,
+    RotateTree,
+    Backsolve,
+    Simplify,
+    Randomize,
+    Optimize,
+    DoNothing,
+)
+
+let mutation_types = BUILTIN_MUTATION_TYPES
+    @eval @inline function _dispatch_next_generation(mutation::AbstractMutation, args...)
+        Base.Cartesian.@nif(
+            $(length(mutation_types) + 1),
+            i -> mutation isa $(mutation_types)[i],
+            i -> _next_generation(mutation::$(mutation_types)[i], args...),
+            i -> _next_generation(mutation, args...),
+        )
     end
 end
 
@@ -578,9 +571,7 @@ the mutation function, or to let the `next_generation` function handle accepting
 rejecting the mutation. For example, a `simplify` operation will not change the loss,
 so it can always return immediately.
 """
-function mutate!(
-    ::N, ::P, m::AbstractMutation, ::AbstractOptions; kws...
-) where {N<:AbstractExpression,P<:AbstractPopMember}
+function mutate!(new_tree, parent_member, m::AbstractMutation, options; kws...)
     return error("Unknown mutation type: $(typeof(m))")
 end
 

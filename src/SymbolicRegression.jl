@@ -195,7 +195,7 @@ using Compat: @compat, Fix
     public,
     (
         AbstractOptions, AbstractRuntimeOptions, RuntimeOptions,
-        AbstractMutationWeights, mutate!, condition_mutation_weights!,
+        mutate!, condition_mutation_weights!,
         sample_mutation, MutationResult, AbstractPopMember, AbstractSearchState, SearchState,
         LOSS_TYPE, DATA_TYPE, node_type,
         AbstractComposableExpression,
@@ -276,7 +276,6 @@ using .CoreModule:
     Options,
     ComplexityMapping,
     WarmStartIncompatibleError,
-    AbstractMutationWeights,
     MutationWeights,
     AbstractMutation,
     MutateConstant,

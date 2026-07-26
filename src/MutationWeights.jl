@@ -21,22 +21,7 @@ import ..MutationsModule:
 using StatsBase: StatsBase
 
 """
-    AbstractMutationWeights
-
-Supertype for `MutationWeights`. Custom mutation extensions should subtype
-[`AbstractMutation`](@ref), define a `mutate!` method, and pass weighted instances
-through `Options(; mutations=...)`.
-
-# See Also
-
-- [`MutationWeights`](@ref): A concrete implementation of `AbstractMutationWeights` that defines default mutation weightings.
-- [`AbstractMutation`](@ref): Interface for custom mutation types.
-- [`mutate!`](@ref SymbolicRegression.MutateModule.mutate!): Function to apply a mutation to an expression tree.
-"""
-abstract type AbstractMutationWeights end
-
-"""
-    MutationWeights(;kws...) <: AbstractMutationWeights
+    MutationWeights(;kws...)
 
 This defines how often different mutations occur. These weightings
 will be normalized to sum to 1.0 after initialization.
@@ -71,7 +56,7 @@ will be normalized to sum to 1.0 after initialization.
 
 - [`AbstractMutation`](@ref): Use to define custom mutation types.
 """
-Base.@kwdef mutable struct MutationWeights <: AbstractMutationWeights
+Base.@kwdef mutable struct MutationWeights
     mutate_constant::Float64 = 0.0353
     mutate_operator::Float64 = 3.63
     mutate_feature::Float64 = 0.1
@@ -131,14 +116,6 @@ function _mutations_from_weights(w::MutationWeights)
     return Pair{AbstractMutation,Float64}[
         _MUTATION_FROM_SYMBOL[k] => Float64(getfield(w, k)) for k in fieldnames(typeof(w))
     ]
-end
-
-function _mutations_from_weights(::AbstractMutationWeights)
-    throw(
-        ArgumentError(
-            "Custom `AbstractMutationWeights` are no longer supported. Define an `AbstractMutation` and pass it through `Options(; mutations=...)`.",
-        ),
-    )
 end
 
 using DispatchDoctor: @unstable
