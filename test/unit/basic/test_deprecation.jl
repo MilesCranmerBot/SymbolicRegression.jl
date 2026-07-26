@@ -1,6 +1,12 @@
 @testitem "Test deprecated options" begin
     using SymbolicRegression
 
+    weights = @test_deprecated MutationWeights()
+    @test convert(Vector, weights) == last.(default_mutations())
+    options = Options(; mutation_weights=weights)
+    @test last.(options.mutations) == convert(Vector, weights)
+    @test_throws ArgumentError MutationWeights(; invalid=1.0)
+
     # Deprecated kwargs should still work:
     options = Options(;
         mutationWeights=MutationWeights(; mutate_constant=0.0),

@@ -17,7 +17,9 @@ function SymbolicRegression.mutate!(
     new_tree, parent_member, ::MyMutation, options; kws...
 )
     # ... modify new_tree ...
-    return MutationResult(; tree=new_tree)
+    return SymbolicRegression.MutationResult{
+        typeof(new_tree),typeof(parent_member)
+    }(; tree=new_tree)
 end
 ```
 
@@ -95,13 +97,29 @@ struct Optimize <: AbstractMutation end
 """No-op mutation: copy the parent unchanged (acts as a sampling weight reserve)."""
 struct DoNothing <: AbstractMutation end
 
+const BUILTIN_MUTATION_TYPES = (
+    MutateConstant,
+    MutateOperator,
+    MutateFeature,
+    SwapOperands,
+    AddNode,
+    InsertNode,
+    DeleteNode,
+    FormConnection,
+    BreakConnection,
+    RotateTree,
+    Backsolve,
+    Simplify,
+    Randomize,
+    Optimize,
+    DoNothing,
+)
+
 """
     default_mutations() -> Vector{Pair{AbstractMutation,Float64}}
 
-Default mutation list with the `MutationWeights()` weights. The
-weights match `MutationWeights`' field defaults but the order is keyed by
-type, not by the field-name order — conversion from `MutationWeights` is
-done by `_mutations_from_weights` via an explicit symbol → type mapping.
+Default weighted mutation list. The deprecated `MutationWeights()` constructor
+derives its defaults from this list.
 """
 function default_mutations()
     return Pair{AbstractMutation,Float64}[

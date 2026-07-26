@@ -36,7 +36,7 @@ using ..OperatorsModule:
     safe_acos,
     safe_acosh,
     safe_atanh
-using ..MutationWeightsModule: MutationWeightsModule, MutationWeights
+using ..MutationWeightsModule: MutationWeightsModule, MutationWeights, _mutation_weights
 using ..MutationsModule: MutationsModule
 import ..OptionsStructModule: Options
 using ..OptionsStructModule: ComplexityMapping, operator_specialization
@@ -225,7 +225,7 @@ inverse_opmap(@nospecialize(op)) = get(INVERSE_OP_MAP, op, op)
 recommend_loss_function_expression(expression_type) = false
 
 create_mutation_weights(w::MutationWeights) = w
-create_mutation_weights(w::NamedTuple) = MutationWeights(; w...)
+create_mutation_weights(w::NamedTuple) = _mutation_weights(; w...)
 
 function default_popmember_type end
 
@@ -1179,7 +1179,7 @@ function default_options(@nospecialize(version::Union{VersionNumber,Nothing} = n
             warmup_maxsize_by=0.0,
             adaptive_parsimony_scaling=20.0,
             # Mutations
-            mutation_weights=MutationWeights(;
+            mutation_weights=_mutation_weights(;
                 mutate_constant=0.048,
                 mutate_operator=0.47,
                 swap_operands=0.1,
@@ -1225,7 +1225,7 @@ function default_options(@nospecialize(version::Union{VersionNumber,Nothing} = n
         warmup_maxsize_by=0.0,
         adaptive_parsimony_scaling=1040.0,
         # Mutations
-        mutation_weights=MutationWeights(;
+        mutation_weights=_mutation_weights(;
             mutate_constant=0.0346,
             mutate_operator=0.293,
             swap_operands=0.198,

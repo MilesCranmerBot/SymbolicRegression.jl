@@ -133,7 +133,7 @@ function mutate_constant(
     )
     return ex
 end
-function mutate_constant(
+Base.@noinline function mutate_constant(
     ex::AbstractExpression{T}, temperature, options::AbstractOptions, rng::AbstractRNG
 ) where {T<:DATA_TYPE}
     Base.depwarn(
@@ -156,7 +156,7 @@ function mutate_constant(
     node.val = mutate_value(rng, node.val, temperature, m)
     return tree
 end
-function mutate_constant(
+Base.@noinline function mutate_constant(
     tree::AbstractExpressionNode{T}, temperature, options::AbstractOptions, rng::AbstractRNG
 ) where {T<:DATA_TYPE}
     Base.depwarn(

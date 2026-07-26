@@ -8,6 +8,9 @@
     using StableRNGs: StableRNG
 
     rng = StableRNG(0)
+    options_with_backsolve(; kws...) = Options(;
+        default_mutations=(), mutations=(Backsolve() => 1.0,), kws...
+    )
 
     @testset "InverseFunctions - Unary operators" begin
         inverse_pairs = (
@@ -150,7 +153,9 @@
         y = Float64[2.0, 3.0, 4.0]
         dataset = Dataset(X, y)
 
-        options = Options(; binary_operators=[+, *, -, /], unary_operators=[sin, cos])
+        options = options_with_backsolve(;
+            binary_operators=[+, *, -, /], unary_operators=[sin, cos]
+        )
 
         x_node = Node(Float64; feature=1)
         sin_node = Node(1, x_node)
@@ -169,7 +174,7 @@
         y = Float64[1.0]
         dataset = Dataset(X, y)
 
-        options = Options(; binary_operators=[+], unary_operators=[sin])
+        options = options_with_backsolve(; binary_operators=[+], unary_operators=[sin])
 
         tree = Node(Float64; val=1.0)
         mutated_tree = backsolve_rewrite_random_node(tree, dataset, options, rng)
@@ -183,7 +188,7 @@
         dataset = Dataset(X, y)
 
         operators = OperatorEnum(; binary_operators=[+, *], unary_operators=[sin])
-        options = Options(; binary_operators=[+, *], unary_operators=[sin])
+        options = options_with_backsolve(; binary_operators=[+, *], unary_operators=[sin])
 
         x_node = Node(Float64; feature=1)
         tree = Node(1, x_node)
@@ -198,7 +203,7 @@
         y = ComplexF64[2 + 2im, 3 - im, 4 + 0im]
         dataset = Dataset(X, y)
 
-        options = Options(; binary_operators=(+,), unary_operators=())
+        options = options_with_backsolve(; binary_operators=(+,), unary_operators=())
 
         tree = Node(1, Node(ComplexF64; feature=1), Node(ComplexF64; val=1 + 0im))
         mutated_tree = backsolve_rewrite_random_node(tree, dataset, options, rng)
@@ -244,7 +249,7 @@
             backsolve_rewrite_random_node(
                 ternary_tree,
                 Dataset(X3, y3),
-                Options(; binary_operators=(+, *), unary_operators=(sin,)),
+                options_with_backsolve(; binary_operators=(+, *), unary_operators=(sin,)),
                 rng,
             )
         )
@@ -283,7 +288,7 @@
 
         string_tree = Node{String}(; val="x")
         string_dataset = Dataset(reshape(["x"], 1, 1), ["x"], Float64)
-        string_options = Options(; binary_operators=(+,), unary_operators=())
+        string_options = options_with_backsolve(; binary_operators=(+,), unary_operators=())
 
         @test_throws(
             "backsolve_rewrite_random_node only supports floating-point scalar types",
@@ -292,7 +297,7 @@
 
         int_tree = Node(Int; val=1)
         int_dataset = Dataset(reshape(Int[1], 1, 1), Int[1], Float64)
-        int_options = Options(; binary_operators=(+,), unary_operators=())
+        int_options = options_with_backsolve(; binary_operators=(+,), unary_operators=())
 
         @test_throws(
             "backsolve_rewrite_random_node only supports floating-point scalar types",
@@ -301,7 +306,9 @@
 
         template_dataset = Dataset(reshape(Float64[1.0, 2.0], 1, 2), Float64[1.0, 2.0])
 
-        parametric_options = Options(; binary_operators=(*,), unary_operators=())
+        parametric_options = options_with_backsolve(;
+            binary_operators=(*,), unary_operators=()
+        )
         parametric_expr = parse_expression(
             :(x1 * p1);
             expression_type=ParametricExpression,

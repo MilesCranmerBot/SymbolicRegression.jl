@@ -16,7 +16,8 @@ import ..MutationsModule:
     Simplify,
     Randomize,
     Optimize,
-    DoNothing
+    DoNothing,
+    default_mutations
 
 using StatsBase: StatsBase
 
@@ -25,6 +26,10 @@ using StatsBase: StatsBase
 
 This defines how often different mutations occur. These weightings
 will be normalized to sum to 1.0 after initialization.
+
+!!! warning
+    `MutationWeights` is deprecated. Pass weighted mutation instances through
+    `Options(; default_mutations=...)`.
 
 # Arguments
 
@@ -56,26 +61,25 @@ will be normalized to sum to 1.0 after initialization.
 
 - [`AbstractMutation`](@ref): Use to define custom mutation types.
 """
-Base.@kwdef mutable struct MutationWeights
-    mutate_constant::Float64 = 0.0353
-    mutate_operator::Float64 = 3.63
-    mutate_feature::Float64 = 0.1
-    swap_operands::Float64 = 0.00608
-    rotate_tree::Float64 = 1.42
-    add_node::Float64 = 0.0771
-    insert_node::Float64 = 2.44
-    delete_node::Float64 = 0.369
-    simplify::Float64 = 0.00148
-    randomize::Float64 = 0.00695
-    do_nothing::Float64 = 0.431
-    optimize::Float64 = 0.0
-    backsolve::Float64 = 0.0
-    form_connection::Float64 = 0.5
-    break_connection::Float64 = 0.1
+mutable struct MutationWeights
+    mutate_constant::Float64
+    mutate_operator::Float64
+    mutate_feature::Float64
+    swap_operands::Float64
+    rotate_tree::Float64
+    add_node::Float64
+    insert_node::Float64
+    delete_node::Float64
+    simplify::Float64
+    randomize::Float64
+    do_nothing::Float64
+    optimize::Float64
+    backsolve::Float64
+    form_connection::Float64
+    break_connection::Float64
 end
 
 const mutations = fieldnames(MutationWeights)
-const v_mutations = Symbol[mutations...]
 
 # For some reason it's much faster to write out the fields explicitly:
 let contents = [Expr(:., :w, QuoteNode(field)) for field in mutations]
@@ -107,6 +111,28 @@ const _MUTATION_FROM_SYMBOL = Dict{Symbol,AbstractMutation}(
     :break_connection => BreakConnection(),
 )
 
+function _mutation_weights(; kws...)
+    unknown = setdiff(keys(kws), mutations)
+    isempty(unknown) ||
+        throw(ArgumentError("Unknown mutation weight: `$(first(unknown))`."))
+
+    defaults = Dict(
+        typeof(mutation) => weight for (mutation, weight) in default_mutations()
+    )
+    values = map(mutations) do name
+        Float64(get(kws, name, defaults[typeof(_MUTATION_FROM_SYMBOL[name])]))
+    end
+    return MutationWeights(values...)
+end
+
+function MutationWeights(; kws...)
+    Base.depwarn(
+        "`MutationWeights` is deprecated. Pass weighted mutation instances through `Options(; default_mutations=...)`.",
+        :MutationWeights,
+    )
+    return _mutation_weights(; kws...)
+end
+
 """
     _mutations_from_weights(w) -> Vector{Pair{AbstractMutation,Float64}}
 
@@ -131,7 +157,7 @@ hands the result to `mutate!`, which dispatches per concrete type, so the
 instability is contained.
 """
 @unstable function sample_mutation(
-    mutations::AbstractVector{Pair{AbstractMutation,Float64}}
+    mutations::AbstractVector{<:Pair{<:AbstractMutation,<:Real}},  # COV_EXCL_LINE
 )
     idx = StatsBase.sample(eachindex(mutations), StatsBase.Weights(map(last, mutations)))
     return mutations[idx].first

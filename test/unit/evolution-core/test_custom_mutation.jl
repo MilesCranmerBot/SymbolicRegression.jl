@@ -1,7 +1,8 @@
 @testitem "Custom mutation dispatch" begin
     using SymbolicRegression
-    using SymbolicRegression: Dataset, MutationResult, RecordType
-    using SymbolicRegression.MutateModule: next_generation
+    using SymbolicRegression: Dataset, MutationResult, RecordType, mutate!, sample_mutation
+    using SymbolicRegression.MutateModule: _sample_mutation, next_generation
+    using Random: seed!
 
     struct CustomMutation <: AbstractMutation
         calls::Base.RefValue{Int}
@@ -28,4 +29,15 @@
     )
 
     @test calls[] == 1
+
+    struct MissingMutation <: AbstractMutation end
+    @test_throws ErrorException mutate!(
+        copy(member.tree), member, MissingMutation(), options
+    )
+
+    weighted_mutations = [DoNothing() => 1.0]
+    @test sample_mutation(weighted_mutations) isa DoNothing
+
+    seed!(4)
+    @test _sample_mutation([DoNothing() => nextfloat(0.0)]) isa DoNothing
 end

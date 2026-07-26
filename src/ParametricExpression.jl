@@ -193,7 +193,7 @@ function MF.mutate_constant(
     end
 end
 
-function MF.mutate_constant(
+Base.@noinline function MF.mutate_constant(
     ex::ParametricExpression{T}, temperature, options::AbstractOptions, rng::AbstractRNG
 ) where {T<:DATA_TYPE}
     Base.depwarn(

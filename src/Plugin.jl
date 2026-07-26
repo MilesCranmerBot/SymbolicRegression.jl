@@ -196,7 +196,7 @@ once the accept/reject decision has been made inside `next_generation`.
   `return_immediately` or annealing/fitness acceptance); `false` if rejected
   (constraint failure, NaN loss, or annealing/frequency rejection).
 - `before_loss::L`: loss of the parent member before mutation.
-- `after_loss::L`: loss after mutation. `NaN` if no valid evaluation
+- `after_loss::Union{L,Nothing}`: loss after mutation. `nothing` if no valid evaluation
   occurred (constraint failure or NaN loss).
 
 `L` is the dataset's loss type (e.g. `Float32` or `Float64`).
@@ -210,7 +210,7 @@ authors can write type-specific methods.
 struct MutationEvent{L<:Real}
     accepted::Bool
     before_loss::L
-    after_loss::L
+    after_loss::Union{L,Nothing}
 end
 
 """

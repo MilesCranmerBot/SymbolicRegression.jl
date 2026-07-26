@@ -28,6 +28,7 @@ using ..CoreModule:
     Randomize,
     Optimize,
     DoNothing,
+    BUILTIN_MUTATION_TYPES,
     Dataset,
     RecordType,
     max_features,
@@ -224,7 +225,7 @@ function condition_mutate_constant!(
 end
 
 @unstable function _sample_mutation(
-    mutations::AbstractVector{Pair{AbstractMutation,Float64}}
+    mutations::AbstractVector{<:Pair{<:AbstractMutation,<:Real}}
 )
     total_weight = 0.0
     for (_, weight) in mutations
@@ -257,31 +258,13 @@ end
     return nothing
 end
 
-const BUILTIN_MUTATION_TYPES = (
-    MutateConstant,
-    MutateOperator,
-    MutateFeature,
-    SwapOperands,
-    AddNode,
-    InsertNode,
-    DeleteNode,
-    FormConnection,
-    BreakConnection,
-    RotateTree,
-    Backsolve,
-    Simplify,
-    Randomize,
-    Optimize,
-    DoNothing,
-)
-
 let mutation_types = BUILTIN_MUTATION_TYPES
     @eval @inline function _dispatch_next_generation(mutation::AbstractMutation, args...)
         Base.Cartesian.@nif(
             $(length(mutation_types) + 1),
-            i -> mutation isa $(mutation_types)[i],
-            i -> _next_generation(mutation::$(mutation_types)[i], args...),
-            i -> _next_generation(mutation, args...),
+            i -> mutation isa $(mutation_types)[i],  # COV_EXCL_LINE
+            i -> _next_generation(mutation::$(mutation_types)[i], args...),  # COV_EXCL_LINE
+            i -> _next_generation(mutation, args...),  # COV_EXCL_LINE
         )
     end
 end
@@ -430,7 +413,7 @@ function _next_generation(
             options,
             plugin_states,
             mutation_choice,
-            MutationEvent(false, before_loss, convert(L, NaN)),
+            MutationEvent(false, before_loss, nothing),
             dataset,
         )
         return (
@@ -461,7 +444,7 @@ function _next_generation(
             options,
             plugin_states,
             mutation_choice,
-            MutationEvent(false, before_loss, convert(L, NaN)),
+            MutationEvent(false, before_loss, nothing),
             dataset,
         )
         return (

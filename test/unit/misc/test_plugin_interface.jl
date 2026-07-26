@@ -37,6 +37,7 @@
     @test on_mutation_end!(
         s, p, MutateConstant(), MutationEvent(true, 0.5, 0.4), nothing, opts
     ) === nothing
+    @test MutationEvent(false, 1, nothing) isa MutationEvent{Int}
 
     # Factory defaults: init_member returns nothing, fork_plugin_state
     # deepcopies the head state.
@@ -311,7 +312,7 @@ end
     end
 
     # maxsize=5 ensures add_node frequently hits the constraint limit,
-    # producing NaN after_loss events reliably.
+    # producing events without an after_loss reliably.
     opts = Options(;
         binary_operators=[+, *],
         populations=2,
@@ -335,7 +336,7 @@ end
         @test ev isa MutationEvent
         @test ev.accepted isa Bool
         @test ev.before_loss isa Float32
-        @test ev.after_loss isa Float32
+        @test ev.after_loss === nothing || ev.after_loss isa Float32
         @test isfinite(ev.before_loss)
     end
 
@@ -344,10 +345,10 @@ end
     @test any(!ev.accepted for ev in events)
 
     # Some events should have finite after_loss (valid evaluations occurred)
-    @test any(isfinite(ev.after_loss) for ev in events)
+    @test any(ev.after_loss !== nothing && isfinite(ev.after_loss) for ev in events)
 
-    # Some events should have NaN after_loss (constraint failure or NaN eval)
-    @test any(isnan(ev.after_loss) for ev in events)
+    # Some events should have no after_loss (constraint failure or NaN eval)
+    @test any(isnothing(ev.after_loss) for ev in events)
 end
 
 @testitem "Plugin interface: condition_mutation_weights! plugin-dispatched" begin

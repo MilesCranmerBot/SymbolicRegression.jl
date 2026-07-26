@@ -44,6 +44,7 @@ using .MutationsModule:
     Randomize,
     Optimize,
     DoNothing,
+    BUILTIN_MUTATION_TYPES,
     default_mutations
 using .OptionsStructModule:
     AbstractOptions,

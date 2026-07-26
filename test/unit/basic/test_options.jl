@@ -43,6 +43,7 @@ end
     @test length(with_addition.mutations) == length(default_mutations()) + 1
     @test last(with_addition.mutations).first == Backsolve(; lambda=0.3)
     @test configured_backsolve(with_addition).lambda == 0.3
+    @test_throws ArgumentError configured_backsolve(Options(; default_mutations=()))
 
     @test isempty(Options(; default_mutations=()).mutations)
     @test default_mutations() == SymbolicRegression.default_mutations()

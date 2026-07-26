@@ -13,7 +13,7 @@ function configured_backsolve(options::AbstractOptions)
     for (mutation, weight) in options.mutations
         mutation isa Backsolve && weight > 0.0 && return mutation
     end
-    return Backsolve()
+    throw(ArgumentError("Backsolve is not enabled in `options.mutations`."))
 end
 
 function _solve_library(
