@@ -141,8 +141,10 @@ Finally, the most complicated overload for `String` is `mutate_value`,
 which we need to define so that any constant value can be iteratively mutated
 into any other constant value.
 
-We also typically want this to depend on the temperature --- lower temperatures
-mean a smaller rate of change. You can use temperature as you see fit, or ignore it.
+We also typically want this to scale with the per-call mutation context ---
+the simulated annealing plugin shrinks `ctx.perturbation_factor` as the search
+cools down, so dividing by the mutation's base `perturbation_factor` recovers
+a temperature-like signal. You can use it as you see fit, or ignore it.
 =#
 
 using SymbolicRegression.UtilsModule: poisson_sample
@@ -151,10 +153,15 @@ import SymbolicRegression: mutate_value
 
 sample_alphabet(rng::AbstractRNG) = rand(rng, 'a':'z')
 
-function mutate_value(rng::AbstractRNG, val::String, T, options)
+function mutate_value(rng::AbstractRNG, val::String, ctx, mutation)
     max_length = 10
     lambda_max = 5.0
-    λ = max(nextfloat(0.0), lambda_max * clamp(float(T), 0, 1))
+    temperature = if mutation.perturbation_factor > 0
+        ctx.perturbation_factor / mutation.perturbation_factor
+    else
+        1.0
+    end
+    λ = max(nextfloat(0.0), lambda_max * clamp(temperature, 0, 1))
     n_edits = clamp(poisson_sample(rng, λ), 0, 10)
     chars = collect(val)
     ops = rand(rng, (:insert, :delete, :replace, :swap), n_edits)
