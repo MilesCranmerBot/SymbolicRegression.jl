@@ -970,6 +970,26 @@ function MF.mutate_constant(
     end
 end
 
+# Legacy positional-`temperature` interface (see MutationFunctions.jl).
+function MF.mutate_constant(
+    ex::TemplateExpression{T},
+    temperature,
+    options::AbstractOptions,
+    m::ConstantMutation=ConstantMutation(),
+    rng::AbstractRNG=default_rng(),
+) where {T<:DATA_TYPE}
+    return MF.mutate_constant(ex, MF._temperature_context(m, temperature), m, options, rng)
+end
+Base.@noinline function MF.mutate_constant(
+    ex::TemplateExpression{T}, temperature, options::AbstractOptions, rng::AbstractRNG
+) where {T<:DATA_TYPE}
+    Base.depwarn(
+        "Passing `rng` as the fourth positional argument to `mutate_constant` is deprecated. Pass `ConstantMutation()` before `rng`.",
+        :mutate_constant,
+    )
+    return MF.mutate_constant(ex, temperature, options, ConstantMutation(), rng)
+end
+
 # TODO: Look at other ParametricExpression behavior
 
 for f in (:(DE.count_scalar_constants), :(CO.count_constants_for_optimization))

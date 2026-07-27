@@ -214,6 +214,7 @@ using Compat: @compat, Fix
         on_cycle_start!,
         prepare_mutation_context,
         condition_mutation!,
+        set_temperature!,
     )
 )
 #! format: on
@@ -361,7 +362,8 @@ using .CoreModule:
     wrap_mutation_step,
     on_cycle_start!,
     prepare_mutation_context,
-    condition_mutation!
+    condition_mutation!,
+    set_temperature!
 using .UtilsModule: is_anonymous_function, recursive_merge, json3_write, @ignore
 using .ComplexityModule: compute_complexity
 using .CheckConstraintsModule: check_constraints

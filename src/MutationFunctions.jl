@@ -179,6 +179,57 @@ function mutate_factor(
     return factor
 end
 
+function _temperature_context(m::ConstantMutation, temperature)
+    return ConstantMutationContext(m.perturbation_factor * temperature)
+end
+
+function mutate_constant(
+    ex::AbstractExpression{T},
+    temperature,
+    options::AbstractOptions,
+    m::ConstantMutation=ConstantMutation(),
+    rng::AbstractRNG=default_rng(),
+) where {T<:DATA_TYPE}
+    return mutate_constant(ex, _temperature_context(m, temperature), m, options, rng)
+end
+Base.@noinline function mutate_constant(
+    ex::AbstractExpression{T}, temperature, options::AbstractOptions, rng::AbstractRNG
+) where {T<:DATA_TYPE}
+    Base.depwarn(
+        "Passing `rng` as the fourth positional argument to `mutate_constant` is deprecated. Pass `ConstantMutation()` before `rng`.",
+        :mutate_constant,
+    )
+    return mutate_constant(ex, temperature, options, ConstantMutation(), rng)
+end
+function mutate_constant(
+    tree::AbstractExpressionNode{T},
+    temperature,
+    options::AbstractOptions,
+    m::ConstantMutation=ConstantMutation(),
+    rng::AbstractRNG=default_rng(),
+) where {T<:DATA_TYPE}
+    return mutate_constant(tree, _temperature_context(m, temperature), m, options, rng)
+end
+Base.@noinline function mutate_constant(
+    tree::AbstractExpressionNode{T}, temperature, options::AbstractOptions, rng::AbstractRNG
+) where {T<:DATA_TYPE}
+    Base.depwarn(
+        "Passing `rng` as the fourth positional argument to `mutate_constant` is deprecated. Pass `ConstantMutation()` before `rng`.",
+        :mutate_constant,
+    )
+    return mutate_constant(tree, temperature, options, ConstantMutation(), rng)
+end
+
+function mutate_value(
+    rng::AbstractRNG, val::Number, temperature, m::ConstantMutation=ConstantMutation()
+)
+    return mutate_value(rng, val, _temperature_context(m, temperature), m)
+end
+
+function mutate_factor(::Type{T}, temperature, m::ConstantMutation, rng) where {T<:Number}
+    return mutate_factor(T, _temperature_context(m, temperature), m, rng)
+end
+
 """Randomly change which feature a variable node points to"""
 function mutate_feature(
     ex::AbstractExpression{T}, nfeatures::Int, rng::AbstractRNG=default_rng()

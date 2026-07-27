@@ -390,6 +390,21 @@ function condition_mutation!(::Any, _, ::AbstractPlugin, ::AbstractMutation, opt
 end
 
 """
+    set_temperature!(state, plugin, temperature)
+
+Compatibility hook for the legacy positional-`temperature` `next_generation`
+signature: plugins that carry a temperature concept (e.g.
+`SimulatedAnnealingPlugin`) overwrite their mutable state with `temperature`;
+all other plugins ignore it. Called once per `(plugin, state)` pair before
+delegating to the current signature.
+
+Default is a no-op.
+"""
+function set_temperature!(_, ::AbstractPlugin, temperature)
+    return nothing
+end
+
+"""
     wrap_mutation_step(state, plugin, parent_member, next_step) -> (member, accepted, num_evals)
 
 Middleware-style hook around `next_generation`. The engine builds a thunk

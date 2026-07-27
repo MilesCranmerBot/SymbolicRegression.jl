@@ -111,6 +111,7 @@ using .PluginModule:
     on_cycle_start!,
     prepare_mutation_context,
     condition_mutation!,
+    set_temperature!,
     default_adaptive_parsimony_plugin,
     default_adaptive_mutation_weights_plugin,
     default_mutation_loop_plugin,

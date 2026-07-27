@@ -42,8 +42,9 @@ function reg_evol_cycle(
                     population_for_backsolve=pop,
                 )
             wrapped_step = base_step
-            for (plugin, pstate) in Iterators.reverse(zip(options.plugins, plugin_states))
+            for i in min(length(options.plugins), length(plugin_states)):-1:1
                 inner = wrapped_step
+                plugin, pstate = options.plugins[i], plugin_states[i]
                 wrapped_step = parent -> wrap_mutation_step(pstate, plugin, parent, inner)
             end
             baby, mutation_accepted, tmp_num_evals = wrapped_step(allstar)

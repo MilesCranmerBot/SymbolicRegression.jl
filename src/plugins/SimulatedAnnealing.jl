@@ -8,6 +8,7 @@ import ..CoreModule:
     on_cycle_start!,
     condition_mutation!,
     mutation_acceptance_multiplier,
+    set_temperature!,
     default_simulated_annealing_plugin
 
 """
@@ -59,6 +60,13 @@ function on_cycle_start!(
 )
     n = options.ncycles_per_iteration
     s.temperature = n > 1 ? (n - cycle_idx) / (n - 1) : 1.0
+    return nothing
+end
+
+function set_temperature!(
+    s::SimulatedAnnealingState, ::SimulatedAnnealingPlugin, temperature
+)
+    s.temperature = Float64(temperature)
     return nothing
 end
 

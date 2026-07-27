@@ -39,7 +39,8 @@ using ..CoreModule:
     on_mutation_end!,
     mutation_acceptance_multiplier,
     prepare_mutation_context,
-    condition_mutation!
+    condition_mutation!,
+    set_temperature!
 using ..ComplexityModule: compute_complexity
 using ..LossFunctionsModule: eval_cost, loss_to_cost
 using ..CheckConstraintsModule: check_constraints
@@ -317,6 +318,41 @@ end
         plugin_states,
         population_for_backsolve,
         num_evals,
+    )
+end
+
+"""
+    next_generation(dataset, member, temperature, curmaxsize, options; kwargs...)
+
+Legacy signature retained for downstream compatibility. The `temperature`
+concept is now owned by plugins (see `SimulatedAnnealingPlugin`); this method
+pushes `temperature` onto any plugin state that opts in via
+[`set_temperature!`](@ref) — silently ignoring it when no such plugin is
+active — and delegates to the current signature.
+"""
+function next_generation(
+    dataset::D,
+    member::P,
+    temperature,
+    curmaxsize::Int,
+    options::AbstractOptions;
+    tmp_recorder::RecordType,
+    plugin_states::Tuple=(),
+    population_for_backsolve=nothing,
+)::Tuple{
+    P,Bool,Float64
+} where {T,L,D<:Dataset{T,L},N<:AbstractExpression{T},P<:AbstractPopMember{T,L,N}}
+    for (plugin, pstate) in zip(options.plugins, plugin_states)
+        set_temperature!(pstate, plugin, temperature)
+    end
+    return next_generation(
+        dataset,
+        member,
+        curmaxsize,
+        options;
+        tmp_recorder,
+        plugin_states,
+        population_for_backsolve,
     )
 end
 
