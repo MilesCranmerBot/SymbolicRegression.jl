@@ -19,12 +19,12 @@ on your custom options type, to define custom behavior.
 
 ## Custom Mutations
 
-You can define custom mutation operators by defining a new method on
-`mutate!`, as well as subtyping `AbstractMutationWeights`:
+Define a custom mutation type by subtyping `AbstractMutation`, then define
+its `mutate!` method and pass a weighted instance through `Options(; mutations=...)`:
 
 ```@docs
 mutate!
-AbstractMutationWeights
+AbstractMutation
 condition_mutation_weights!
 sample_mutation
 MutationResult

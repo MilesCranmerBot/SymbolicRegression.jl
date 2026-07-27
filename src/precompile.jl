@@ -46,7 +46,7 @@ function do_precompilation(::Val{mode}) where {mode}
                     population_size=start ? 50 : 12,
                     tournament_selection_n=6,
                     ncycles_per_iteration=start ? 30 : 1,
-                    mutation_weights=MutationWeights(;
+                    mutation_weights=(;
                         mutate_constant=1.0,
                         mutate_operator=1.0,
                         swap_operands=1.0,

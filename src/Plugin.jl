@@ -1,6 +1,7 @@
 module PluginModule
 
 using DispatchDoctor: @unstable
+using ..MutationsModule: AbstractMutation
 
 # ────────────────────────────────────────────────────────────────────────────
 # Hook naming taxonomy
@@ -192,57 +193,43 @@ once the accept/reject decision has been made inside `next_generation`.
 
 # Fields
 
-- `mutation_type::Symbol`: the `Symbol` identifying which mutation was
-  attempted (e.g. `:mutate_constant`, `:add_node`).
 - `accepted::Bool`: `true` if the mutation was accepted (via
   `return_immediately` or annealing/fitness acceptance); `false` if rejected
   (constraint failure, NaN loss, or annealing/frequency rejection).
-- `before_loss::Float64`: loss of the parent member before mutation. Always
-  finite (members with NaN loss are never propagated into the population).
-- `after_loss::Float64`: loss after mutation. `NaN` if no valid evaluation
-  occurred (constraint failure or NaN loss). Finite if the mutated tree was
-  successfully evaluated — including annealing rejections, where the tree
-  was evaluated but the proposal was stochastically rejected. May be `NaN`
-  even when `accepted=true` in the `return_immediately` path if the
-  returned member has a NaN loss.
+- `before_loss::L`: loss of the parent member before mutation.
+- `after_loss::Union{L,Nothing}`: loss after mutation. `nothing` if no valid evaluation
+  occurred (constraint failure or NaN loss).
 
-`accepted` and `after_loss` carry independent information: annealing
-rejection has a finite `after_loss` but `accepted=false`. A plugin can
-distinguish "valid tree, probabilistically rejected" from "invalid tree,
-never evaluated" by checking `isnan(after_loss)`.
+`L` is the dataset's loss type (e.g. `Float32` or `Float64`).
+
+The mutation kind itself is passed as a separate dispatch arg to
+[`on_mutation_end!`](@ref), not stored on the event — that way plugin
+authors can write type-specific methods.
 
 !!! warning "Experimental"
 """
-struct MutationEvent
-    mutation_type::Symbol
+struct MutationEvent{L<:Real}
     accepted::Bool
-    before_loss::Float64
-    after_loss::Float64
+    before_loss::L
+    after_loss::Union{L,Nothing}
 end
 
 """
-    on_mutation_end!(plugin, state, event::MutationEvent, dataset, options)
+    on_mutation_end!(state, plugin, mutation::AbstractMutation, event::MutationEvent, dataset, options)
 
 Lifecycle hook called on the WORKER immediately before each return from
 `next_generation`, after the final accept/reject decision for a mutation.
-Called once per plugin per mutation.
-
-Use this hook to track per-mutation improvement rates, adapt mutation
-weights, or log mutation outcomes.
-
-Override by dispatching on your plugin type:
-
-```julia
-SymbolicRegression.on_mutation_end!(
-    p::MyPlugin, s::MyPluginState, ev::MutationEvent, dataset, opts,
-) = ...
-```
+Called once per plugin per mutation. Plugins can dispatch on the mutation
+type (e.g. `::ConstantMutation`) for type-specific handling, or
+`::AbstractMutation` for a generic catch-all.
 
 Default is a no-op.
 
 !!! warning "Experimental"
 """
-function on_mutation_end!(_, ::AbstractPlugin, ::MutationEvent, dataset, options)
+function on_mutation_end!(
+    _, ::AbstractPlugin, ::AbstractMutation, ::MutationEvent, dataset, options
+)
     return nothing
 end
 

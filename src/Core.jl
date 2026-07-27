@@ -5,6 +5,7 @@ function create_expression end
 include("Utils.jl")
 include("ProgramConstants.jl")
 include("Dataset.jl")
+include("Mutations.jl")
 include("MutationWeights.jl")
 include("OptionsStruct.jl")
 include("Operators.jl")
@@ -25,12 +26,30 @@ using .DatasetModule:
     get_indices,
     get_full_dataset,
     dataset_fraction
-using .MutationWeightsModule: AbstractMutationWeights, MutationWeights, sample_mutation
+using .MutationWeightsModule: MutationWeights, sample_mutation
+using .MutationsModule:
+    AbstractMutation,
+    ConstantMutation,
+    OperatorMutation,
+    FeatureMutation,
+    SwapOperandsMutation,
+    AddNodeMutation,
+    InsertNodeMutation,
+    DeleteNodeMutation,
+    FormConnectionMutation,
+    BreakConnectionMutation,
+    RotateTreeMutation,
+    BacksolveMutation,
+    SimplifyMutation,
+    RandomizeMutation,
+    OptimizeMutation,
+    DoNothingMutation,
+    BUILTIN_MUTATION_TYPES,
+    default_mutations
 using .OptionsStructModule:
     AbstractOptions,
     Options,
     ComplexityMapping,
-    BacksolveOptions,
     specialized_options,
     operator_specialization,
     WarmStartIncompatibleError,

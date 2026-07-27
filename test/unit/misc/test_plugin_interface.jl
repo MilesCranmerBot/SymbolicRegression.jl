@@ -35,8 +35,9 @@
     @test on_generation_end!(s, p, nothing, nothing, opts, nothing, nothing) === nothing
     @test on_cycle_end!(s, p, nothing, nothing, nothing, opts) === nothing
     @test on_mutation_end!(
-        s, p, MutationEvent(:mutate_constant, true, 0.5, 0.4), nothing, opts
+        s, p, ConstantMutation(), MutationEvent(true, 0.5, 0.4), nothing, opts
     ) === nothing
+    @test MutationEvent(false, 1, nothing) isa MutationEvent{Int}
 
     # Factory defaults: init_member returns nothing, fork_plugin_state
     # deepcopies the head state.
@@ -52,10 +53,10 @@
 
     # Conditioner default leaves weights untouched. `weights` is the mutated
     # arg → first; then state, then plugin.
-    w = MutationWeights()
-    before = (w.mutate_constant, w.add_node, w.delete_node)
+    w = deepcopy(opts.mutations)
+    before = deepcopy(w)
     @test condition_mutation_weights!(w, s, p, nothing, opts, 20, 2) === nothing
-    @test (w.mutate_constant, w.add_node, w.delete_node) == before
+    @test w == before
 end
 
 @testitem "Plugin interface: lifecycle hooks called for each plugin" begin
@@ -283,13 +284,13 @@ end
     using Test
 
     # Collect MutationEvent values via a Channel
-    events_ch = Channel{MutationEvent}(10_000)
+    events_ch = Channel{MutationEvent{Float32}}(10_000)
 
     struct MutEvalPlugin <: AbstractPlugin
-        events_ch::Channel{MutationEvent}
+        events_ch::Channel{MutationEvent{Float32}}
     end
     mutable struct MutEvalPluginState
-        events_ch::Channel{MutationEvent}
+        events_ch::Channel{MutationEvent{Float32}}
     end
     SymbolicRegression.init_plugin_state(p::MutEvalPlugin, o, d) = MutEvalPluginState(
         p.events_ch
@@ -299,14 +300,19 @@ end
         head::MutEvalPluginState, ::MutEvalPlugin, dataset
     ) = head
     function SymbolicRegression.on_mutation_end!(
-        state::MutEvalPluginState, ::MutEvalPlugin, event::MutationEvent, dataset, opts
+        state::MutEvalPluginState,
+        ::MutEvalPlugin,
+        ::SymbolicRegression.AbstractMutation,
+        event::MutationEvent,
+        dataset,
+        opts,
     )
         put!(state.events_ch, event)
         return nothing
     end
 
     # maxsize=5 ensures add_node frequently hits the constraint limit,
-    # producing NaN after_loss events reliably.
+    # producing events without an after_loss reliably.
     opts = Options(;
         binary_operators=[+, *],
         populations=2,
@@ -326,14 +332,11 @@ end
     # Hook fired at all
     @test length(events) > 0
 
-    # All mutation types are valid Symbols (fields of MutationWeights)
-    valid_mutations = Set(fieldnames(MutationWeights))
     for ev in events
         @test ev isa MutationEvent
-        @test ev.mutation_type in valid_mutations
         @test ev.accepted isa Bool
-        @test ev.before_loss isa Float64
-        @test ev.after_loss isa Float64
+        @test ev.before_loss isa Float32
+        @test ev.after_loss === nothing || ev.after_loss isa Float32
         @test isfinite(ev.before_loss)
     end
 
@@ -342,10 +345,10 @@ end
     @test any(!ev.accepted for ev in events)
 
     # Some events should have finite after_loss (valid evaluations occurred)
-    @test any(isfinite(ev.after_loss) for ev in events)
+    @test any(ev.after_loss !== nothing && isfinite(ev.after_loss) for ev in events)
 
-    # Some events should have NaN after_loss (constraint failure or NaN eval)
-    @test any(isnan(ev.after_loss) for ev in events)
+    # Some events should have no after_loss (constraint failure or NaN eval)
+    @test any(isnothing(ev.after_loss) for ev in events)
 end
 
 @testitem "Plugin interface: condition_mutation_weights! plugin-dispatched" begin
@@ -355,22 +358,36 @@ end
 
     # Plugin that zeroes out `mutate_constant` from its dispatched method.
     # Verifies the engine layers plugin conditioning on top of its own.
-    struct ZeroConstPlugin <: AbstractPlugin end
-    mutable struct ZeroConstState end
-    SymbolicRegression.init_plugin_state(::ZeroConstPlugin, o, d) = ZeroConstState()
+    struct ZeroConstPlugin <: AbstractPlugin
+        calls::Base.RefValue{Int}
+    end
+    mutable struct ZeroConstState
+        calls::Base.RefValue{Int}
+    end
+    SymbolicRegression.init_plugin_state(plugin::ZeroConstPlugin, o, d) = ZeroConstState(
+        plugin.calls
+    )
+    SymbolicRegression.fork_plugin_state(
+        state::ZeroConstState, ::ZeroConstPlugin, dataset
+    ) = state
     function SymbolicRegression.condition_mutation_weights!(
-        weights::SymbolicRegression.AbstractMutationWeights,
-        ::ZeroConstState,
+        weights::AbstractVector,
+        state::ZeroConstState,
         ::ZeroConstPlugin,
         member,
         options,
         curmaxsize,
         nfeatures,
     )
-        weights.mutate_constant = 0.0
+        state.calls[] += 1
+        for i in eachindex(weights)
+            mutation, weight = weights[i]
+            mutation isa ConstantMutation && (weights[i] = mutation => zero(weight))
+        end
         return nothing
     end
 
+    calls = Ref(0)
     opts = Options(;
         binary_operators=[+, *],
         populations=2,
@@ -378,10 +395,11 @@ end
         progress=false,
         use_frequency=false,
         use_frequency_in_tournament=false,
-        plugins=(ZeroConstPlugin(),),
+        plugins=(ZeroConstPlugin(calls),),
     )
     X = rand(Float32, 2, 20)
     y = X[1, :] .+ X[2, :]
     hof = equation_search(X, y; options=opts, niterations=2, parallelism=:serial)
     @test hof isa SymbolicRegression.HallOfFame
+    @test calls[] > 0
 end

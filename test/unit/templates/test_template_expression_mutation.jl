@@ -1,5 +1,6 @@
 @testitem "template expression parameter mutation" begin
     using SymbolicRegression
+    using SymbolicRegression: condition_mutation_weights!
     using SymbolicRegression.MutationFunctionsModule: mutate_constant
     using Random: MersenneTwister
     using DynamicExpressions: get_metadata
@@ -42,7 +43,9 @@
     # Test multiple mutations to ensure both parameter vectors can be mutated
     param_changed = [false, false]
     for _ in 1:50  # Run enough times to ensure we hit both parameter vectors
-        mutated_expr = mutate_constant(copy(expr), temperature, options, rng)
+        mutated_expr = mutate_constant(
+            copy(expr), temperature, options, ConstantMutation(), rng
+        )
         new_p1 = get_metadata(mutated_expr).parameters.p1._data
         new_p2 = get_metadata(mutated_expr).parameters.p2._data
 
@@ -61,7 +64,7 @@
     @test all(param_changed)
 
     # Test single mutation to verify mutation behavior
-    mutated_expr = mutate_constant(copy(expr), temperature, options, rng)
+    mutated_expr = @test_deprecated mutate_constant(copy(expr), temperature, options, rng)
 
     # Get the mutated parameters
     new_p1 = get_metadata(mutated_expr).parameters.p1._data
@@ -69,4 +72,35 @@
 
     # Verify exactly one parameter was changed
     @test any(new_p1 .!= original_p1) ⊻ any(new_p2 .!= original_p2)
+
+    configured_mutation = ConstantMutation(;
+        perturbation_factor=10.0, probability_negate=1.0
+    )
+    configured_expr = mutate_constant(
+        copy(expr), temperature, options, configured_mutation, MersenneTwister(1)
+    )
+    default_expr = mutate_constant(
+        copy(expr), temperature, options, ConstantMutation(), MersenneTwister(1)
+    )
+    @test get_metadata(configured_expr).parameters != get_metadata(default_expr).parameters
+
+    condition_options = Options(;
+        binary_operators=(+, *, /, -),
+        unary_operators=(sin, cos),
+        expression_spec=TemplateExpressionSpec(; structure=struct_with_params),
+        should_simplify=false,
+    )
+    dataset = Dataset(randn(3, 8), randn(8))
+    member = PopMember(dataset, expr, condition_options; deterministic=true)
+    weights = copy(condition_options.mutations)
+    condition_mutation_weights!(weights, member, condition_options, 0, 1)
+    @test only(weight for (mutation, weight) in weights if mutation isa FeatureMutation) ==
+        0.0
+    @test only(weight for (mutation, weight) in weights if mutation isa AddNodeMutation) ==
+        0.0
+    @test only(
+        weight for (mutation, weight) in weights if mutation isa InsertNodeMutation
+    ) == 0.0
+    @test only(weight for (mutation, weight) in weights if mutation isa SimplifyMutation) ==
+        0.0
 end

@@ -37,7 +37,7 @@ using ..CoreModule:
     Options,
     Dataset,
     CoreModule as CM,
-    AbstractMutationWeights,
+    ConstantMutation,
     has_units,
     DATA_TYPE,
     AbstractExpressionSpec,
@@ -811,34 +811,32 @@ function DA.violates_dimensional_constraints(
     return false
 end
 function MM.condition_mutation_weights!(
-    @nospecialize(weights::AbstractMutationWeights),
+    weights::AbstractVector,
     @nospecialize(member::P),
     @nospecialize(options::AbstractOptions),
     curmaxsize::Int,
     nfeatures::Int,
 ) where {T,L,N<:TemplateExpression,P<:AbstractPopMember{T,L,N}}
     if !preserve_sharing(typeof(member.tree))
-        weights.form_connection = 0.0
-        weights.break_connection = 0.0
+        MM._set_weight!(weights, MM.FormConnectionMutation, 0.0)
+        MM._set_weight!(weights, MM.BreakConnectionMutation, 0.0)
     end
 
     MM.condition_mutate_constant!(typeof(member.tree), weights, member, options, curmaxsize)
 
-    # Disable feature mutation if only one feature available
     if nfeatures <= 1
-        weights.mutate_feature = 0.0
+        MM._set_weight!(weights, MM.FeatureMutation, 0.0)
     end
 
     complexity = ComplexityModule.compute_complexity(member, options)
 
     if complexity >= curmaxsize
-        # If equation is too big, don't add new operators
-        weights.add_node = 0.0
-        weights.insert_node = 0.0
+        MM._set_weight!(weights, MM.AddNodeMutation, 0.0)
+        MM._set_weight!(weights, MM.InsertNodeMutation, 0.0)
     end
 
     if !options.should_simplify
-        weights.simplify = 0.0
+        MM._set_weight!(weights, MM.SimplifyMutation, 0.0)
     end
     return nothing
 end
@@ -898,7 +896,7 @@ end
 
 function MM.condition_mutate_constant!(
     ::Type{<:TemplateExpression},
-    weights::AbstractMutationWeights,
+    weights::AbstractVector,
     member::AbstractPopMember,
     options::AbstractOptions,
     curmaxsize::Int,
@@ -941,13 +939,14 @@ function MF.mutate_constant(
     ex::TemplateExpression{T},
     temperature,
     options::AbstractOptions,
+    mutation::ConstantMutation=ConstantMutation(),
     rng::AbstractRNG=default_rng(),
 ) where {T<:DATA_TYPE}
     regular_constant_mutation = !has_params(ex) || (has_constants(ex) && rand(rng, Bool))
     if regular_constant_mutation
         # Normal mutation of inner constant
         tree, context = MF.get_contents_for_mutation(ex, rng)
-        new_tree = MF.mutate_constant(tree, temperature, options, rng)
+        new_tree = MF.mutate_constant(tree, temperature, options, mutation, rng)
         return MF.with_contents_for_mutation(ex, new_tree, context)
     else # Mutate parameters
 
@@ -962,12 +961,22 @@ function MF.mutate_constant(
             rng, 1:num_params, num_params_to_mutate; replace=false
         )
         parameters = get_metadata(ex).parameters[key_to_mutate]::ParamVector
-        factors = [MF.mutate_factor(T, temperature, options, rng) for _ in idx_to_mutate]
+        factors = [MF.mutate_factor(T, temperature, mutation, rng) for _ in idx_to_mutate]
         @inbounds for (i, f) in zip(idx_to_mutate, factors)
             parameters._data[i] *= f
         end
         return ex
     end
+end
+
+Base.@noinline function MF.mutate_constant(
+    ex::TemplateExpression{T}, temperature, options::AbstractOptions, rng::AbstractRNG
+) where {T<:DATA_TYPE}
+    Base.depwarn(
+        "Passing `rng` as the fourth positional argument to `mutate_constant` is deprecated. Pass `ConstantMutation()` before `rng`.",
+        :mutate_constant,
+    )
+    return MF.mutate_constant(ex, temperature, options, ConstantMutation(), rng)
 end
 # TODO: Look at other ParametricExpression behavior
 
