@@ -330,20 +330,19 @@ end
 end
 
 """
-    on_cycle_start!(state, plugin, cycle_idx, options)
+    on_cycle_start!(state, plugin, cycle_idx, ncycles, options)
 
 Observer hook fired at the start of each evolution cycle (1-based
-`cycle_idx`, total `options.ncycles_per_iteration` per outer iteration).
-Plugins update their own mutable state here from the cycle position —
-e.g. `SimulatedAnnealingPlugin` recomputes its `temperature` once per
-cycle and consumes it later in `mutation_acceptance_multiplier` and
-`condition_mutation!`.
+`cycle_idx`, `ncycles` total). Plugins update their own mutable state here
+based on the cycle position. For example, `SimulatedAnnealingPlugin`
+recomputes its `temperature` once per cycle and consumes it later in
+`mutation_acceptance_multiplier` and `condition_mutation!`.
 
 Default is a no-op.
 
 !!! warning "Experimental"
 """
-function on_cycle_start!(_, ::AbstractPlugin, cycle_idx::Int, options)
+function on_cycle_start!(_, ::AbstractPlugin, cycle_idx::Int, ncycles::Int, options)
     return nothing
 end
 
@@ -394,14 +393,15 @@ end
 
 Compatibility hook for the legacy positional-`temperature` `next_generation`
 signature: plugins that carry a temperature concept (e.g.
-`SimulatedAnnealingPlugin`) overwrite their mutable state with `temperature`;
-all other plugins ignore it. Called once per `(plugin, state)` pair before
-delegating to the current signature.
+`SimulatedAnnealingPlugin`) overwrite their mutable state with `temperature`.
+Called once per `(plugin, state)` pair before delegating to the current
+signature.
 
-Default is a no-op.
+Return `true` when the plugin consumed the temperature. The default returns
+`false`.
 """
 function set_temperature!(_, ::AbstractPlugin, temperature)
-    return nothing
+    return false
 end
 
 """

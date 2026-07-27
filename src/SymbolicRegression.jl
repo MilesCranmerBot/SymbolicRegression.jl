@@ -215,6 +215,7 @@ using Compat: @compat, Fix
         prepare_mutation_context,
         condition_mutation!,
         set_temperature!,
+        skip_in_adaptive_weights,
     )
 )
 #! format: on
@@ -435,7 +436,8 @@ using .ExpressionBuilderModule: embed_metadata, strip_metadata
 using .ParametricExpressionModule: ParametricExpressionSpec
 using .TemplateExpressionMacroModule: @template_spec
 using .AdaptiveParsimonyModule: AdaptiveParsimonyPlugin
-using .AdaptiveMutationWeightsModule: AdaptiveMutationWeightsPlugin
+using .AdaptiveMutationWeightsModule:
+    AdaptiveMutationWeightsPlugin, skip_in_adaptive_weights
 using .MutationLoopModule: MutationLoopPlugin
 using .SimulatedAnnealingModule: SimulatedAnnealingPlugin
 

@@ -25,13 +25,18 @@ function reg_evol_cycle(
         if rand() > options.crossover_probability
             allstar = best_of_sample(pop, options; plugin_states)
             mutation_recorder = RecordType()
+            mutation_steps = if options.use_recorder
+                Tuple{eltype(pop.members),eltype(pop.members),RecordType}[]
+            else
+                nothing
+            end
 
             # Plugins compose around `next_generation` as middleware via
             # `wrap_mutation_step(state, plugin, parent, next_step)`. Build
             # the innermost thunk that runs one `next_generation` call,
             # then wrap from the inside out so plugin tuple order is the
             # outer-to-inner middleware order.
-            base_step =
+            base_step = if mutation_steps === nothing
                 parent -> next_generation(
                     dataset,
                     parent,
@@ -41,6 +46,22 @@ function reg_evol_cycle(
                     plugin_states,
                     population_for_backsolve=pop,
                 )
+            else
+                parent -> begin
+                    step_recorder = RecordType()
+                    result = next_generation(
+                        dataset,
+                        parent,
+                        curmaxsize,
+                        options;
+                        tmp_recorder=step_recorder,
+                        plugin_states,
+                        population_for_backsolve=pop,
+                    )
+                    push!(mutation_steps, (parent, result[1], step_recorder))
+                    return result
+                end
+            end
             wrapped_step = base_step
             for i in min(length(options.plugins), length(plugin_states)):-1:1
                 inner = wrapped_step
@@ -58,10 +79,26 @@ function reg_evol_cycle(
             oldest = argmin_fast([pop.members[member].birth for member in 1:(pop.n)])
 
             @recorder begin
+                mutation_chain = eltype(mutation_steps)[]
+                child_ref = baby.ref
+                while child_ref != allstar.ref
+                    step_idx = findlast(step -> step[2].ref == child_ref, mutation_steps)
+                    step_idx === nothing &&
+                        error("Could not reconstruct recorded mutation chain.")
+                    step = mutation_steps[step_idx]
+                    push!(mutation_chain, step)
+                    child_ref = step[1].ref
+                end
+                reverse!(mutation_chain)
+
                 if !haskey(record, "mutations")
                     record["mutations"] = RecordType()
                 end
-                for member in [allstar, baby, pop.members[oldest]]
+                members_to_record = [pop.members[oldest]]
+                for (parent, child, _) in mutation_chain
+                    push!(members_to_record, parent, child)
+                end
+                for member in members_to_record
                     if !haskey(record["mutations"], "$(member.ref)")
                         record["mutations"]["$(member.ref)"] = RecordType(
                             "events" => Vector{RecordType}(),
@@ -72,16 +109,17 @@ function reg_evol_cycle(
                         )
                     end
                 end
-                mutate_event = RecordType(
-                    "type" => "mutate",
-                    "time" => time(),
-                    "child" => baby.ref,
-                    "mutation" => mutation_recorder,
-                )
                 death_event = RecordType("type" => "death", "time" => time())
 
-                # Put in random key rather than vector; otherwise there are collisions!
-                push!(record["mutations"]["$(allstar.ref)"]["events"], mutate_event)
+                for (parent, child, step_recorder) in mutation_chain
+                    mutate_event = RecordType(
+                        "type" => "mutate",
+                        "time" => time(),
+                        "child" => child.ref,
+                        "mutation" => step_recorder,
+                    )
+                    push!(record["mutations"]["$(parent.ref)"]["events"], mutate_event)
+                end
                 push!(
                     record["mutations"]["$(pop.members[oldest].ref)"]["events"], death_event
                 )

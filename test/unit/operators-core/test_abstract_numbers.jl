@@ -57,3 +57,32 @@ end
         rng, CustomTestType(), 0.5, options
     )
 end
+
+@testitem "Custom value mutation keeps the public temperature contract" begin
+    using SymbolicRegression
+    using SymbolicRegression.CoreModule: ConstantMutationContext
+    using SymbolicRegression.MutationFunctionsModule: _mutate_value
+    using Random
+    using Test
+
+    struct TemperatureAwareValue
+        temperature::Float64
+    end
+
+    function SymbolicRegression.mutate_value(
+        rng::AbstractRNG,
+        value::TemperatureAwareValue,
+        temperature::Real,
+        options::SymbolicRegression.AbstractOptions,
+    )
+        return TemperatureAwareValue(Float64(temperature))
+    end
+
+    options = Options()
+    mutation = ConstantMutation(; perturbation_factor=0.2)
+    context = ConstantMutationContext(0.05)
+    result = _mutate_value(
+        Random.default_rng(), TemperatureAwareValue(1.0), context, mutation, options
+    )
+    @test result.temperature == 0.25
+end

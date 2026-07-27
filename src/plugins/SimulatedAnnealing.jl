@@ -56,10 +56,10 @@ function on_cycle_start!(
     s::SimulatedAnnealingState,
     ::SimulatedAnnealingPlugin,
     cycle_idx::Int,
+    ncycles::Int,
     options::AbstractOptions,
 )
-    n = options.ncycles_per_iteration
-    s.temperature = n > 1 ? (n - cycle_idx) / (n - 1) : 1.0
+    s.temperature = ncycles > 1 ? (ncycles - cycle_idx) / (ncycles - 1) : 1.0
     return nothing
 end
 
@@ -67,7 +67,7 @@ function set_temperature!(
     s::SimulatedAnnealingState, ::SimulatedAnnealingPlugin, temperature
 )
     s.temperature = Float64(temperature)
-    return nothing
+    return true
 end
 
 function condition_mutation!(

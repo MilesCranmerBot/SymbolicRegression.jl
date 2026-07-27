@@ -18,13 +18,58 @@ end
 
 @testitem "skip_in_adaptive_weights: defaults skip Simplify and DoNothing" begin
     using SymbolicRegression
-    using SymbolicRegression.AdaptiveMutationWeightsModule: skip_in_adaptive_weights
     using Test
 
-    @test skip_in_adaptive_weights(SymbolicRegression.SimplifyMutation()) == true
-    @test skip_in_adaptive_weights(SymbolicRegression.DoNothingMutation()) == true
-    @test skip_in_adaptive_weights(SymbolicRegression.ConstantMutation()) == false
-    @test skip_in_adaptive_weights(SymbolicRegression.OperatorMutation()) == false
+    struct SkippedMutation <: AbstractMutation end
+    SymbolicRegression.skip_in_adaptive_weights(::SkippedMutation) = true
+
+    @test SymbolicRegression.skip_in_adaptive_weights(SimplifyMutation()) == true
+    @test SymbolicRegression.skip_in_adaptive_weights(DoNothingMutation()) == true
+    @test SymbolicRegression.skip_in_adaptive_weights(ConstantMutation()) == false
+    @test SymbolicRegression.skip_in_adaptive_weights(OperatorMutation()) == false
+    @test SymbolicRegression.skip_in_adaptive_weights(SkippedMutation()) == true
+end
+
+@testitem "SimulatedAnnealingPlugin uses the requested cycle count" begin
+    using SymbolicRegression
+    using SymbolicRegression.SimulatedAnnealingModule: SimulatedAnnealingState
+    using Test
+
+    plugin = SimulatedAnnealingPlugin()
+    state = SimulatedAnnealingState(0.5)
+    options = Options(; ncycles_per_iteration=100)
+
+    SymbolicRegression.on_cycle_start!(state, plugin, 1, 3, options)
+    @test state.temperature == 1.0
+    SymbolicRegression.on_cycle_start!(state, plugin, 2, 3, options)
+    @test state.temperature == 0.5
+    SymbolicRegression.on_cycle_start!(state, plugin, 3, 3, options)
+    @test state.temperature == 0.0
+    SymbolicRegression.on_cycle_start!(state, plugin, 1, 1, options)
+    @test state.temperature == 1.0
+end
+
+@testitem "AdaptiveMutationWeightsPlugin attributes configured instances" begin
+    using SymbolicRegression
+    using SymbolicRegression: MutationEvent, init_plugin_state, on_mutation_end!
+    using Test
+
+    first_mutation = ConstantMutation(; perturbation_factor=0.1)
+    second_mutation = ConstantMutation(; perturbation_factor=0.2)
+    options = Options(;
+        default_mutations=(),
+        mutations=(first_mutation => 1.0, second_mutation => 1.0),
+        plugins=(AdaptiveMutationWeightsPlugin(),),
+        default_plugins=(),
+    )
+    plugin = only(options.plugins)
+    state = init_plugin_state(plugin, options, nothing)
+
+    on_mutation_end!(
+        state, plugin, second_mutation, MutationEvent(true, 1.0, 0.5), nothing, options
+    )
+    @test state.attempts == [0.0, 1.0]
+    @test state.successes == [0.0, 1.0]
 end
 
 @testitem "MutationLoopPlugin: retry portion retries until accepted" begin
@@ -102,6 +147,48 @@ end
     member, accepted, num_evals = wrap_mutation_step(nothing, p, 0, inner)
     @test accepted == false
     @test n_calls[] == 1
+end
+
+@testitem "MutationLoopPlugin records every compound mutation" begin
+    using SymbolicRegression
+    using SymbolicRegression: Dataset, RecordType, init_plugin_state
+    using SymbolicRegression.RegularizedEvolutionModule: reg_evol_cycle
+    using Test
+
+    plugin = MutationLoopPlugin(;
+        retry_attempts=1, compound_probability=1.0, compound_max_steps=3
+    )
+    options = Options(;
+        default_mutations=(),
+        mutations=(DoNothingMutation() => 1.0,),
+        plugins=(plugin,),
+        default_plugins=(),
+        crossover_probability=0.0,
+        population_size=2,
+        tournament_selection_n=1,
+        use_recorder=true,
+    )
+    dataset = Dataset(zeros(1, 8), zeros(8))
+    plugin_states = (init_plugin_state(plugin, options, dataset),)
+    population = Population(
+        dataset; population_size=2, nlength=1, options, nfeatures=1, plugin_states
+    )
+    record = RecordType()
+
+    reg_evol_cycle(dataset, population, options.maxsize, options, record; plugin_states)
+
+    mutation_events = Tuple{String,RecordType}[]
+    for (parent, member_record) in record["mutations"]
+        for event in member_record["events"]
+            event["type"] == "mutate" && push!(mutation_events, (parent, event))
+        end
+    end
+    @test length(mutation_events) == 3 * options.population_size
+    for (parent, event) in mutation_events
+        child = record["mutations"]["$(event["child"])"]
+        @test child["parent"] == parse(Int, parent)
+        @test event["mutation"]["type"] == "identity"
+    end
 end
 
 @testitem "wrap_mutation_step: default plugin is pass-through" begin

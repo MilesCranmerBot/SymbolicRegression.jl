@@ -98,7 +98,7 @@ function on_mutation_end!(
 )
     skip_in_adaptive_weights(mutation) && return nothing
     mutations = options.mutations
-    idx = findfirst(pair -> typeof(pair.first) === typeof(mutation), mutations)
+    idx = findfirst(pair -> pair.first === mutation, mutations)
     idx === nothing && return nothing
     s.attempts[idx] += 1.0
     if event.accepted && event.after_loss < event.before_loss

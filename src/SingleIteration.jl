@@ -35,7 +35,7 @@ function s_r_cycle(
 
     for cycle_idx in 1:ncycles
         for (plugin, pstate) in zip(options.plugins, plugin_states)
-            on_cycle_start!(pstate, plugin, cycle_idx, options)
+            on_cycle_start!(pstate, plugin, cycle_idx, ncycles, options)
         end
         pop, tmp_num_evals = reg_evol_cycle(
             batched_dataset, pop, curmaxsize, options, record; plugin_states

@@ -38,6 +38,7 @@ using ..CoreModule:
     ConstantMutationContext,
     on_mutation_end!,
     mutation_acceptance_multiplier,
+    init_plugin_state,
     prepare_mutation_context,
     condition_mutation!,
     set_temperature!
@@ -281,6 +282,7 @@ end
     tmp_recorder::RecordType,
     plugin_states::Tuple=(),
     population_for_backsolve=nothing,
+    _legacy_temperature=nothing,
 )::Tuple{
     P,Bool,Float64
 } where {T,L,D<:Dataset{T,L},N<:AbstractExpression{T},P<:AbstractPopMember{T,L,N}}
@@ -317,6 +319,7 @@ end
         tmp_recorder,
         plugin_states,
         population_for_backsolve,
+        _legacy_temperature,
         num_evals,
     )
 end
@@ -324,11 +327,9 @@ end
 """
     next_generation(dataset, member, temperature, curmaxsize, options; kwargs...)
 
-Legacy signature retained for downstream compatibility. The `temperature`
-concept is now owned by plugins (see `SimulatedAnnealingPlugin`); this method
-pushes `temperature` onto any plugin state that opts in via
-[`set_temperature!`](@ref) — silently ignoring it when no such plugin is
-active — and delegates to the current signature.
+Legacy signature retained for downstream compatibility. This method initializes
+plugin states when needed, pushes `temperature` onto any plugin that handles it,
+and preserves temperature-scaled constant perturbations when no plugin does.
 """
 function next_generation(
     dataset::D,
@@ -342,8 +343,14 @@ function next_generation(
 )::Tuple{
     P,Bool,Float64
 } where {T,L,D<:Dataset{T,L},N<:AbstractExpression{T},P<:AbstractPopMember{T,L,N}}
-    for (plugin, pstate) in zip(options.plugins, plugin_states)
-        set_temperature!(pstate, plugin, temperature)
+    effective_plugin_states = if isempty(plugin_states)
+        map(plugin -> init_plugin_state(plugin, options, dataset), options.plugins)
+    else
+        plugin_states
+    end
+    handled_temperature = false
+    for (plugin, pstate) in zip(options.plugins, effective_plugin_states)
+        handled_temperature |= set_temperature!(pstate, plugin, temperature) === true
     end
     return next_generation(
         dataset,
@@ -351,8 +358,9 @@ function next_generation(
         curmaxsize,
         options;
         tmp_recorder,
-        plugin_states,
+        plugin_states=effective_plugin_states,
         population_for_backsolve,
+        _legacy_temperature=handled_temperature ? nothing : temperature,
     )
 end
 
@@ -369,6 +377,7 @@ function _next_generation(
     tmp_recorder::RecordType,
     plugin_states::Tuple,
     population_for_backsolve,
+    legacy_temperature,
     num_evals::Float64,
 )::Tuple{
     P,Bool,Float64
@@ -390,6 +399,9 @@ function _next_generation(
     # configuration onto. Built once per selected mutation here.
     mut_context = prepare_mutation_context(mutation_choice)
     if mut_context !== nothing
+        if mut_context isa ConstantMutationContext && legacy_temperature !== nothing
+            mut_context.perturbation_factor *= Float64(legacy_temperature)
+        end
         for (plugin, pstate) in zip(options.plugins, plugin_states)
             condition_mutation!(mut_context, pstate, plugin, mutation_choice, options)
         end

@@ -153,8 +153,30 @@ function mutate_constant(
         return tree
     end
     node = rand(rng, NodeSampler(; tree, filter=t -> (t.degree == 0 && t.constant)))
-    node.val = mutate_value(rng, node.val, ctx, m)
+    node.val = _mutate_value(rng, node.val, ctx, m, options)
     return tree
+end
+
+function _mutate_value(
+    rng::AbstractRNG,
+    val::Number,
+    ctx::ConstantMutationContext,
+    m::ConstantMutation,
+    options::AbstractOptions,
+)
+    return mutate_value(rng, val, ctx, m)
+end
+
+function _mutate_value(
+    rng::AbstractRNG,
+    val,
+    ctx::ConstantMutationContext,
+    m::ConstantMutation,
+    options::AbstractOptions,
+)
+    temperature =
+        m.perturbation_factor > 0 ? ctx.perturbation_factor / m.perturbation_factor : 1.0
+    return mutate_value(rng, val, temperature, options)
 end
 
 function mutate_value(
