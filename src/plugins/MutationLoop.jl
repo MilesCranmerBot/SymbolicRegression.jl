@@ -1,7 +1,7 @@
 module MutationLoopModule
 
 using DispatchDoctor: @stable, @unstable
-using ..CoreModule: AbstractPlugin, AbstractPluginState
+using ..CoreModule: AbstractPlugin
 import ..CoreModule: wrap_mutation_step, default_mutation_loop_plugin
 
 """
@@ -37,7 +37,7 @@ Base.@kwdef struct MutationLoopPlugin <: AbstractPlugin
 end
 
 @unstable function wrap_mutation_step(
-    ::AbstractPluginState, p::MutationLoopPlugin, parent_member, next_step::F
+    _, p::MutationLoopPlugin, parent_member, next_step::F
 ) where {F}
     # Retry outer.
     member, accepted, num_evals = next_step(parent_member)

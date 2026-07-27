@@ -53,6 +53,7 @@ end
         binary_operators=[+, *],
         use_frequency=false,
         use_frequency_in_tournament=false,
+        annealing=false,
         plugins=[DefaultProbePlugin(1)],
     )
     @test opts_vector.plugins === (DefaultProbePlugin(1),)

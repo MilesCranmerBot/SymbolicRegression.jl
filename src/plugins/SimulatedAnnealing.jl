@@ -3,10 +3,9 @@ module SimulatedAnnealingModule
 using DispatchDoctor: @stable, @unstable
 using ..CoreModule:
     AbstractPlugin,
-    AbstractPluginState,
     AbstractOptions,
-    MutateConstant,
-    MutateConstantContext
+    ConstantMutation,
+    ConstantMutationContext
 import ..CoreModule:
     init_plugin_state,
     on_cycle_start!,
@@ -22,7 +21,7 @@ sweeps linearly from `1.0` at the first cycle of an iteration to `0.0` at
 the last. The plugin uses its current temperature for two things:
 
 1. **Constant-perturbation magnitude**: via [`condition_mutation!`](@ref)
-   on [`MutateConstantContext`](@ref), the plugin scales the per-call
+   on [`ConstantMutationContext`](@ref), the plugin scales the per-call
    `perturbation_factor` by the current temperature, so constants are
    perturbed less near the end of an iteration.
 2. **Mutation acceptance**: via [`mutation_acceptance_multiplier`](@ref),
@@ -47,7 +46,7 @@ Per-output mutable state for [`SimulatedAnnealingPlugin`](@ref). `temperature`
 is recomputed each cycle by [`on_cycle_start!`](@ref) and read by the
 plugin's other hooks.
 """
-mutable struct SimulatedAnnealingState <: AbstractPluginState
+mutable struct SimulatedAnnealingState
     temperature::Float64
 end
 
@@ -67,10 +66,10 @@ function on_cycle_start!(
 end
 
 function condition_mutation!(
-    ctx::MutateConstantContext,
+    ctx::ConstantMutationContext,
     s::SimulatedAnnealingState,
     ::SimulatedAnnealingPlugin,
-    ::MutateConstant,
+    ::ConstantMutation,
     options::AbstractOptions,
 )
     ctx.perturbation_factor *= s.temperature
