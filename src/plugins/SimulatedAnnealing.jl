@@ -2,10 +2,7 @@ module SimulatedAnnealingModule
 
 using DispatchDoctor: @stable, @unstable
 using ..CoreModule:
-    AbstractPlugin,
-    AbstractOptions,
-    ConstantMutation,
-    ConstantMutationContext
+    AbstractPlugin, AbstractOptions, ConstantMutation, ConstantMutationContext
 import ..CoreModule:
     init_plugin_state,
     on_cycle_start!,

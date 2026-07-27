@@ -144,9 +144,7 @@ end
         n_calls[] += 1
         (parent, true, Float64(n_calls[]))
     end
-    member, accepted, num_evals = wrap_mutation_step(
-        nothing, BestOfTwoPlugin(), :p, inner
-    )
+    member, accepted, num_evals = wrap_mutation_step(nothing, BestOfTwoPlugin(), :p, inner)
     @test n_calls[] == 2
     @test num_evals == 1.0
 end

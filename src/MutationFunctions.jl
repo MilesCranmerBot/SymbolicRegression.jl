@@ -19,7 +19,13 @@ using DynamicExpressions:
     max_degree
 using Statistics: median
 using ..CoreModule:
-    AbstractOptions, DATA_TYPE, init_value, sample_value, Dataset, ConstantMutation, ConstantMutationContext
+    AbstractOptions,
+    DATA_TYPE,
+    init_value,
+    sample_value,
+    Dataset,
+    ConstantMutation,
+    ConstantMutationContext
 using ..EvaluateInverseModule: eval_inverse_tree_array, is_bad_array
 using ..BacksolveModule: fit_sparse_expression, configured_backsolve
 
