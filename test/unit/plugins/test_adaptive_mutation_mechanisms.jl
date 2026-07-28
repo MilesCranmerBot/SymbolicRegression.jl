@@ -100,11 +100,21 @@ end
     plugin = only(options.plugins)
     state = init_plugin_state(plugin, options, nothing)
 
+    # Attribution follows `event.mutation_idx`, not instance identity: the
+    # dispatch arg is the first instance, but the index names slot 2.
     on_mutation_end!(
-        state, plugin, second_mutation, MutationEvent(true, 1.0, 0.5), nothing, options
+        state, plugin, first_mutation, MutationEvent(true, 1.0, 0.5, 2), nothing, options
     )
     @test state.attempts == [0.0, 1.0]
     @test state.successes == [0.0, 1.0]
+
+    on_mutation_end!(
+        state, plugin, first_mutation, MutationEvent(true, 1.0, 0.5, 1), nothing, options
+    )
+    allocs = @allocated on_mutation_end!(
+        state, plugin, first_mutation, MutationEvent(true, 1.0, 0.5, 1), nothing, options
+    )
+    @test allocs == 0
 end
 
 @testitem "MutationLoopPlugin: retry portion retries until accepted" begin

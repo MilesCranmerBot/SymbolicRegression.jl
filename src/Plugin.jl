@@ -199,6 +199,8 @@ once the accept/reject decision has been made inside `next_generation`.
 - `before_loss::L`: loss of the parent member before mutation.
 - `after_loss::Union{L,Nothing}`: loss after mutation. `nothing` if no valid evaluation
   occurred (constraint failure or NaN loss).
+- `mutation_idx::Int`: index of the sampled mutation into `options.mutations`
+  (and into the conditioned weights vector, which shares its order).
 
 `L` is the dataset's loss type (e.g. `Float32` or `Float64`).
 
@@ -212,6 +214,7 @@ struct MutationEvent{L<:Real}
     accepted::Bool
     before_loss::L
     after_loss::Union{L,Nothing}
+    mutation_idx::Int
 end
 
 """

@@ -92,20 +92,25 @@ function on_mutation_end!(
     options::AbstractOptions,
 )
     skip_in_adaptive_weights(mutation) && return nothing
-    mutations = options.mutations
-    idx = findfirst(pair -> pair.first === mutation, mutations)
-    idx === nothing && return nothing
+    idx = event.mutation_idx
     s.attempts[idx] += 1.0
     if event.accepted && event.after_loss < event.before_loss
         s.successes[idx] += 1.0
     end
-    # Recompute multipliers from current rates.
-    rates = (s.successes .+ 1.0) ./ (s.attempts .+ 2.0)
-    mean_rate = sum(s.successes .+ 1.0) / sum(s.attempts .+ 2.0)
+    # Recompute multipliers from current rates, without allocating.
+    total_successes = 0.0
+    total_attempts = 0.0
+    @inbounds for i in eachindex(s.attempts)
+        total_successes += s.successes[i]
+        total_attempts += s.attempts[i]
+    end
+    n = length(s.attempts)
+    mean_rate = (total_successes + n) / (total_attempts + 2n)
     f = p.floor
     upper = f > 0 ? inv(f) : Inf
     @inbounds for i in eachindex(s.multipliers)
-        target = clamp(rates[i] / mean_rate, f, upper)
+        rate = (s.successes[i] + 1.0) / (s.attempts[i] + 2.0)
+        target = clamp(rate / mean_rate, f, upper)
         s.multipliers[i] = (1 - p.smoothing) * s.multipliers[i] + p.smoothing * target
     end
     return nothing

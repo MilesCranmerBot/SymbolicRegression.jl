@@ -37,5 +37,5 @@
     @test sample_mutation(weighted_mutations) isa DoNothingMutation
 
     seed!(4)
-    @test _sample_mutation([DoNothingMutation() => nextfloat(0.0)]) isa DoNothingMutation
+    @test _sample_mutation([DoNothingMutation() => nextfloat(0.0)]) == 1
 end

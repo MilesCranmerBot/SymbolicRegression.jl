@@ -241,11 +241,11 @@ end
 
     threshold = rand() * total_weight
     cumulative_weight = 0.0
-    for (mutation, weight) in mutations
+    for (i, (_, weight)) in enumerate(mutations)
         cumulative_weight += weight
-        threshold < cumulative_weight && return mutation
+        threshold < cumulative_weight && return i
     end
-    return last(mutations).first
+    return lastindex(mutations)
 end
 
 # Go through one simulated options.annealing mutation cycle
@@ -301,11 +301,13 @@ end
         )
     end
 
-    mutation_choice = _sample_mutation(weights)
+    mutation_idx = _sample_mutation(weights)
+    mutation_choice = weights[mutation_idx].first
 
     # Preserve concrete mutation dispatch through the hot path.
     return _dispatch_next_generation(
         mutation_choice,
+        mutation_idx,
         dataset,
         member,
         curmaxsize,
@@ -323,6 +325,7 @@ end
 
 function _next_generation(
     mutation_choice::M,
+    mutation_idx::Int,
     dataset::D,
     member::P,
     curmaxsize::Int,
@@ -396,7 +399,7 @@ function _next_generation(
                 options,
                 plugin_states,
                 mutation_choice,
-                MutationEvent(true, before_loss, mutation_result.member.loss),
+                MutationEvent(true, before_loss, mutation_result.member.loss, mutation_idx),
                 dataset,
             )
             return mutation_result.member::P, true, num_evals
@@ -423,7 +426,7 @@ function _next_generation(
             options,
             plugin_states,
             mutation_choice,
-            MutationEvent(false, before_loss, nothing),
+            MutationEvent(false, before_loss, nothing, mutation_idx),
             dataset,
         )
         return (
@@ -454,7 +457,7 @@ function _next_generation(
             options,
             plugin_states,
             mutation_choice,
-            MutationEvent(false, before_loss, nothing),
+            MutationEvent(false, before_loss, nothing, mutation_idx),
             dataset,
         )
         return (
@@ -489,7 +492,7 @@ function _next_generation(
             options,
             plugin_states,
             mutation_choice,
-            MutationEvent(false, before_loss, after_loss),
+            MutationEvent(false, before_loss, after_loss, mutation_idx),
             dataset,
         )
         return (
@@ -517,7 +520,7 @@ function _next_generation(
         options,
         plugin_states,
         mutation_choice,
-        MutationEvent(true, before_loss, after_loss),
+        MutationEvent(true, before_loss, after_loss, mutation_idx),
         dataset,
     )
     return (new_member, true, num_evals)
