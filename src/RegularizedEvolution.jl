@@ -8,20 +8,20 @@ using ..MutateModule: next_generation, crossover_generation
 using ..RecorderModule: @recorder
 using ..UtilsModule: argmin_fast
 
-# Earlier plugins wrap outside later ones; tuple recursion keeps the
-# composed step inferable.
+# Earlier plugins wrap outside later ones; `foldl` over the tuple keeps
+# the composed step inferable at any plugin count.
 build_mutation_step(::Tuple{}, ::Tuple{}, base_step) = base_step
 build_mutation_step(::Tuple{}, ::Tuple, base_step) = _plugin_state_mismatch()
 build_mutation_step(::Tuple, ::Tuple{}, base_step) = _plugin_state_mismatch()
 function build_mutation_step(plugins::Tuple, states::Tuple, base_step::F) where {F}
-    inner = build_mutation_step(Base.tail(plugins), Base.tail(states), base_step)
-    plugin, state = first(plugins), first(states)
-    return parent -> wrap_mutation_step(state, plugin, parent, inner)
+    length(plugins) == length(states) || _plugin_state_mismatch()
+    layers = reverse(map(tuple, plugins, states))
+    return foldl(layers; init=base_step) do inner, (plugin, state)
+        return parent -> wrap_mutation_step(state, plugin, parent, inner)
+    end
 end
 @noinline function _plugin_state_mismatch()
-    throw(
-        ArgumentError("`options.plugins` and `plugin_states` must have the same length.")
-    )
+    throw(ArgumentError("`options.plugins` and `plugin_states` must have the same length."))
 end
 
 # Pass through the population several times, replacing the oldest
@@ -40,24 +40,13 @@ function reg_evol_cycle(
     for i in 1:n_evol_cycles
         if rand() > options.crossover_probability
             allstar = best_of_sample(pop, options; plugin_states)
-            mutation_recorder = RecordType()
             mutation_steps = if options.use_recorder
                 Tuple{eltype(pop.members),eltype(pop.members),RecordType}[]
             else
                 nothing
             end
 
-            base_step = if mutation_steps === nothing
-                parent -> next_generation(
-                    dataset,
-                    parent,
-                    curmaxsize,
-                    options;
-                    tmp_recorder=mutation_recorder,
-                    plugin_states,
-                    population_for_backsolve=pop,
-                )
-            else
+            base_step =
                 parent -> begin
                     step_recorder = RecordType()
                     result = next_generation(
@@ -69,10 +58,11 @@ function reg_evol_cycle(
                         plugin_states,
                         population_for_backsolve=pop,
                     )
-                    push!(mutation_steps, (parent, result[1], step_recorder))
+                    if mutation_steps !== nothing
+                        push!(mutation_steps, (parent, result[1], step_recorder))
+                    end
                     return result
                 end
-            end
             wrapped_step = build_mutation_step(options.plugins, plugin_states, base_step)
             baby, mutation_accepted, tmp_num_evals = wrapped_step(allstar)
             num_evals += tmp_num_evals
