@@ -94,10 +94,7 @@ function create_utils_benchmark()
     # Switch on `hasfield(Options, :plugins)` so this script benchmarks
     # cleanly against both versions.
     new_engine_sig = hasfield(Options, :plugins)
-    # `annealing` field moves off `Options` in the adaptive-mutation-mechanisms
-    # refactor (it becomes plugin config); when absent, `next_generation`
-    # no longer takes a `temperature` arg either.
-    has_temperature = hasfield(Options, :annealing)
+    has_temperature = !any(m -> m.nargs == 5, methods(next_generation))
 
     suite["best_of_sample"] = if new_engine_sig
         @benchmarkable(
