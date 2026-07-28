@@ -20,9 +20,10 @@ Per-cycle local-search extensions to the basic single-mutation loop:
 compound bursts; the combination reproduces the upstream single-mutation
 loop.
 
-Plugin tuple order matters: place this plugin BEFORE (outside) any
-`wrap_mutation_step` plugin that should fire once per `next_generation`
-call. Retry is the outer loop, compound bursts the inner one.
+Like all hooks, `wrap_mutation_step` composes across plugins in
+`options.plugins` tuple order: earlier plugins wrap outside later ones.
+The retry-around-compound nesting above is internal to this plugin's own
+`wrap_mutation_step` implementation and is not affected by tuple order.
 
 !!! warning "Extra experimental"
     The retry/compound mechanisms and their composition were validated on
