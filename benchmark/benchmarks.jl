@@ -94,7 +94,7 @@ function create_utils_benchmark()
     # Switch on `hasfield(Options, :plugins)` so this script benchmarks
     # cleanly against both versions.
     new_engine_sig = hasfield(Options, :plugins)
-    has_temperature = !any(m -> m.nargs == 5, methods(next_generation))
+    has_temperature = any(m -> m.nargs == 6, methods(next_generation))
 
     suite["best_of_sample"] = if new_engine_sig
         @benchmarkable(
