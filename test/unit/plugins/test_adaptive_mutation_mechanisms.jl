@@ -236,6 +236,92 @@ end
     end
 end
 
+@testitem "build_mutation_step composes type-stably and rejects mismatch" begin
+    using SymbolicRegression
+    using SymbolicRegression: AbstractPlugin
+    using SymbolicRegression.RegularizedEvolutionModule: build_mutation_step
+    using Test
+
+    struct _TagPluginA <: AbstractPlugin end
+    struct _TagPluginB <: AbstractPlugin end
+    function SymbolicRegression.wrap_mutation_step(
+        tag::Symbol, ::_TagPluginA, parent, next_step::F
+    ) where {F}
+        return next_step((parent..., tag))
+    end
+    function SymbolicRegression.wrap_mutation_step(
+        tag::Symbol, ::_TagPluginB, parent, next_step::F
+    ) where {F}
+        return next_step((parent..., tag))
+    end
+
+    base = parent -> (parent, true, 1.0)
+
+    step0 = build_mutation_step((), (), base)
+    @test step0 === base
+    @test @inferred(step0(())) == ((), true, 1.0)
+
+    step1 = build_mutation_step((_TagPluginA(),), (:a,), base)
+    @test @inferred(step1(())) == ((:a,), true, 1.0)
+
+    # Plugin 1 is outermost, so its tag is appended first.
+    step2 = build_mutation_step((_TagPluginA(), _TagPluginB()), (:a, :b), base)
+    @test @inferred(step2(())) == ((:a, :b), true, 1.0)
+
+    @test_throws ArgumentError build_mutation_step((_TagPluginA(),), (), base)
+    @test_throws ArgumentError build_mutation_step((), (:a,), base)
+end
+
+@testitem "recorder captures rejected retry branches" begin
+    using SymbolicRegression
+    using SymbolicRegression:
+        Dataset, RecordType, init_plugin_state, MutationAcceptanceContext
+    using SymbolicRegression.RegularizedEvolutionModule: reg_evol_cycle
+    using Test
+
+    struct _AlwaysRejectPlugin <: SymbolicRegression.AbstractPlugin end
+    function SymbolicRegression.mutation_acceptance_multiplier(
+        _, ::_AlwaysRejectPlugin, ctx::MutationAcceptanceContext, options
+    )
+        return 0.0
+    end
+
+    loop = MutationLoopPlugin(;
+        retry_attempts=3, compound_probability=0.0, compound_max_steps=1
+    )
+    options = Options(;
+        default_mutations=(),
+        mutations=(ConstantMutation() => 1.0,),
+        plugins=(loop, _AlwaysRejectPlugin()),
+        default_plugins=(),
+        crossover_probability=0.0,
+        population_size=2,
+        tournament_selection_n=1,
+        use_recorder=true,
+        skip_mutation_failures=false,
+    )
+    dataset = Dataset(randn(1, 8), randn(8))
+    plugin_states = (init_plugin_state(loop, options, dataset), nothing)
+    population = Population(
+        dataset; population_size=2, nlength=3, options, nfeatures=1, plugin_states
+    )
+    record = RecordType()
+
+    reg_evol_cycle(dataset, population, options.maxsize, options, record; plugin_states)
+
+    n_mutate_events = let n = 0
+        for (_, member_record) in record["mutations"]
+            for event in member_record["events"]
+                event["type"] == "mutate" && (n += 1)
+            end
+        end
+        n
+    end
+    # Every rejected retry is its own recorded event: retry_attempts per
+    # tournament round, population_size rounds.
+    @test n_mutate_events == 3 * options.population_size
+end
+
 @testitem "wrap_mutation_step: default plugin is pass-through" begin
     using SymbolicRegression
     using SymbolicRegression: AbstractPlugin, wrap_mutation_step

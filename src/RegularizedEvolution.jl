@@ -8,6 +8,24 @@ using ..MutateModule: next_generation, crossover_generation
 using ..RecorderModule: @recorder
 using ..UtilsModule: argmin_fast
 
+# Compose plugins around `next_generation` as middleware via
+# `wrap_mutation_step(state, plugin, parent, next_step)`, recursing over the
+# plugin tuple so the composed step is fully inferable. Plugin tuple order is
+# the outer-to-inner middleware order.
+build_mutation_step(::Tuple{}, ::Tuple{}, base_step) = base_step
+build_mutation_step(::Tuple{}, ::Tuple, base_step) = _plugin_state_mismatch()
+build_mutation_step(::Tuple, ::Tuple{}, base_step) = _plugin_state_mismatch()
+function build_mutation_step(plugins::Tuple, states::Tuple, base_step::F) where {F}
+    inner = build_mutation_step(Base.tail(plugins), Base.tail(states), base_step)
+    plugin, state = first(plugins), first(states)
+    return parent -> wrap_mutation_step(state, plugin, parent, inner)
+end
+@noinline function _plugin_state_mismatch()
+    throw(
+        ArgumentError("`options.plugins` and `plugin_states` must have the same length.")
+    )
+end
+
 # Pass through the population several times, replacing the oldest
 # with the fittest of a small subsample
 function reg_evol_cycle(
@@ -31,11 +49,6 @@ function reg_evol_cycle(
                 nothing
             end
 
-            # Plugins compose around `next_generation` as middleware via
-            # `wrap_mutation_step(state, plugin, parent, next_step)`. Build
-            # the innermost thunk that runs one `next_generation` call,
-            # then wrap from the inside out so plugin tuple order is the
-            # outer-to-inner middleware order.
             base_step = if mutation_steps === nothing
                 parent -> next_generation(
                     dataset,
@@ -62,12 +75,7 @@ function reg_evol_cycle(
                     return result
                 end
             end
-            wrapped_step = base_step
-            for i in min(length(options.plugins), length(plugin_states)):-1:1
-                inner = wrapped_step
-                plugin, pstate = options.plugins[i], plugin_states[i]
-                wrapped_step = parent -> wrap_mutation_step(pstate, plugin, parent, inner)
-            end
+            wrapped_step = build_mutation_step(options.plugins, plugin_states, base_step)
             baby, mutation_accepted, tmp_num_evals = wrapped_step(allstar)
             num_evals += tmp_num_evals
 
@@ -80,23 +88,12 @@ function reg_evol_cycle(
 
             @recorder begin
                 recorded_steps = something(mutation_steps)
-                mutation_chain = eltype(recorded_steps)[]
-                child_ref = baby.ref
-                while child_ref != allstar.ref
-                    step_idx = findlast(step -> step[2].ref == child_ref, recorded_steps)
-                    step_idx === nothing &&
-                        error("Could not reconstruct recorded mutation chain.")
-                    step = recorded_steps[step_idx]
-                    push!(mutation_chain, step)
-                    child_ref = step[1].ref
-                end
-                reverse!(mutation_chain)
 
                 if !haskey(record, "mutations")
                     record["mutations"] = RecordType()
                 end
                 members_to_record = [pop.members[oldest]]
-                for (parent, child, _) in mutation_chain
+                for (parent, child, _) in recorded_steps
                     push!(members_to_record, parent, child)
                 end
                 for member in members_to_record
@@ -112,7 +109,7 @@ function reg_evol_cycle(
                 end
                 death_event = RecordType("type" => "death", "time" => time())
 
-                for (parent, child, step_recorder) in mutation_chain
+                for (parent, child, step_recorder) in recorded_steps
                     mutate_event = RecordType(
                         "type" => "mutate",
                         "time" => time(),
