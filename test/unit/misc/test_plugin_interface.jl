@@ -14,7 +14,7 @@
         mutation_acceptance_multiplier,
         wrap_mutation_step,
         on_cycle_start!,
-        set_temperature!,
+        constant_mutation_multiplier,
         condition_mutation_weights!,
         MutationEvent,
         MutationWeights
@@ -63,7 +63,7 @@
 
     # on_cycle_start! default is no-op.
     @test on_cycle_start!(s, p, 1, 3, opts) === nothing
-    @test set_temperature!(s, p, 0.5) === false
+    @test constant_mutation_multiplier(s, p) == 1.0
 
     # Conditioner default leaves weights untouched. `weights` is the mutated
     # arg → first; then state, then plugin.

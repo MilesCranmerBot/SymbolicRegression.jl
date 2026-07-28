@@ -64,7 +64,9 @@
     @test all(param_changed)
 
     # Test single mutation to verify mutation behavior
-    mutated_expr = @test_deprecated mutate_constant(copy(expr), temperature, options, rng)
+    mutated_expr = mutate_constant(
+        copy(expr), temperature, options, ConstantMutation(), rng
+    )
 
     # Get the mutated parameters
     new_p1 = get_metadata(mutated_expr).parameters.p1._data

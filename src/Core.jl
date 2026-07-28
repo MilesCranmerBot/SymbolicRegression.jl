@@ -30,7 +30,6 @@ using .MutationWeightsModule: MutationWeights, sample_mutation
 using .MutationsModule:
     AbstractMutation,
     ConstantMutation,
-    ConstantMutationContext,
     OperatorMutation,
     FeatureMutation,
     SwapOperandsMutation,
@@ -109,12 +108,8 @@ using .PluginModule:
     resolve_init_member,
     wrap_mutation_step,
     on_cycle_start!,
-    prepare_mutation_context,
-    condition_mutation!,
-    set_temperature!,
+    constant_mutation_multiplier,
     default_adaptive_parsimony_plugin,
-    default_adaptive_mutation_weights_plugin,
-    default_mutation_loop_plugin,
     default_simulated_annealing_plugin
 
 end

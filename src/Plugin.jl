@@ -1,7 +1,7 @@
 module PluginModule
 
 using DispatchDoctor: @unstable
-using ..MutationsModule: AbstractMutation, ConstantMutation, ConstantMutationContext
+using ..MutationsModule: AbstractMutation, ConstantMutation
 
 # ────────────────────────────────────────────────────────────────────────────
 # Hook naming taxonomy
@@ -336,7 +336,7 @@ Observer hook fired at the start of each evolution cycle (1-based
 `cycle_idx`, `ncycles` total). Plugins update their own mutable state here
 based on the cycle position. For example, `SimulatedAnnealingPlugin`
 recomputes its `temperature` once per cycle and consumes it later in
-`mutation_acceptance_multiplier` and `condition_mutation!`.
+`mutation_acceptance_multiplier` and `constant_mutation_multiplier`.
 
 Default is a no-op.
 
@@ -347,61 +347,15 @@ function on_cycle_start!(_, ::AbstractPlugin, cycle_idx::Int, ncycles::Int, opti
 end
 
 """
-    prepare_mutation_context(mutation::AbstractMutation)
+    constant_mutation_multiplier(state, plugin) -> Real
 
-Build a fresh per-call mutable context for `mutation`, called inside the
-function-barrier of `_next_generation` immediately **after** mutation
-sampling — so only the selected mutation pays the construction cost.
-
-Default returns `nothing` (no context — the mutation runs directly from
-its immutable fields). Override for any mutation type that wants plugins
-to layer per-call configuration on top of its base values.
-
-Example:
-
-```julia
-mutable struct MyMutationContext
-    perturbation_factor::Float64
-end
-SymbolicRegression.prepare_mutation_context(m::MyMutation) = MyMutationContext(m.perturbation_factor)
-```
+Per-plugin multiplier for [`ConstantMutation`](@ref) perturbation magnitude.
+Defaults to `1.0`.
 
 !!! warning "Experimental"
 """
-prepare_mutation_context(::AbstractMutation) = nothing
-function prepare_mutation_context(m::ConstantMutation)
-    return ConstantMutationContext(m.perturbation_factor)
-end
-
-"""
-    condition_mutation!(context, state, plugin, mutation, options)
-
-In-place plugin modification of the per-call `context` produced by
-[`prepare_mutation_context`](@ref). Only fires for the mutation that was
-selected this cycle. Composes by sequential mutation in tuple order.
-
-Default is a no-op.
-
-!!! warning "Experimental"
-"""
-function condition_mutation!(::Any, _, ::AbstractPlugin, ::AbstractMutation, options)
-    return nothing
-end
-
-"""
-    set_temperature!(state, plugin, temperature)
-
-Compatibility hook for the legacy positional-`temperature` `next_generation`
-signature: plugins that carry a temperature concept (e.g.
-`SimulatedAnnealingPlugin`) overwrite their mutable state with `temperature`.
-Called once per `(plugin, state)` pair before delegating to the current
-signature.
-
-Return `true` when the plugin consumed the temperature. The default returns
-`false`.
-"""
-function set_temperature!(_, ::AbstractPlugin, temperature)
-    return false
+function constant_mutation_multiplier(_, ::AbstractPlugin)
+    return 1.0
 end
 
 """
@@ -435,8 +389,6 @@ end
 # Core) provide the only method. Each returns either a plugin instance or
 # `nothing` (when the legacy kwarg is off).
 function default_adaptive_parsimony_plugin end
-function default_adaptive_mutation_weights_plugin end
-function default_mutation_loop_plugin end
 function default_simulated_annealing_plugin end
 
 # Append defaults whose type isn't already in the user tuple. Each default

@@ -43,6 +43,7 @@ end
     @test state.temperature == 1.0
     SymbolicRegression.on_cycle_start!(state, plugin, 2, 3, options)
     @test state.temperature == 0.5
+    @test SymbolicRegression.constant_mutation_multiplier(state, plugin) == 0.5
     SymbolicRegression.on_cycle_start!(state, plugin, 3, 3, options)
     @test state.temperature == 0.0
     SymbolicRegression.on_cycle_start!(state, plugin, 1, 1, options)

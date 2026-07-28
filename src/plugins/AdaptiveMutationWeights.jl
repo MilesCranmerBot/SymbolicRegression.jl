@@ -1,6 +1,5 @@
 module AdaptiveMutationWeightsModule
 
-using DispatchDoctor: @stable
 using ..CoreModule:
     AbstractPlugin,
     AbstractOptions,
@@ -8,11 +7,7 @@ using ..CoreModule:
     SimplifyMutation,
     DoNothingMutation,
     MutationEvent
-import ..CoreModule:
-    init_plugin_state,
-    fork_plugin_state,
-    on_mutation_end!,
-    default_adaptive_mutation_weights_plugin
+import ..CoreModule: init_plugin_state, fork_plugin_state, on_mutation_end!
 import ..MutateModule: condition_mutation_weights!, _scale_weight!
 
 """
@@ -132,20 +127,5 @@ function condition_mutation_weights!(
     end
     return nothing
 end
-
-@stable(
-    default_union_limit = 2,
-    function default_adaptive_mutation_weights_plugin(;
-        adaptive_mutation_weights::Bool,
-        adaptive_mutation_smoothing::Real,
-        adaptive_mutation_floor::Real,
-    )
-        adaptive_mutation_weights || return nothing
-        return AdaptiveMutationWeightsPlugin(;
-            smoothing=Float64(adaptive_mutation_smoothing),
-            floor=Float64(adaptive_mutation_floor),
-        )
-    end
-)
 
 end  # module AdaptiveMutationWeightsModule

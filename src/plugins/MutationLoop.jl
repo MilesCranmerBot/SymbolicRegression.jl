@@ -1,8 +1,8 @@
 module MutationLoopModule
 
-using DispatchDoctor: @stable, @unstable
+using DispatchDoctor: @unstable
 using ..CoreModule: AbstractPlugin
-import ..CoreModule: wrap_mutation_step, default_mutation_loop_plugin
+import ..CoreModule: wrap_mutation_step
 
 """
     MutationLoopPlugin(; retry_attempts=4, compound_probability=0.25, compound_max_steps=2)
@@ -59,23 +59,5 @@ end
     end
     return member, true, num_evals
 end
-
-@stable(
-    default_union_limit = 2,
-    function default_mutation_loop_plugin(;
-        mutation_retry_attempts::Int,
-        compound_mutation_probability::Real,
-        compound_mutation_max_steps::Int,
-    )
-        if mutation_retry_attempts <= 1 && compound_mutation_probability <= 0
-            return nothing
-        end
-        return MutationLoopPlugin(;
-            retry_attempts=mutation_retry_attempts,
-            compound_probability=Float64(compound_mutation_probability),
-            compound_max_steps=compound_mutation_max_steps,
-        )
-    end
-)
 
 end  # module MutationLoopModule

@@ -1,14 +1,12 @@
 module SimulatedAnnealingModule
 
 using DispatchDoctor: @stable, @unstable
-using ..CoreModule:
-    AbstractPlugin, AbstractOptions, ConstantMutation, ConstantMutationContext
+using ..CoreModule: AbstractPlugin, AbstractOptions, ConstantMutation
 import ..CoreModule:
     init_plugin_state,
     on_cycle_start!,
-    condition_mutation!,
+    constant_mutation_multiplier,
     mutation_acceptance_multiplier,
-    set_temperature!,
     default_simulated_annealing_plugin
 
 """
@@ -18,10 +16,9 @@ Couple the search's mutation pipeline to a temperature schedule that
 sweeps linearly from `1.0` at the first cycle of an iteration to `0.0` at
 the last. The plugin uses its current temperature for two things:
 
-1. **Constant-perturbation magnitude**: via [`condition_mutation!`](@ref)
-   on [`ConstantMutationContext`](@ref), the plugin scales the per-call
-   `perturbation_factor` by the current temperature, so constants are
-   perturbed less near the end of an iteration.
+1. **Constant-perturbation magnitude**: via
+   [`constant_mutation_multiplier`](@ref), the plugin scales perturbations
+   by the current temperature.
 2. **Mutation acceptance**: via [`mutation_acceptance_multiplier`](@ref),
    the plugin contributes `exp(-(after_cost - before_cost) / (T * alpha))`
    to the engine's combined accept probability — multiple plugins'
@@ -63,22 +60,10 @@ function on_cycle_start!(
     return nothing
 end
 
-function set_temperature!(
-    s::SimulatedAnnealingState, ::SimulatedAnnealingPlugin, temperature
+function constant_mutation_multiplier(
+    s::SimulatedAnnealingState, ::SimulatedAnnealingPlugin
 )
-    s.temperature = Float64(temperature)
-    return true
-end
-
-function condition_mutation!(
-    ctx::ConstantMutationContext,
-    s::SimulatedAnnealingState,
-    ::SimulatedAnnealingPlugin,
-    ::ConstantMutation,
-    options::AbstractOptions,
-)
-    ctx.perturbation_factor *= s.temperature
-    return nothing
+    return s.temperature
 end
 
 function mutation_acceptance_multiplier(

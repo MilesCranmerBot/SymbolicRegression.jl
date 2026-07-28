@@ -35,13 +35,9 @@ using ..CoreModule:
     dataset_fraction,
     AbstractPlugin,
     MutationEvent,
-    ConstantMutationContext,
     on_mutation_end!,
     mutation_acceptance_multiplier,
-    init_plugin_state,
-    prepare_mutation_context,
-    condition_mutation!,
-    set_temperature!
+    constant_mutation_multiplier
 using ..ComplexityModule: compute_complexity
 using ..LossFunctionsModule: eval_cost, loss_to_cost
 using ..CheckConstraintsModule: check_constraints
@@ -282,7 +278,6 @@ end
     tmp_recorder::RecordType,
     plugin_states::Tuple=(),
     population_for_backsolve=nothing,
-    _legacy_temperature=nothing,
 )::Tuple{
     P,Bool,Float64
 } where {T,L,D<:Dataset{T,L},N<:AbstractExpression{T},P<:AbstractPopMember{T,L,N}}
@@ -319,48 +314,7 @@ end
         tmp_recorder,
         plugin_states,
         population_for_backsolve,
-        _legacy_temperature,
         num_evals,
-    )
-end
-
-"""
-    next_generation(dataset, member, temperature, curmaxsize, options; kwargs...)
-
-Legacy signature retained for downstream compatibility. This method initializes
-plugin states when needed, pushes `temperature` onto any plugin that handles it,
-and preserves temperature-scaled constant perturbations when no plugin does.
-"""
-function next_generation(
-    dataset::D,
-    member::P,
-    temperature,
-    curmaxsize::Int,
-    options::AbstractOptions;
-    tmp_recorder::RecordType,
-    plugin_states::Tuple=(),
-    population_for_backsolve=nothing,
-)::Tuple{
-    P,Bool,Float64
-} where {T,L,D<:Dataset{T,L},N<:AbstractExpression{T},P<:AbstractPopMember{T,L,N}}
-    effective_plugin_states = if isempty(plugin_states)
-        map(plugin -> init_plugin_state(plugin, options, dataset), options.plugins)
-    else
-        plugin_states
-    end
-    handled_temperature = false
-    for (plugin, pstate) in zip(options.plugins, effective_plugin_states)
-        handled_temperature |= set_temperature!(pstate, plugin, temperature) === true
-    end
-    return next_generation(
-        dataset,
-        member,
-        curmaxsize,
-        options;
-        tmp_recorder,
-        plugin_states=effective_plugin_states,
-        population_for_backsolve,
-        _legacy_temperature=handled_temperature ? nothing : temperature,
     )
 end
 
@@ -377,7 +331,6 @@ function _next_generation(
     tmp_recorder::RecordType,
     plugin_states::Tuple,
     population_for_backsolve,
-    legacy_temperature,
     num_evals::Float64,
 )::Tuple{
     P,Bool,Float64
@@ -394,19 +347,6 @@ function _next_generation(
     max_attempts = 10
     node_storage = allocate_container(member.tree)
 
-    # Per-call mutation context — `nothing` for mutations that don't opt in
-    # (zero overhead), otherwise a mutable struct that plugins layer
-    # configuration onto. Built once per selected mutation here.
-    mut_context = prepare_mutation_context(mutation_choice)
-    if mut_context !== nothing
-        if mut_context isa ConstantMutationContext && legacy_temperature !== nothing
-            mut_context.perturbation_factor *= Float64(legacy_temperature)
-        end
-        for (plugin, pstate) in zip(options.plugins, plugin_states)
-            condition_mutation!(mut_context, pstate, plugin, mutation_choice, options)
-        end
-    end
-
     #############################################
     # Mutations
     #############################################
@@ -421,7 +361,6 @@ function _next_generation(
             mutation_choice,
             options;
             recorder=tmp_recorder,
-            context=mut_context,
             dataset,
             cost=before_cost,
             loss=before_loss,
@@ -587,11 +526,6 @@ Add a new mutation by defining a struct subtyping
 
 # Keywords
 
-- `context`: per-call mutable context for the selected mutation type
-  (built by [`prepare_mutation_context`](@ref) and conditioned by plugins
-  via [`condition_mutation!`](@ref)). Mutations that opted in (e.g.
-  `ConstantMutation`) read their parameters from this context; others
-  ignore the kwarg.
 - `dataset::Dataset`: The dataset used for scoring.
 - `cost`: The cost of `parent_member` before mutation.
 - `loss`: The loss of `parent_member` before mutation.
@@ -620,10 +554,14 @@ function mutate!(
     m::ConstantMutation,
     options::AbstractOptions;
     recorder::RecordType,
-    context::ConstantMutationContext,
+    plugin_states::Tuple,
     kws...,
 ) where {N<:AbstractExpression,P<:AbstractPopMember}
-    new_tree = mutate_constant(new_tree, context, m, options)
+    multiplier = 1.0
+    for (plugin, state) in zip(options.plugins, plugin_states)
+        multiplier *= constant_mutation_multiplier(state, plugin)
+    end
+    new_tree = mutate_constant(new_tree, multiplier, options, m)
     @recorder recorder["type"] = "mutate_constant"
     return MutationResult{N,P}(; tree=new_tree)
 end

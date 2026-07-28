@@ -130,10 +130,10 @@ end
         configured_ex.metadata.parameters != default_ex.metadata.parameters
     end
 
-    @test_deprecated mutate_constant(copy(ex), 1.0, options, MersenneTwister(1))
+    mutate_constant(copy(ex), 1.0, options, ConstantMutation(), MersenneTwister(1))
 
     tree = Node(Float64; val=1.0)
     expression = Expression(tree; operators=options.operators)
-    @test_deprecated mutate_constant(copy(tree), 1.0, options, MersenneTwister(1))
-    @test_deprecated mutate_constant(copy(expression), 1.0, options, MersenneTwister(1))
+    mutate_constant(copy(tree), 1.0, options, ConstantMutation(), MersenneTwister(1))
+    mutate_constant(copy(expression), 1.0, options, ConstantMutation(), MersenneTwister(1))
 end
