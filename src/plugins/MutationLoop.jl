@@ -20,10 +20,9 @@ Per-cycle local-search extensions to the basic single-mutation loop:
 compound bursts; the combination reproduces the upstream single-mutation
 loop.
 
-Plugin tuple order matters: this plugin should sit OUTSIDE any wrappers
-that should fire per next_generation call (e.g. nothing else uses
-`wrap_mutation_step` today). The nesting structure intentionally mirrors
-PySR's accepted p108 stack: retry is outer, compound is inner.
+Plugin tuple order matters: place this plugin BEFORE (outside) any
+`wrap_mutation_step` plugin that should fire once per `next_generation`
+call. Retry is the outer loop, compound bursts the inner one.
 
 !!! warning "Extra experimental"
     The retry/compound mechanisms and their composition were validated on

@@ -42,7 +42,8 @@ end
 """
     SimulatedAnnealingState
 
-Per-output mutable state for [`SimulatedAnnealingPlugin`](@ref). `temperature`
+Per-dispatch mutable state (forked via `fork_plugin_state`) for
+[`SimulatedAnnealingPlugin`](@ref). `temperature`
 is recomputed each cycle by [`on_cycle_start!`](@ref) and read by the
 plugin's other hooks.
 """

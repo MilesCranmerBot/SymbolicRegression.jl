@@ -209,7 +209,7 @@ struct Options{
     should_optimize_constants::Bool
     output_directory::Union{String,Nothing}
     populations::Int
-    perturbation_factor::Float32
+    perturbation_factor::Float64
     batching::Bool
     batch_size::Int
     mutations::Vector{Pair{AbstractMutation,Float64}}
