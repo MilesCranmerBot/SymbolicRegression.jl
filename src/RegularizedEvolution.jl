@@ -8,10 +8,8 @@ using ..MutateModule: next_generation, crossover_generation
 using ..RecorderModule: @recorder
 using ..UtilsModule: argmin_fast
 
-# Compose plugins around `next_generation` as middleware via
-# `wrap_mutation_step(state, plugin, parent, next_step)`, recursing over the
-# plugin tuple so the composed step is fully inferable. Plugin tuple order is
-# the outer-to-inner middleware order.
+# Earlier plugins wrap outside later ones; tuple recursion keeps the
+# composed step inferable.
 build_mutation_step(::Tuple{}, ::Tuple{}, base_step) = base_step
 build_mutation_step(::Tuple{}, ::Tuple, base_step) = _plugin_state_mismatch()
 build_mutation_step(::Tuple, ::Tuple{}, base_step) = _plugin_state_mismatch()

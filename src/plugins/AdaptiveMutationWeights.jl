@@ -97,7 +97,7 @@ function on_mutation_end!(
     if event.accepted && event.after_loss < event.before_loss
         s.successes[idx] += 1.0
     end
-    # Recompute multipliers from current rates, without allocating.
+    # Recompute multipliers from current rates.
     total_successes = 0.0
     total_attempts = 0.0
     @inbounds for i in eachindex(s.attempts)

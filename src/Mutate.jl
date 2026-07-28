@@ -353,9 +353,6 @@ function _next_generation(
     max_attempts = 10
     node_storage = allocate_container(member.tree)
 
-    # Per-call mutation context: `nothing` for mutations that don't opt in
-    # (zero overhead), otherwise a mutable struct plugins layer
-    # configuration onto.
     mut_context = prepare_mutation_context(mutation_choice)
     if mut_context !== nothing
         for (plugin, pstate) in zip(options.plugins, plugin_states)
