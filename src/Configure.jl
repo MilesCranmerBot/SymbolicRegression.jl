@@ -329,12 +329,16 @@ function test_entire_pipeline(
         push!(
             futures,
             @spawnat proc begin
+                plugin_states = map(
+                    p -> init_plugin_state(p, options, dataset), options.plugins
+                )
                 tmp_pop = Population(
                     dataset;
                     population_size=20,
                     nlength=3,
                     options=options,
                     nfeatures=max_features(dataset, options),
+                    plugin_states,
                 )
                 tmp_pop = s_r_cycle(
                     dataset,
@@ -344,6 +348,7 @@ function test_entire_pipeline(
                     verbosity=verbosity,
                     options=options,
                     record=RecordType(),
+                    plugin_states,
                 )[1]
                 tmp_pop = optimize_and_simplify_population(
                     dataset, tmp_pop, options, options.maxsize, RecordType()
