@@ -29,9 +29,12 @@ aggregation.
   starved.
 
 Mutation kinds excluded from accounting are declared by dispatch on
-[`skip_in_adaptive_weights`](@ref); by default `SimplifyMutation` and `DoNothingMutation`
-are skipped. Define `skip_in_adaptive_weights(::MyMutation) = true` to add
-your own.
+`skip_in_adaptive_weights`; by default `SimplifyMutation` and
+`DoNothingMutation` are skipped. To add your own:
+
+```julia
+SymbolicRegression.AdaptiveMutationWeightsModule.skip_in_adaptive_weights(::MyMutation) = true
+```
 
 !!! warning "Experimental"
 """
@@ -51,7 +54,7 @@ represent real search moves).
 Extend by dispatch:
 
 ```julia
-SymbolicRegression.skip_in_adaptive_weights(::MyMutation) = true
+SymbolicRegression.AdaptiveMutationWeightsModule.skip_in_adaptive_weights(::MyMutation) = true
 ```
 """
 skip_in_adaptive_weights(::AbstractMutation) = false
@@ -64,7 +67,7 @@ skip_in_adaptive_weights(::DoNothingMutation) = true
 Per-dispatch (per-worker) mutable counters and multipliers, parallel to
 `options.mutations`. Reset at each `fork_plugin_state` call.
 """
-mutable struct AdaptiveMutationWeightsState
+struct AdaptiveMutationWeightsState
     attempts::Vector{Float64}
     successes::Vector{Float64}
     multipliers::Vector{Float64}

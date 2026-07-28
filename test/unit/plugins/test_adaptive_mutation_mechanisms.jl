@@ -2,10 +2,6 @@
     using SymbolicRegression
     using Test
 
-    p = AdaptiveMutationWeightsPlugin()
-    @test p.smoothing == 0.02
-    @test p.floor == 0.05
-
     opts = Options(;
         binary_operators=[+, *],
         unary_operators=[sin],
@@ -16,18 +12,37 @@
     @test all(s.multipliers .== 1.0)
 end
 
-@testitem "skip_in_adaptive_weights: defaults skip Simplify and DoNothing" begin
+@testitem "skipped mutation kinds stay out of adaptive-weights accounting" begin
     using SymbolicRegression
+    using SymbolicRegression: MutationEvent, init_plugin_state, on_mutation_end!
+    import SymbolicRegression.AdaptiveMutationWeightsModule: skip_in_adaptive_weights
     using Test
 
     struct SkippedMutation <: AbstractMutation end
-    SymbolicRegression.skip_in_adaptive_weights(::SkippedMutation) = true
+    skip_in_adaptive_weights(::SkippedMutation) = true
 
-    @test SymbolicRegression.skip_in_adaptive_weights(SimplifyMutation()) == true
-    @test SymbolicRegression.skip_in_adaptive_weights(DoNothingMutation()) == true
-    @test SymbolicRegression.skip_in_adaptive_weights(ConstantMutation()) == false
-    @test SymbolicRegression.skip_in_adaptive_weights(OperatorMutation()) == false
-    @test SymbolicRegression.skip_in_adaptive_weights(SkippedMutation()) == true
+    options = Options(;
+        default_mutations=(),
+        mutations=(SkippedMutation() => 1.0, SimplifyMutation() => 1.0),
+        plugins=(AdaptiveMutationWeightsPlugin(),),
+        default_plugins=(),
+    )
+    plugin = only(options.plugins)
+    state = init_plugin_state(plugin, options, nothing)
+
+    on_mutation_end!(
+        state, plugin, SkippedMutation(), MutationEvent(true, 1.0, 0.5, 1), nothing, options
+    )
+    on_mutation_end!(
+        state,
+        plugin,
+        SimplifyMutation(),
+        MutationEvent(true, 1.0, 0.5, 2),
+        nothing,
+        options,
+    )
+    @test all(state.attempts .== 0.0)
+    @test all(state.multipliers .== 1.0)
 end
 
 @testitem "SimulatedAnnealingPlugin uses the requested cycle count" begin
@@ -117,7 +132,7 @@ end
     @test allocs == 0
 end
 
-@testitem "MutationLoopPlugin: retry portion retries until accepted" begin
+@testitem "MutationBurstPlugin: retry portion retries until accepted" begin
     using SymbolicRegression
     using SymbolicRegression: wrap_mutation_step
     using Test
@@ -127,7 +142,7 @@ end
         n_calls[] += 1
         (parent, n_calls[] >= 3, 1.0)
     end
-    p = MutationLoopPlugin(;
+    p = MutationBurstPlugin(;
         retry_attempts=4, compound_probability=0.0, compound_max_steps=1
     )
     member, accepted, num_evals = wrap_mutation_step(nothing, p, :parent, inner)
@@ -136,7 +151,7 @@ end
     @test num_evals == 3.0
 end
 
-@testitem "MutationLoopPlugin: retry stops at budget when never accepted" begin
+@testitem "MutationBurstPlugin: retry stops at budget when never accepted" begin
     using SymbolicRegression
     using SymbolicRegression: wrap_mutation_step
     using Test
@@ -146,7 +161,7 @@ end
         n_calls[] += 1
         (parent, false, 1.0)
     end
-    p = MutationLoopPlugin(;
+    p = MutationBurstPlugin(;
         retry_attempts=4, compound_probability=0.0, compound_max_steps=1
     )
     member, accepted, num_evals = wrap_mutation_step(nothing, p, :parent, inner)
@@ -155,7 +170,7 @@ end
     @test num_evals == 4.0
 end
 
-@testitem "MutationLoopPlugin: compound portion chains on success" begin
+@testitem "MutationBurstPlugin: compound portion chains on success" begin
     using SymbolicRegression
     using SymbolicRegression: wrap_mutation_step
     using Random
@@ -166,7 +181,7 @@ end
         n_calls[] += 1
         (parent + 1, true, 1.0)
     end
-    p = MutationLoopPlugin(;
+    p = MutationBurstPlugin(;
         retry_attempts=1, compound_probability=1.0, compound_max_steps=3
     )
     Random.seed!(0)
@@ -176,7 +191,7 @@ end
     @test member == 3
 end
 
-@testitem "MutationLoopPlugin: compound doesn't chain on rejection" begin
+@testitem "MutationBurstPlugin: compound doesn't chain on rejection" begin
     using SymbolicRegression
     using SymbolicRegression: wrap_mutation_step
     using Test
@@ -186,7 +201,7 @@ end
         n_calls[] += 1
         (parent, false, 1.0)
     end
-    p = MutationLoopPlugin(;
+    p = MutationBurstPlugin(;
         retry_attempts=1, compound_probability=1.0, compound_max_steps=3
     )
     member, accepted, num_evals = wrap_mutation_step(nothing, p, 0, inner)
@@ -194,13 +209,13 @@ end
     @test n_calls[] == 1
 end
 
-@testitem "MutationLoopPlugin records every compound mutation" begin
+@testitem "MutationBurstPlugin records every compound mutation" begin
     using SymbolicRegression
     using SymbolicRegression: Dataset, RecordType, init_plugin_state
     using SymbolicRegression.RegularizedEvolutionModule: reg_evol_cycle
     using Test
 
-    plugin = MutationLoopPlugin(;
+    plugin = MutationBurstPlugin(;
         retry_attempts=1, compound_probability=1.0, compound_max_steps=3
     )
     options = Options(;
@@ -286,7 +301,7 @@ end
         return 0.0
     end
 
-    loop = MutationLoopPlugin(;
+    loop = MutationBurstPlugin(;
         retry_attempts=3, compound_probability=0.0, compound_max_steps=1
     )
     options = Options(;
@@ -387,7 +402,7 @@ end
         deterministic=true,
         plugins=(
             AdaptiveMutationWeightsPlugin(; smoothing=0.02, floor=0.05),
-            MutationLoopPlugin(;
+            MutationBurstPlugin(;
                 retry_attempts=4, compound_probability=0.25, compound_max_steps=2
             ),
         ),

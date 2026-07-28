@@ -1,11 +1,11 @@
-module MutationLoopModule
+module MutationBurstModule
 
 using DispatchDoctor: @unstable
 using ..CoreModule: AbstractPlugin
 import ..CoreModule: wrap_mutation_step
 
 """
-    MutationLoopPlugin(; retry_attempts=4, compound_probability=0.25, compound_max_steps=2)
+    MutationBurstPlugin(; retry_attempts=4, compound_probability=0.25, compound_max_steps=2)
 
 Per-cycle local-search extensions to the basic single-mutation loop:
 
@@ -30,14 +30,14 @@ The retry-around-compound nesting above is internal to this plugin's own
     a single benchmark suite — they may change behavior, defaults, or
     config-knob names in minor releases until exercised more broadly.
 """
-Base.@kwdef struct MutationLoopPlugin <: AbstractPlugin
+Base.@kwdef struct MutationBurstPlugin <: AbstractPlugin
     retry_attempts::Int = 4
     compound_probability::Float64 = 0.25
     compound_max_steps::Int = 2
 end
 
 @unstable function wrap_mutation_step(
-    _, p::MutationLoopPlugin, parent_member, next_step::F
+    _, p::MutationBurstPlugin, parent_member, next_step::F
 ) where {F}
     # Retry outer.
     member, accepted, num_evals = next_step(parent_member)
@@ -60,4 +60,4 @@ end
     return member, true, num_evals
 end
 
-end  # module MutationLoopModule
+end  # module MutationBurstModule

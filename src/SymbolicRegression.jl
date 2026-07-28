@@ -26,7 +26,7 @@ export Population,
     DoNothingMutation,
     AdaptiveParsimonyPlugin,
     AdaptiveMutationWeightsPlugin,
-    MutationLoopPlugin,
+    MutationBurstPlugin,
     SimulatedAnnealingPlugin,
     Node,
     GraphNode,
@@ -216,7 +216,6 @@ using Compat: @compat, Fix
         prepare_mutation_context,
         condition_mutation!,
         ConstantMutationContext,
-        skip_in_adaptive_weights,
     )
 )
 #! format: on
@@ -272,7 +271,7 @@ using DispatchDoctor: @stable, @unstable
     include("ParametricExpression.jl")
     include("plugins/AdaptiveParsimony.jl")
     include("plugins/AdaptiveMutationWeights.jl")
-    include("plugins/MutationLoop.jl")
+    include("plugins/MutationBurst.jl")
     include("plugins/SimulatedAnnealing.jl")
 
     __dispatch_doctor_unsable_test() = Val(rand(1:10))
@@ -438,9 +437,8 @@ using .ExpressionBuilderModule: embed_metadata, strip_metadata
 using .ParametricExpressionModule: ParametricExpressionSpec
 using .TemplateExpressionMacroModule: @template_spec
 using .AdaptiveParsimonyModule: AdaptiveParsimonyPlugin
-using .AdaptiveMutationWeightsModule:
-    AdaptiveMutationWeightsPlugin, skip_in_adaptive_weights
-using .MutationLoopModule: MutationLoopPlugin
+using .AdaptiveMutationWeightsModule: AdaptiveMutationWeightsPlugin
+using .MutationBurstModule: MutationBurstPlugin
 using .SimulatedAnnealingModule: SimulatedAnnealingPlugin
 
 @stable default_mode = "disable" begin
