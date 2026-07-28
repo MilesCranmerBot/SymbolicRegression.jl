@@ -79,13 +79,14 @@ function reg_evol_cycle(
             oldest = argmin_fast([pop.members[member].birth for member in 1:(pop.n)])
 
             @recorder begin
-                mutation_chain = eltype(mutation_steps)[]
+                recorded_steps = something(mutation_steps)
+                mutation_chain = eltype(recorded_steps)[]
                 child_ref = baby.ref
                 while child_ref != allstar.ref
-                    step_idx = findlast(step -> step[2].ref == child_ref, mutation_steps)
+                    step_idx = findlast(step -> step[2].ref == child_ref, recorded_steps)
                     step_idx === nothing &&
                         error("Could not reconstruct recorded mutation chain.")
-                    step = mutation_steps[step_idx]
+                    step = recorded_steps[step_idx]
                     push!(mutation_chain, step)
                     child_ref = step[1].ref
                 end
