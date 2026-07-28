@@ -251,7 +251,24 @@ function tournament_cost_multiplier(_, ::AbstractPlugin, member, options)
 end
 
 """
-    mutation_acceptance_multiplier(state, plugin, parent_member, new_tree, before_cost, after_cost, options) -> Real
+    MutationAcceptanceContext{P,N,C}
+
+Read-only bundle of per-mutation observations passed to
+[`mutation_acceptance_multiplier`](@ref): the parent member, the proposed
+new tree, and the cost before/after the mutation. Carried as a struct so
+new fields can be added without breaking existing plugin methods.
+
+!!! warning "Experimental"
+"""
+struct MutationAcceptanceContext{P,N,C}
+    parent_member::P
+    new_tree::N
+    before_cost::C
+    after_cost::C
+end
+
+"""
+    mutation_acceptance_multiplier(state, plugin, ctx::MutationAcceptanceContext, options) -> Real
 
 Per-plugin multiplicative contribution to the engine's per-mutation accept
 probability. The engine takes the product across all plugins and draws
@@ -264,7 +281,7 @@ maintain their own mutable state and update it in [`on_cycle_start!`](@ref).
 !!! warning "Experimental"
 """
 function mutation_acceptance_multiplier(
-    _, ::AbstractPlugin, parent_member, new_tree, before_cost, after_cost, options
+    _, ::AbstractPlugin, ctx::MutationAcceptanceContext, options
 )
     return 1.0
 end

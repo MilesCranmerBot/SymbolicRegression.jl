@@ -1,7 +1,8 @@
 module SimulatedAnnealingModule
 
 using DispatchDoctor: @stable, @unstable
-using ..CoreModule: AbstractPlugin, AbstractOptions, ConstantMutation
+using ..CoreModule:
+    AbstractPlugin, AbstractOptions, ConstantMutation, MutationAcceptanceContext
 import ..CoreModule:
     init_plugin_state,
     on_cycle_start!,
@@ -69,13 +70,10 @@ end
 function mutation_acceptance_multiplier(
     s::SimulatedAnnealingState,
     p::SimulatedAnnealingPlugin,
-    parent_member,
-    new_tree,
-    before_cost,
-    after_cost,
+    ctx::MutationAcceptanceContext,
     options::AbstractOptions,
 )
-    delta = after_cost - before_cost
+    delta = ctx.after_cost - ctx.before_cost
     return exp(-delta / (s.temperature * p.alpha))
 end
 

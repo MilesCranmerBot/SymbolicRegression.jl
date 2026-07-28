@@ -37,6 +37,7 @@ using ..CoreModule:
     MutationEvent,
     on_mutation_end!,
     mutation_acceptance_multiplier,
+    MutationAcceptanceContext,
     constant_mutation_multiplier
 using ..ComplexityModule: compute_complexity
 using ..LossFunctionsModule: eval_cost, loss_to_cost
@@ -459,9 +460,10 @@ function _next_generation(
     end
 
     probChange = 1.0
+    acceptance_ctx = MutationAcceptanceContext(member, tree, before_cost, after_cost)
     for (plugin, pstate) in zip(options.plugins, plugin_states)
         probChange *= mutation_acceptance_multiplier(
-            pstate, plugin, member, tree, before_cost, after_cost, options
+            pstate, plugin, acceptance_ctx, options
         )
     end
 

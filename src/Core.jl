@@ -104,6 +104,7 @@ using .PluginModule:
     init_member,
     tournament_cost_multiplier,
     mutation_acceptance_multiplier,
+    MutationAcceptanceContext,
     fork_plugin_state,
     resolve_init_member,
     wrap_mutation_step,

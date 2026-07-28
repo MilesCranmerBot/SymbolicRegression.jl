@@ -12,6 +12,7 @@
         init_member,
         tournament_cost_multiplier,
         mutation_acceptance_multiplier,
+        MutationAcceptanceContext,
         wrap_mutation_step,
         on_cycle_start!,
         constant_mutation_multiplier,
@@ -55,7 +56,8 @@
 
     # Modifier defaults return 1.0 (multiplicative identity).
     @test tournament_cost_multiplier(s, p, nothing, opts) == 1.0
-    @test mutation_acceptance_multiplier(s, p, nothing, nothing, 0.0, 0.0, opts) == 1.0
+    acceptance_ctx = MutationAcceptanceContext(nothing, nothing, 0.0, 0.0)
+    @test mutation_acceptance_multiplier(s, p, acceptance_ctx, opts) == 1.0
 
     # wrap_mutation_step default is pass-through.
     inner = parent -> (parent, true, 1.0)
