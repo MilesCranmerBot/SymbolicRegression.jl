@@ -38,7 +38,9 @@ using ..CoreModule:
     on_mutation_end!,
     mutation_acceptance_multiplier,
     MutationAcceptanceContext,
-    constant_mutation_multiplier
+    ConstantMutationContext,
+    prepare_mutation_context,
+    condition_mutation!
 using ..ComplexityModule: compute_complexity
 using ..LossFunctionsModule: eval_cost, loss_to_cost
 using ..CheckConstraintsModule: check_constraints
@@ -348,6 +350,16 @@ function _next_generation(
     max_attempts = 10
     node_storage = allocate_container(member.tree)
 
+    # Per-call mutation context: `nothing` for mutations that don't opt in
+    # (zero overhead), otherwise a mutable struct plugins layer
+    # configuration onto.
+    mut_context = prepare_mutation_context(mutation_choice)
+    if mut_context !== nothing
+        for (plugin, pstate) in zip(options.plugins, plugin_states)
+            condition_mutation!(mut_context, pstate, plugin, mutation_choice, options)
+        end
+    end
+
     #############################################
     # Mutations
     #############################################
@@ -362,6 +374,7 @@ function _next_generation(
             mutation_choice,
             options;
             recorder=tmp_recorder,
+            context=mut_context,
             dataset,
             cost=before_cost,
             loss=before_loss,
@@ -535,6 +548,9 @@ Add a new mutation by defining a struct subtyping
 - `nfeatures`: The number of features in the dataset.
 - `parent_ref`: Reference to `parent_member`'s parent (used for lineage logging).
 - `recorder::RecordType`: A recorder to log mutation details.
+- `context`: per-call mutable context for the selected mutation type (built by
+  [`prepare_mutation_context`](@ref) and conditioned by plugins via
+  [`condition_mutation!`](@ref)); `nothing` for mutations without one.
 - `plugin_states::Tuple`: The active worker plugin states, in tuple order matching
   `options.plugins`.
 
@@ -556,14 +572,11 @@ function mutate!(
     m::ConstantMutation,
     options::AbstractOptions;
     recorder::RecordType,
-    plugin_states::Tuple,
+    context::Union{Nothing,ConstantMutationContext}=nothing,
     kws...,
 ) where {N<:AbstractExpression,P<:AbstractPopMember}
-    multiplier = 1.0
-    for (plugin, state) in zip(options.plugins, plugin_states)
-        multiplier *= constant_mutation_multiplier(state, plugin)
-    end
-    new_tree = mutate_constant(new_tree, multiplier, options, m)
+    scale = context === nothing ? 1.0 : context.scale
+    new_tree = mutate_constant(new_tree, scale, options, m)
     @recorder recorder["type"] = "mutate_constant"
     return MutationResult{N,P}(; tree=new_tree)
 end

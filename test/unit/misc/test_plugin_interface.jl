@@ -15,7 +15,8 @@
         MutationAcceptanceContext,
         wrap_mutation_step,
         on_cycle_start!,
-        constant_mutation_multiplier,
+        prepare_mutation_context,
+        condition_mutation!,
         condition_mutation_weights!,
         MutationEvent,
         MutationWeights
@@ -65,7 +66,12 @@
 
     # on_cycle_start! default is no-op.
     @test on_cycle_start!(s, p, 1, 3, opts) === nothing
-    @test constant_mutation_multiplier(s, p) == 1.0
+
+    # Mutation contexts: no context by default; conditioning defaults to no-op.
+    @test prepare_mutation_context(OperatorMutation()) === nothing
+    @test condition_mutation!(
+        prepare_mutation_context(ConstantMutation()), s, p, ConstantMutation(), opts
+    ) === nothing
 
     # Conditioner default leaves weights untouched. `weights` is the mutated
     # arg → first; then state, then plugin.

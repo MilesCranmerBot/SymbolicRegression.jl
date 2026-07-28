@@ -43,11 +43,45 @@ end
     @test state.temperature == 1.0
     SymbolicRegression.on_cycle_start!(state, plugin, 2, 3, options)
     @test state.temperature == 0.5
-    @test SymbolicRegression.constant_mutation_multiplier(state, plugin) == 0.5
+    let ctx = SymbolicRegression.prepare_mutation_context(ConstantMutation())
+        SymbolicRegression.condition_mutation!(
+            ctx, state, plugin, ConstantMutation(), options
+        )
+        @test ctx.scale == 0.5
+    end
     SymbolicRegression.on_cycle_start!(state, plugin, 3, 3, options)
     @test state.temperature == 0.0
     SymbolicRegression.on_cycle_start!(state, plugin, 1, 1, options)
     @test state.temperature == 1.0
+end
+
+@testitem "prepare_mutation_context / condition_mutation!" begin
+    using SymbolicRegression
+    using SymbolicRegression:
+        AbstractPlugin,
+        ConstantMutationContext,
+        prepare_mutation_context,
+        condition_mutation!
+    using SymbolicRegression.SimulatedAnnealingModule: SimulatedAnnealingState
+    using Test
+
+    @test prepare_mutation_context(OperatorMutation()) === nothing
+    ctx = prepare_mutation_context(ConstantMutation())
+    @test ctx isa ConstantMutationContext
+    @test ctx.scale == 1.0
+
+    struct _CtxNoopPlugin <: AbstractPlugin end
+    opts = Options()
+    @test condition_mutation!(ctx, nothing, _CtxNoopPlugin(), ConstantMutation(), opts) ===
+        nothing
+    @test ctx.scale == 1.0
+
+    plugin = SimulatedAnnealingPlugin()
+    state = SimulatedAnnealingState(0.25)
+    condition_mutation!(ctx, state, plugin, ConstantMutation(), opts)
+    @test ctx.scale == 0.25
+    condition_mutation!(ctx, state, plugin, ConstantMutation(), opts)
+    @test ctx.scale == 0.0625
 end
 
 @testitem "AdaptiveMutationWeightsPlugin attributes configured instances" begin

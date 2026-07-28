@@ -44,6 +44,7 @@ using .MutationsModule:
     RandomizeMutation,
     OptimizeMutation,
     DoNothingMutation,
+    ConstantMutationContext,
     BUILTIN_MUTATION_TYPES,
     default_mutations
 using .OptionsStructModule:
@@ -109,7 +110,8 @@ using .PluginModule:
     resolve_init_member,
     wrap_mutation_step,
     on_cycle_start!,
-    constant_mutation_multiplier,
+    prepare_mutation_context,
+    condition_mutation!,
     default_adaptive_parsimony_plugin,
     default_simulated_annealing_plugin
 

@@ -2,11 +2,15 @@ module SimulatedAnnealingModule
 
 using DispatchDoctor: @stable, @unstable
 using ..CoreModule:
-    AbstractPlugin, AbstractOptions, ConstantMutation, MutationAcceptanceContext
+    AbstractPlugin,
+    AbstractOptions,
+    ConstantMutation,
+    ConstantMutationContext,
+    MutationAcceptanceContext
 import ..CoreModule:
     init_plugin_state,
     on_cycle_start!,
-    constant_mutation_multiplier,
+    condition_mutation!,
     mutation_acceptance_multiplier,
     default_simulated_annealing_plugin
 
@@ -17,9 +21,9 @@ Couple the search's mutation pipeline to a temperature schedule that
 sweeps linearly from `1.0` at the first cycle of an iteration to `0.0` at
 the last. The plugin uses its current temperature for two things:
 
-1. **Constant-perturbation magnitude**: via
-   [`constant_mutation_multiplier`](@ref), the plugin scales perturbations
-   by the current temperature.
+1. **Constant-perturbation magnitude**: via [`condition_mutation!`](@ref),
+   the plugin multiplies `ConstantMutationContext.scale` by the current
+   temperature.
 2. **Mutation acceptance**: via [`mutation_acceptance_multiplier`](@ref),
    the plugin contributes `exp(-(after_cost - before_cost) / (T * alpha))`
    to the engine's combined accept probability — multiple plugins'
@@ -61,10 +65,15 @@ function on_cycle_start!(
     return nothing
 end
 
-function constant_mutation_multiplier(
-    s::SimulatedAnnealingState, ::SimulatedAnnealingPlugin
+function condition_mutation!(
+    ctx::ConstantMutationContext,
+    s::SimulatedAnnealingState,
+    ::SimulatedAnnealingPlugin,
+    ::ConstantMutation,
+    options::AbstractOptions,
 )
-    return s.temperature
+    ctx.scale *= s.temperature
+    return nothing
 end
 
 function mutation_acceptance_multiplier(

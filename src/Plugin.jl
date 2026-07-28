@@ -1,7 +1,7 @@
 module PluginModule
 
 using DispatchDoctor: @unstable
-using ..MutationsModule: AbstractMutation, ConstantMutation
+using ..MutationsModule: AbstractMutation, ConstantMutation, ConstantMutationContext
 
 # ────────────────────────────────────────────────────────────────────────────
 # Hook naming taxonomy
@@ -353,7 +353,7 @@ Observer hook fired at the start of each evolution cycle (1-based
 `cycle_idx`, `ncycles` total). Plugins update their own mutable state here
 based on the cycle position. For example, `SimulatedAnnealingPlugin`
 recomputes its `temperature` once per cycle and consumes it later in
-`mutation_acceptance_multiplier` and `constant_mutation_multiplier`.
+`mutation_acceptance_multiplier` and `condition_mutation!`.
 
 Default is a no-op.
 
@@ -364,15 +364,43 @@ function on_cycle_start!(_, ::AbstractPlugin, cycle_idx::Int, ncycles::Int, opti
 end
 
 """
-    constant_mutation_multiplier(state, plugin) -> Real
+    prepare_mutation_context(mutation::AbstractMutation)
 
-Per-plugin multiplier for [`ConstantMutation`](@ref) perturbation magnitude.
-Defaults to `1.0`.
+Build a fresh per-call mutable context for `mutation`, called inside
+`next_generation` immediately after mutation sampling — so only the
+selected mutation pays the construction cost.
+
+Default returns `nothing` (no context; the mutation runs directly from its
+immutable fields). Override for any mutation type that wants plugins to
+layer per-call configuration on top of its base values via
+[`condition_mutation!`](@ref):
+
+```julia
+mutable struct MyMutationContext
+    strength::Float64
+end
+SymbolicRegression.prepare_mutation_context(m::MyMutation) = MyMutationContext(m.strength)
+```
 
 !!! warning "Experimental"
 """
-function constant_mutation_multiplier(_, ::AbstractPlugin)
-    return 1.0
+prepare_mutation_context(::AbstractMutation) = nothing
+prepare_mutation_context(::ConstantMutation) = ConstantMutationContext()
+
+"""
+    condition_mutation!(context, state, plugin, mutation, options)
+
+In-place plugin modification of the per-call `context` produced by
+[`prepare_mutation_context`](@ref). Fired only for the mutation selected
+this call, and only when its context is not `nothing`. Composes by
+sequential in-place mutation in plugin tuple order.
+
+Default is a no-op.
+
+!!! warning "Experimental"
+"""
+function condition_mutation!(::Any, _, ::AbstractPlugin, ::AbstractMutation, options)
+    return nothing
 end
 
 """

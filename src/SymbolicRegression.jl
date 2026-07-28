@@ -213,7 +213,9 @@ using Compat: @compat, Fix
         fork_plugin_state,
         wrap_mutation_step,
         on_cycle_start!,
-        constant_mutation_multiplier,
+        prepare_mutation_context,
+        condition_mutation!,
+        ConstantMutationContext,
         skip_in_adaptive_weights,
     )
 )
@@ -362,7 +364,9 @@ using .CoreModule:
     fork_plugin_state,
     wrap_mutation_step,
     on_cycle_start!,
-    constant_mutation_multiplier
+    prepare_mutation_context,
+    condition_mutation!,
+    ConstantMutationContext
 using .UtilsModule: is_anonymous_function, recursive_merge, json3_write, @ignore
 using .ComplexityModule: compute_complexity
 using .CheckConstraintsModule: check_constraints
