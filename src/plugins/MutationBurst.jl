@@ -39,8 +39,7 @@ struct MutationBurstPlugin <: AbstractPlugin
         compound_probability::Real=0.25,
         compound_max_steps::Integer=2,
     )
-        retry_attempts >= 1 ||
-            throw(ArgumentError("`retry_attempts` must be at least 1."))
+        retry_attempts >= 1 || throw(ArgumentError("`retry_attempts` must be at least 1."))
         0 <= compound_probability <= 1 ||
             throw(ArgumentError("`compound_probability` must be between 0 and 1."))
         compound_max_steps >= 1 ||

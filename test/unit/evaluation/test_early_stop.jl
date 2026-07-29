@@ -49,20 +49,10 @@ end
         options.plugins,
     )
     pop1 = Population(
-        dataset;
-        population_size=5,
-        nlength=3,
-        options=options,
-        nfeatures=2,
-        plugin_states,
+        dataset; population_size=5, nlength=3, options=options, nfeatures=2, plugin_states
     )
     pop2 = Population(
-        dataset;
-        population_size=5,
-        nlength=3,
-        options=options,
-        nfeatures=2,
-        plugin_states,
+        dataset; population_size=5, nlength=3, options=options, nfeatures=2, plugin_states
     )
     hof = HallOfFame(options, dataset)
 

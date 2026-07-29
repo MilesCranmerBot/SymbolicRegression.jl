@@ -45,12 +45,7 @@
     @test on_generation_end!(s, p, nothing, nothing, opts, nothing, nothing) === nothing
     @test on_cycle_end!(s, p, nothing, nothing, nothing, opts) === nothing
     @test on_mutation_end!(
-        s,
-        p,
-        ConstantMutation(),
-        MutationEvent(true, 0.5, 0.4, 0.5, 0.4, 1),
-        nothing,
-        opts,
+        s, p, ConstantMutation(), MutationEvent(true, 0.5, 0.4, 0.5, 0.4, 1), nothing, opts
     ) === nothing
     @test MutationEvent(false, 1, nothing, 1, nothing, 1) isa MutationEvent{Int,Int}
 
@@ -132,11 +127,7 @@ end
         s::LifecyclePluginState, ::LifecyclePlugin, pop, d, h, o
     ) = (put!(s.counter_ch, :cycle_end); nothing)
     SymbolicRegression.on_cycle_start!(
-        s::LifecyclePluginState,
-        ::LifecyclePlugin,
-        cycle_idx::Int,
-        ncycles::Int,
-        o,
+        s::LifecyclePluginState, ::LifecyclePlugin, cycle_idx::Int, ncycles::Int, o
     ) = (put!(s.counter_ch, :cycle_start); nothing)
 
     opts = Options(;

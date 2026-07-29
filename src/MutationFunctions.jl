@@ -159,7 +159,11 @@ function _mutate_value(
 end
 
 function _mutate_value(  # COV_EXCL_LINE
-    rng::AbstractRNG, val, temperature, m::ConstantMutation, options::AbstractOptions
+    rng::AbstractRNG,
+    val,
+    temperature,
+    m::ConstantMutation,
+    options::AbstractOptions,
 )
     return mutate_value(rng, val, temperature, options)
 end

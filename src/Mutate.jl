@@ -284,8 +284,9 @@ end
 )::Tuple{
     P,Bool,Float64
 } where {T,L,D<:Dataset{T,L},N<:AbstractExpression{T},P<:AbstractPopMember{T,L,N}}
-    length(options.plugins) == length(plugin_states) ||
-        throw(ArgumentError("`options.plugins` and `plugin_states` must have the same length."))
+    length(options.plugins) == length(plugin_states) || throw(
+        ArgumentError("`options.plugins` and `plugin_states` must have the same length."),
+    )
     parent_ref = member.ref
     num_evals = 0.0
 

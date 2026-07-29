@@ -33,8 +33,9 @@ function s_r_cycle(
 )::Tuple{
     P,HallOfFame{T,L,N},Float64
 } where {T,L,D<:Dataset{T,L},N<:AbstractExpression{T},P<:Population{T,L,N}}
-    length(options.plugins) == length(plugin_states) ||
-        throw(ArgumentError("`options.plugins` and `plugin_states` must have the same length."))
+    length(options.plugins) == length(plugin_states) || throw(
+        ArgumentError("`options.plugins` and `plugin_states` must have the same length."),
+    )
     best_examples_seen = HallOfFame(options, dataset)
     num_evals = 0.0
 

@@ -67,12 +67,9 @@ function (step::MutationStep)(parent)
         population_for_backsolve=step.population,
     )
     step.num_evals += num_evals
-    result = MutationStepResult(
-        member, accepted, UInt(length(step.attempted_results) + 1)
-    )
+    result = MutationStepResult(member, accepted, UInt(length(step.attempted_results) + 1))
     push!(step.attempted_results, result)
-    step.attempted_members !== nothing &&
-        push!(step.attempted_members, copy(member))
+    step.attempted_members !== nothing && push!(step.attempted_members, copy(member))
     if step.recorded_steps !== nothing
         push!(step.recorded_steps, (copy(parent), copy(member), step_recorder))
     end
@@ -101,20 +98,18 @@ function reg_evol_cycle(
 )::Tuple{P,Float64} where {T<:DATA_TYPE,L<:LOSS_TYPE,P<:Population{T,L}}
     num_evals = 0.0
     n_evol_cycles = ceil(Int, pop.n / options.tournament_selection_n)
-    actual_best_seen =
-        best_seen === nothing ? HallOfFame(options, dataset) : best_seen
+    actual_best_seen = best_seen === nothing ? HallOfFame(options, dataset) : best_seen
     mutation_steps = if options.use_recorder
         Tuple{eltype(pop.members),eltype(pop.members),RecordType}[]
     else
         nothing
     end
-    attempted_members = if any(
-        plugin -> wraps_mutation_step(plugin) === Val(true), options.plugins
-    )
-        eltype(pop.members)[]
-    else
-        nothing
-    end
+    attempted_members =
+        if any(plugin -> wraps_mutation_step(plugin) === Val(true), options.plugins)
+            eltype(pop.members)[]
+        else
+            nothing
+        end
     base_step = MutationStep(
         dataset,
         pop,
@@ -136,8 +131,7 @@ function reg_evol_cycle(
             result = wrapped_step(allstar)
             selected_attempt = findfirst(
                 attempt ->
-                    result.attempt_id != 0 &&
-                        attempt.attempt_id == result.attempt_id,
+                    result.attempt_id != 0 && attempt.attempt_id == result.attempt_id,
                 base_step.attempted_results,
             )
             selected_attempt === nothing && throw(
@@ -145,17 +139,20 @@ function reg_evol_cycle(
             )
             selected_attempt_idx = selected_attempt::Int
             selected_result = base_step.attempted_results[selected_attempt_idx]
-            baby =
-                base_step.attempted_members === nothing ?
-                selected_result.member :
+            baby = if base_step.attempted_members === nothing
+                selected_result.member
+            else
                 base_step.attempted_members[selected_attempt_idx]
+            end
             mutation_accepted = selected_result.accepted
             num_evals += base_step.num_evals
 
             should_replace = mutation_accepted || !options.skip_mutation_failures
-            oldest =
-                should_replace ?
-                argmin_fast([pop.members[member].birth for member in 1:(pop.n)]) : 0
+            oldest = if should_replace
+                argmin_fast([pop.members[member].birth for member in 1:(pop.n)])
+            else
+                0
+            end
 
             @recorder begin
                 recorded_steps = something(mutation_steps)

@@ -29,12 +29,7 @@
     member = PopMember(dataset, Node(Float64; feature=1), options; deterministic=false)
 
     next_generation(
-        dataset,
-        member,
-        options.maxsize,
-        options;
-        tmp_recorder=RecordType(),
-        plugin_states,
+        dataset, member, options.maxsize, options; tmp_recorder=RecordType(), plugin_states
     )
 
     @test calls[] == 1

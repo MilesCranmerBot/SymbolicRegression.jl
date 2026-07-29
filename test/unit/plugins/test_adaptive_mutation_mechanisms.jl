@@ -48,24 +48,18 @@ end
     using Test
 
     options = Options(;
-        default_mutations=(),
-        mutations=(ConstantMutation() => 1.0,),
-        default_plugins=(),
+        default_mutations=(), mutations=(ConstantMutation() => 1.0,), default_plugins=()
     )
     event = MutationEvent(true, 1.0, 0.5, 1.0, 2.0, 1)
 
     cost_plugin = AdaptiveMutationWeightsPlugin(; reward=:cost)
     cost_state = init_plugin_state(cost_plugin, options, nothing)
-    on_mutation_end!(
-        cost_state, cost_plugin, ConstantMutation(), event, nothing, options
-    )
+    on_mutation_end!(cost_state, cost_plugin, ConstantMutation(), event, nothing, options)
     @test cost_state.successes == [1.0]
 
     loss_plugin = AdaptiveMutationWeightsPlugin(; reward=:loss)
     loss_state = init_plugin_state(loss_plugin, options, nothing)
-    on_mutation_end!(
-        loss_state, loss_plugin, ConstantMutation(), event, nothing, options
-    )
+    on_mutation_end!(loss_state, loss_plugin, ConstantMutation(), event, nothing, options)
     @test loss_state.successes == [0.0]
 end
 
@@ -378,9 +372,7 @@ end
     )
     dataset = Dataset(randn(1, 8), randn(8))
     plugin_states = (init_plugin_state(loop, options, dataset), nothing)
-    member = PopMember(
-        dataset, Node(Float64; val=1.0), options; deterministic=false
-    )
+    member = PopMember(dataset, Node(Float64; val=1.0), options; deterministic=false)
     population = Population([member, copy(member)])
     record = RecordType()
 
@@ -422,18 +414,11 @@ end
         use_recorder=true,
     )
     dataset = Dataset(zeros(1, 8), zeros(8))
-    member = PopMember(
-        dataset, Node(Float64; val=1.0), options; deterministic=false
-    )
+    member = PopMember(dataset, Node(Float64; val=1.0), options; deterministic=false)
     recorder = RecordType()
 
     _, accepted, _ = next_generation(
-        dataset,
-        member,
-        options.maxsize,
-        options;
-        tmp_recorder=recorder,
-        plugin_states=(),
+        dataset, member, options.maxsize, options; tmp_recorder=recorder, plugin_states=()
     )
 
     @test accepted
@@ -509,9 +494,9 @@ end
     SymbolicRegression.wraps_mutation_step(::KeepFirstOfTwoPlugin) = Val(true)
 
     struct SkipMutationPlugin <: AbstractPlugin end
-    SymbolicRegression.wrap_mutation_step(
-        _, ::SkipMutationPlugin, parent, next_step
-    ) = SymbolicRegression.MutationStepResult(parent, true)
+    SymbolicRegression.wrap_mutation_step(_, ::SkipMutationPlugin, parent, next_step) = SymbolicRegression.MutationStepResult(
+        parent, true
+    )
     SymbolicRegression.wraps_mutation_step(::SkipMutationPlugin) = Val(true)
 
     struct FabricateMutationPlugin <: AbstractPlugin end
@@ -550,12 +535,7 @@ end
     )
 
     _, num_evals = reg_evol_cycle(
-        dataset,
-        population,
-        options.maxsize,
-        options,
-        RecordType();
-        plugin_states,
+        dataset, population, options.maxsize, options, RecordType(); plugin_states
     )
     @test num_evals == 4.0
 
@@ -626,18 +606,11 @@ end
         calls::Base.RefValue{Int}
     end
     function SymbolicRegression.mutate!(
-        tree::N,
-        parent::P,
-        mutation::CostSequenceMutation,
-        options;
-        parent_ref,
-        kws...,
+        tree::N, parent::P, mutation::CostSequenceMutation, options; parent_ref, kws...
     ) where {N,P}
         mutation.calls[] += 1
         cost = Float64(mutation.calls[])
-        child = create_child(
-            parent, copy(tree), cost, cost, options; parent_ref=parent_ref
-        )
+        child = create_child(parent, copy(tree), cost, cost, options; parent_ref=parent_ref)
         return MutationResult{N,P}(; member=child, return_immediately=true)
     end
 
@@ -656,22 +629,14 @@ end
         deterministic=true,
     )
     dataset = Dataset(zeros(1, 8), zeros(8))
-    member = PopMember(
-        dataset, Node(Float64; val=0.0), options; deterministic=true
-    )
+    member = PopMember(dataset, Node(Float64; val=0.0), options; deterministic=true)
     member.cost = 10.0
     member.loss = 10.0
     population = Population([member])
     plugin_states = (init_plugin_state(plugin, options, dataset),)
 
     final_population, best_seen, _ = s_r_cycle(
-        dataset,
-        population,
-        1,
-        options.maxsize;
-        options,
-        record=RecordType(),
-        plugin_states,
+        dataset, population, 1, options.maxsize; options, record=RecordType(), plugin_states
     )
 
     @test only(final_population.members).cost == 2.0
@@ -688,9 +653,8 @@ end
     struct MutationCounterPlugin <: AbstractPlugin
         calls::Base.RefValue{Int}
     end
-    SymbolicRegression.init_plugin_state(
-        plugin::MutationCounterPlugin, options, dataset
-    ) = plugin.calls
+    SymbolicRegression.init_plugin_state(plugin::MutationCounterPlugin, options, dataset) =
+        plugin.calls
     function SymbolicRegression.on_mutation_end!(
         calls::Base.RefValue{Int},
         ::MutationCounterPlugin,
@@ -715,18 +679,11 @@ end
         tournament_selection_n=1,
     )
     dataset = Dataset(zeros(1, 8), zeros(8))
-    member = PopMember(
-        dataset, Node(Float64; val=0.0), options; deterministic=false
-    )
+    member = PopMember(dataset, Node(Float64; val=0.0), options; deterministic=false)
     plugin_states = (init_plugin_state(plugin, options, dataset),)
 
     next_generation(
-        dataset,
-        member,
-        options.maxsize,
-        options;
-        tmp_recorder=RecordType(),
-        plugin_states,
+        dataset, member, options.maxsize, options; tmp_recorder=RecordType(), plugin_states
     )
     @test calls[] == 1
     @test_throws UndefKeywordError next_generation(
@@ -749,21 +706,10 @@ end
         dataset; population_size=2, options, nfeatures=1, plugin_states=()
     )
     @test s_r_cycle(
-        dataset,
-        population,
-        1,
-        options.maxsize;
-        options,
-        record=RecordType(),
-        plugin_states,
+        dataset, population, 1, options.maxsize; options, record=RecordType(), plugin_states
     ) isa Tuple
     @test_throws UndefKeywordError s_r_cycle(
-        dataset,
-        population,
-        1,
-        options.maxsize;
-        options,
-        record=RecordType(),
+        dataset, population, 1, options.maxsize; options, record=RecordType()
     )
     @test_throws ArgumentError s_r_cycle(
         dataset,
@@ -788,12 +734,12 @@ end
         mutations::Int
         observations::Channel{Int}
     end
-    SymbolicRegression.init_plugin_state(
-        plugin::PersistentPlugin, options, dataset
-    ) = PersistentPluginState(0, plugin.observations)
-    SymbolicRegression.fork_plugin_state(
-        state::PersistentPluginState, ::PersistentPlugin, dataset
-    ) = PersistentPluginState(state.mutations, state.observations)
+    SymbolicRegression.init_plugin_state(plugin::PersistentPlugin, options, dataset) = PersistentPluginState(
+        0, plugin.observations
+    )
+    SymbolicRegression.fork_plugin_state(state::PersistentPluginState, ::PersistentPlugin, dataset) = PersistentPluginState(
+        state.mutations, state.observations
+    )
     function SymbolicRegression.on_cycle_start!(
         state::PersistentPluginState,
         ::PersistentPlugin,
@@ -857,17 +803,14 @@ end
         generation::Int
         observations::Channel{Int}
     end
-    SymbolicRegression.init_plugin_state(
-        ::DistinctStatePlugin, options, dataset
-    ) = DistinctHeadState(0)
-    SymbolicRegression.fork_plugin_state(
-        state::DistinctHeadState, plugin::DistinctStatePlugin, dataset
-    ) = DistinctWorkerState(state.generation, plugin.observations)
+    SymbolicRegression.init_plugin_state(::DistinctStatePlugin, options, dataset) = DistinctHeadState(
+        0
+    )
+    SymbolicRegression.fork_plugin_state(state::DistinctHeadState, plugin::DistinctStatePlugin, dataset) = DistinctWorkerState(
+        state.generation, plugin.observations
+    )
     function SymbolicRegression.refresh_plugin_state(
-        worker::DistinctWorkerState,
-        head::DistinctHeadState,
-        ::DistinctStatePlugin,
-        dataset,
+        worker::DistinctWorkerState, head::DistinctHeadState, ::DistinctStatePlugin, dataset
     )
         worker.generation = head.generation
         return worker
@@ -885,11 +828,7 @@ end
         return nothing
     end
     function SymbolicRegression.on_search_start!(
-        state::DistinctHeadState,
-        ::DistinctStatePlugin,
-        dataset,
-        options,
-        runtime_options,
+        state::DistinctHeadState, ::DistinctStatePlugin, dataset, options, runtime_options
     )
         state.generation = 7
         return nothing
@@ -922,12 +861,9 @@ end
     X = zeros(1, 8)
     y = zeros(8)
 
-    @test equation_search(
-        X, y; options, niterations=2, parallelism=:serial
-    ) isa HallOfFame
-    @test equation_search(
-        X, y; options, niterations=2, parallelism=:multithreading
-    ) isa HallOfFame
+    @test equation_search(X, y; options, niterations=2, parallelism=:serial) isa HallOfFame
+    @test equation_search(X, y; options, niterations=2, parallelism=:multithreading) isa
+        HallOfFame
     close(observations)
     observed_generations = collect(observations)
     @test first(observed_generations) == 7

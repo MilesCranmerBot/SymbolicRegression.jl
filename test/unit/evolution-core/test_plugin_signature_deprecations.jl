@@ -17,8 +17,11 @@
     population = Population([member])
     statistics = RunningSearchStatistics(; options)
     plugin_states = map(options.plugins) do plugin
-        plugin isa SymbolicRegression.AdaptiveParsimonyPlugin ?
-            AdaptiveParsimonyState(statistics) : nothing
+        if plugin isa SymbolicRegression.AdaptiveParsimonyPlugin
+            AdaptiveParsimonyState(statistics)
+        else
+            nothing
+        end
     end
 
     Random.seed!(0)

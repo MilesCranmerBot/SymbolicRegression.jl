@@ -50,8 +50,7 @@ struct AdaptiveMutationWeightsPlugin <: AbstractPlugin
         converted_floor = Float64(floor)
         0 <= converted_smoothing <= 1 ||
             throw(ArgumentError("`smoothing` must be between 0 and 1."))
-        0 < converted_floor <= 1 ||
-            throw(ArgumentError("`floor` must be in (0, 1]."))
+        0 < converted_floor <= 1 || throw(ArgumentError("`floor` must be in (0, 1]."))
         reward in (:cost, :loss) ||
             throw(ArgumentError("`reward` must be either `:cost` or `:loss`."))
         return new(converted_smoothing, converted_floor, reward)

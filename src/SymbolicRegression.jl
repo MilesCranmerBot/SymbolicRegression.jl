@@ -751,9 +751,7 @@ end
     end
     PluginStatesType = eltype(plugin_states)
     worker_plugin_state_prototype = map(
-        (plugin, head_state) -> fork_plugin_state(
-            head_state, plugin, first(datasets)
-        ),
+        (plugin, head_state) -> fork_plugin_state(head_state, plugin, first(datasets)),
         options.plugins,
         first(plugin_states),
     )
@@ -764,9 +762,8 @@ end
                 worker_plugin_state_prototype
             else
                 map(
-                    (plugin, head_state) -> fork_plugin_state(
-                        head_state, plugin, datasets[j]
-                    ),
+                    (plugin, head_state) ->
+                        fork_plugin_state(head_state, plugin, datasets[j]),
                     options.plugins,
                     plugin_states[j],
                 )::WorkerPluginStatesType
@@ -812,13 +809,9 @@ end
     shuffle!(task_order)
 
     # Persistent storage of last-saved population for final return:
-    last_pops = [
-        Vector{PopType}(undef, options.populations) for _ in 1:nout
-    ]
+    last_pops = [Vector{PopType}(undef, options.populations) for _ in 1:nout]
     # Best 10 members from each population for migration:
-    best_sub_pops = [
-        Vector{PopType}(undef, options.populations) for _ in 1:nout
-    ]
+    best_sub_pops = [Vector{PopType}(undef, options.populations) for _ in 1:nout]
     # Records the number of evaluations:
     # Real numbers indicate use of batching.
     num_evals = [[0.0 for i in 1:(options.populations)] for j in 1:nout]
@@ -835,14 +828,7 @@ end
     seed_members = [Vector{PMType}() for j in 1:nout]
 
     return SearchState{
-        T,
-        L,
-        NT,
-        PMType,
-        WorkerOutputType,
-        ChannelType,
-        PluginStatesType,
-        WorkerPluginStatesType,
+        T,L,NT,PMType,WorkerOutputType,ChannelType,PluginStatesType,WorkerPluginStatesType
     }(;
         procs=procs,
         we_created_procs=we_created_procs,
@@ -1016,10 +1002,7 @@ function _warmup_search!(
         HallType = HallOfFame{T,L,N,PM}
 
         (in_pop, _, _, _, worker_plugin_states) = extract_from_worker(
-            last_pop,
-            PopType,
-            HallType,
-            eltype(eltype(state.worker_plugin_states)),
+            last_pop, PopType, HallType, eltype(eltype(state.worker_plugin_states))
         )
         state.last_pops[j][i] = copy(in_pop)
         state.best_sub_pops[j][i] = best_sub_pop(in_pop; topn=options.topn)
@@ -1117,26 +1100,21 @@ function _main_search_loop!(
         population_ready &= (state.cycles_remaining[j] > 0)
         if population_ready
             # Take the fetch operation from the channel since its ready
-            (
-                cur_pop,
-                best_seen,
-                cur_record,
-                cur_num_evals,
-                returned_plugin_states,
-            ) = if ropt.parallelism in
-                (
-                :multiprocessing, :multithreading
-            )
-                take!(
-                    state.channels[j][i]
+            (cur_pop, best_seen, cur_record, cur_num_evals, returned_plugin_states) =
+                if ropt.parallelism in
+                    (
+                    :multiprocessing, :multithreading
                 )
-            else
-                state.worker_output[j][i]
-            end::DefaultWorkerOutputType{
-                Population{T,L,N},
-                HallOfFame{T,L,N},
-                eltype(eltype(state.worker_plugin_states)),
-            }
+                    take!(
+                        state.channels[j][i]
+                    )
+                else
+                    state.worker_output[j][i]
+                end::DefaultWorkerOutputType{
+                    Population{T,L,N},
+                    HallOfFame{T,L,N},
+                    eltype(eltype(state.worker_plugin_states)),
+                }
             state.last_pops[j][i] = copy(cur_pop)
             state.best_sub_pops[j][i] = best_sub_pop(cur_pop; topn=options.topn)
             state.worker_plugin_states[j][i] = returned_plugin_states
@@ -1206,9 +1184,8 @@ function _main_search_loop!(
 
             in_pop = copy(cur_pop::Population{T,L,N})
             worker_plugin_states = map(
-                (plugin, worker_state, head_state) -> refresh_plugin_state(
-                    worker_state, head_state, plugin, dataset
-                ),
+                (plugin, worker_state, head_state) ->
+                    refresh_plugin_state(worker_state, head_state, plugin, dataset),
                 options.plugins,
                 returned_plugin_states,
                 state.plugin_states[j],

@@ -13,10 +13,17 @@ using .AdaptiveParsimonyModule:
         running_search_statistics::RunningSearchStatistics,
         options::AbstractOptions,
     ),
-    best_of_sample(pop, options; plugin_states=map(options.plugins) do plugin
-        plugin isa AdaptiveParsimonyPlugin ?  # COV_EXCL_LINE
-            AdaptiveParsimonyState(running_search_statistics) : nothing
-    end),
+    best_of_sample(
+        pop,
+        options;
+        plugin_states=map(options.plugins) do plugin
+            if plugin isa AdaptiveParsimonyPlugin  # COV_EXCL_LINE
+                AdaptiveParsimonyState(running_search_statistics)
+            else
+                nothing
+            end
+        end,
+    ),
 )
 
 @deprecate(

@@ -78,8 +78,9 @@ function Population(
     npop=nothing,
     plugin_states::Tuple,
 ) where {T,L}
-    length(options.plugins) == length(plugin_states) ||
-        throw(ArgumentError("`options.plugins` and `plugin_states` must have the same length."))
+    length(options.plugins) == length(plugin_states) || throw(
+        ArgumentError("`options.plugins` and `plugin_states` must have the same length."),
+    )
     @assert (population_size !== nothing) ⊻ (npop !== nothing)
     population_size = something(population_size, npop)
     PM = options.popmember_type
@@ -163,19 +164,16 @@ end
 
 # Sample the population, and get the best member from that sample
 function best_of_sample(
-    pop::Population{T,L,N},
-    options::AbstractOptions;
-    plugin_states::Tuple,
+    pop::Population{T,L,N}, options::AbstractOptions; plugin_states::Tuple
 ) where {T,L,N}
-    length(options.plugins) == length(plugin_states) ||
-        throw(ArgumentError("`options.plugins` and `plugin_states` must have the same length."))
+    length(options.plugins) == length(plugin_states) || throw(
+        ArgumentError("`options.plugins` and `plugin_states` must have the same length."),
+    )
     sample = sample_pop(pop, options)
     return copy(_best_of_sample(sample.members, options; plugin_states))
 end
 function _best_of_sample(
-    members::Vector{P},
-    options::AbstractOptions;
-    plugin_states::Tuple,
+    members::Vector{P}, options::AbstractOptions; plugin_states::Tuple
 ) where {T,L,N,P<:AbstractPopMember{T,L,N}}
     p = options.tournament_selection_p
     n = length(members)  # == tournament_selection_n

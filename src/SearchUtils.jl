@@ -20,17 +20,11 @@ using DynamicExpressions:
     constructorof
 using ..UtilsModule: subscriptify
 using ..CoreModule:
-    Dataset,
-    AbstractOptions,
-    Options,
-    RecordType,
-    create_expression,
-    init_value
+    Dataset, AbstractOptions, Options, RecordType, create_expression, init_value
 using ..ComplexityModule: compute_complexity
 using ..PopulationModule: Population
 using ..PopMemberModule: PopMember, AbstractPopMember
-using ..HallOfFameModule:
-    HallOfFame, string_dominating_pareto_curve, update_hall_of_fame!
+using ..HallOfFameModule: HallOfFame, string_dominating_pareto_curve, update_hall_of_fame!
 using ..ConstantOptimizationModule: optimize_constants
 using ..ProgressBarsModule: WrappedProgressBar, manually_iterate!, barlen
 using ..ExpressionBuilderModule: strip_metadata
@@ -288,10 +282,7 @@ end
 const DefaultWorkerOutputType{P,H,S<:Tuple} = Tuple{P,H,RecordType,Float64,S}
 
 function get_worker_output_type(
-    ::Val{PARALLELISM},
-    ::Type{PopType},
-    ::Type{HallOfFameType},
-    ::Type{PluginStatesType},
+    ::Val{PARALLELISM}, ::Type{PopType}, ::Type{HallOfFameType}, ::Type{PluginStatesType}
 ) where {PARALLELISM,PopType,HallOfFameType,PluginStatesType<:Tuple}
     if PARALLELISM == :serial
         DefaultWorkerOutputType{PopType,HallOfFameType,PluginStatesType}
