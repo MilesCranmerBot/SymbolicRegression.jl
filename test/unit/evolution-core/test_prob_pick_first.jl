@@ -18,10 +18,7 @@
     for reverse in [false, true]
         T = Float32
         dataset = Dataset(zeros(T, 1, n), zeros(T, n))
-        plugin_states = map(
-            plugin -> SymbolicRegression.init_plugin_state(plugin, options, dataset),
-            options.plugins,
-        )
+        plugin_states = SymbolicRegression.init_plugin_states(options, dataset)
 
         # Generate members with scores from 0 to 1:
         members = [

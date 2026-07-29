@@ -205,7 +205,7 @@ using Compat: @compat, Fix
         optimize_constants, get_constants_for_optimization,
         set_constants_for_optimization!, extract_gradient_for_optimization,
         AbstractPlugin, MutationEvent,
-        init_plugin_state,
+        init_plugin_state, init_plugin_states,
         on_search_start!, on_search_end!,
         on_generation_end!, on_cycle_end!, on_mutation_end!, init_member,
         tournament_cost_multiplier, mutation_acceptance_multiplier,
@@ -352,6 +352,7 @@ using .CoreModule:
     AbstractPlugin,
     MutationEvent,
     init_plugin_state,
+    init_plugin_states,
     on_search_start!,
     on_search_end!,
     on_generation_end!,
@@ -737,10 +738,7 @@ end
     NT = expression_type(PMType)
     PopType = Population{T,L,NT,PMType}
     HallOfFameType = HallOfFame{T,L,NT,PMType}
-    plugin_states = [
-        map(p -> init_plugin_state(p, options, datasets[j]), options.plugins) for
-        j in 1:nout
-    ]
+    plugin_states = [init_plugin_states(options, datasets[j]) for j in 1:nout]
     for j in eachindex(datasets, plugin_states)
         map(options.plugins, plugin_states[j]) do plugin, pstate
             on_search_start!(pstate, plugin, datasets[j], options, ropt)

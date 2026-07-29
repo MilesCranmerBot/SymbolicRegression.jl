@@ -12,10 +12,7 @@
 
     options = Options();
     dataset = Dataset(X, y)
-    plugin_states = map(
-        plugin -> SymbolicRegression.init_plugin_state(plugin, options, dataset),
-        options.plugins,
-    )
+    plugin_states = SymbolicRegression.init_plugin_states(options, dataset)
     population1 = Population(
         X, y; population_size=100, options=options, nfeatures=5, nlength=10, plugin_states
     )

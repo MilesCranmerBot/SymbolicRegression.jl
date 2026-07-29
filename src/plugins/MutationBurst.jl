@@ -1,6 +1,5 @@
 module MutationBurstModule
 
-using DispatchDoctor: @unstable
 using ..CoreModule: AbstractPlugin
 import ..CoreModule: wrap_mutation_step
 
@@ -50,23 +49,23 @@ struct MutationBurstPlugin <: AbstractPlugin
     end
 end
 
-@unstable function wrap_mutation_step(_, p::MutationBurstPlugin)
-    return function (parent_member, next_step)
+wrap_mutation_step(_, p::MutationBurstPlugin) = p
+
+function (p::MutationBurstPlugin)(parent_member, next_step)
+    result = next_step(parent_member)
+    for _ in 2:(p.retry_attempts)
+        result.accepted && break
         result = next_step(parent_member)
-        for _ in 2:(p.retry_attempts)
-            result.accepted && break
-            result = next_step(parent_member)
-        end
-        result.accepted || return result
-        n_steps = 1
-        while n_steps < p.compound_max_steps && rand() < p.compound_probability
-            next_result = next_step(result.member)
-            next_result.accepted || break
-            result = next_result
-            n_steps += 1
-        end
-        return result
     end
+    result.accepted || return result
+    n_steps = 1
+    while n_steps < p.compound_max_steps && rand() < p.compound_probability
+        next_result = next_step(result.member)
+        next_result.accepted || break
+        result = next_result
+        n_steps += 1
+    end
+    return result
 end
 
 end  # module MutationBurstModule

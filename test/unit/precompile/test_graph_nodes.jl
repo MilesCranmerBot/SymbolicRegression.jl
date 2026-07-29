@@ -49,10 +49,7 @@ end
     z = @. cos(X[1, :] - 3.2) * X[2, :] - X[3, :] * X[3, :]
     y = @. sin(z) + z
     dataset = Dataset(X, y)
-    plugin_states = map(
-        plugin -> SymbolicRegression.init_plugin_state(plugin, options, dataset),
-        options.plugins,
-    )
+    plugin_states = SymbolicRegression.init_plugin_states(options, dataset)
 
     pop = Population(
         dataset; options, nlength=3, nfeatures=3, population_size=100, plugin_states

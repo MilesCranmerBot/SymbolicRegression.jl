@@ -117,6 +117,17 @@ function init_plugin_state(::AbstractPlugin, options, dataset)
 end
 
 """
+    init_plugin_states(options, dataset)
+
+Initialize the state tuple corresponding to `options.plugins`.
+"""
+function init_plugin_states(options, dataset)
+    return map(options.plugins) do plugin
+        init_plugin_state(plugin, options, dataset)
+    end
+end
+
+"""
     on_search_start!(state, plugin, dataset, options, ropt)
 
 Lifecycle hook called on the head node after initialization, before warmup

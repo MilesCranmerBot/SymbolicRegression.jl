@@ -17,10 +17,7 @@
     X = randn(5, 100)
     y = sin.(X[1, :] .* 2.1 .+ 0.8) .+ X[2, :] .^ 2
     dataset = Dataset(X, y)
-    plugin_states = map(
-        plugin -> SymbolicRegression.init_plugin_state(plugin, options, dataset),
-        options.plugins,
-    )
+    plugin_states = SymbolicRegression.init_plugin_states(options, dataset)
 
     x1 = Node(Float64; feature=1)
     x2 = Node(Float64; feature=2)

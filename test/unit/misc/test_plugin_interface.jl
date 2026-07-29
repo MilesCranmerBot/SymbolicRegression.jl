@@ -3,6 +3,7 @@
     import SymbolicRegression:
         AbstractPlugin,
         init_plugin_state,
+        init_plugin_states,
         fork_plugin_state,
         refresh_worker_plugin_state,
         on_search_start!,
@@ -35,6 +36,14 @@
     struct DummyPlugin <: AbstractPlugin end
     p = DummyPlugin()
     @test init_plugin_state(p, opts, nothing) === nothing
+    plugin_opts = Options(;
+        binary_operators=[+, *],
+        use_frequency=false,
+        use_frequency_in_tournament=false,
+        annealing=false,
+        plugins=(p,),
+    )
+    @test init_plugin_states(plugin_opts, nothing) === (nothing,)
     s = nothing
 
     # Observers default to no-op (return nothing). Hooks follow the convention

@@ -97,6 +97,7 @@ using .PluginModule:
     AbstractPlugin,
     MutationEvent,
     init_plugin_state,
+    init_plugin_states,
     on_search_start!,
     on_search_end!,
     on_generation_end!,
