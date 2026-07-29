@@ -9,7 +9,10 @@ using DynamicExpressions:
     count_scalar_constants,
     simplify_tree!,
     combine_operators,
-    allocate_container
+    allocate_container,
+    NodeSampler,
+    set_child!,
+    with_contents
 using ..CoreModule:
     AbstractOptions,
     AbstractMutation,
@@ -55,7 +58,9 @@ using ..MutationFunctionsModule:
     break_random_connection!,
     randomly_rotate_tree!,
     randomize_tree,
-    backsolve_rewrite_random_node
+    _find_parent
+using ..EvaluateInverseModule: eval_inverse_tree_array_masked
+using ..BacksolveModule: fit_sparse_expression, prepare_backsolve_setup
 using ..ConstantOptimizationModule: optimize_constants
 using ..RecorderModule: @recorder
 
@@ -69,9 +74,10 @@ Represents the result of a mutation operation in the genetic programming algorit
 # Fields
 
 - `tree::Union{N, Nothing}`: The mutated expression tree, if applicable. Either `tree` or `member` must be set, but not both.
-- `member::Union{P, Nothing}`: The mutated population member, if applicable. Either `member` or `tree` must be set, but not both.
+- `member::Union{P, Nothing}`: The mutated population member, if applicable. Either `tree` or `member` must be set, but not both.
 - `num_evals::Float64`: The number of evaluations performed during the mutation, which is automatically set to `0.0`. Only used for things like `optimize`.
 - `return_immediately::Bool`: If `true`, the mutation process should return immediately, bypassing further checks, used for things like `simplify` or `optimize` where you already know the loss value of the result.
+- `success::Bool`: If `false`, the mutation itself reports failure (as opposed to the result violating constraints). Failed mutations are not retried and are treated as rejected.
 
 # Usage
 
@@ -86,6 +92,7 @@ struct MutationResult{N<:AbstractExpression,P<:AbstractPopMember} <:
     member::Union{P,Nothing}
     num_evals::Float64
     return_immediately::Bool
+    success::Bool
 
     # Explicit constructor with keyword arguments
     function MutationResult{_N,_P}(;
@@ -93,12 +100,13 @@ struct MutationResult{N<:AbstractExpression,P<:AbstractPopMember} <:
         member::Union{_P,Nothing}=nothing,
         num_evals::Float64=0.0,
         return_immediately::Bool=false,
+        success::Bool=true,
     ) where {_N<:AbstractExpression,_P<:AbstractPopMember}
         @assert(
             (tree === nothing) ⊻ (member === nothing),
             "Mutation result must return either a tree or a pop member, not both"
         )
-        return new{_N,_P}(tree, member, num_evals, return_immediately)
+        return new{_N,_P}(tree, member, num_evals, return_immediately, success)
     end
 end
 
@@ -396,8 +404,12 @@ function _next_generation(
                 "Mutation result must return a tree if `return_immediately` is false"
             )
             rtree[] = mutation_result.tree::N
-            successful_mutation = check_constraints(rtree[], options, curmaxsize)
+            successful_mutation =
+                mutation_result.success && check_constraints(rtree[], options, curmaxsize)
             attempts += 1
+            # A self-reported failure is not retried: the mutation has already
+            # exhausted its own internal attempts.
+            mutation_result.success || break
         end
     end
 
@@ -406,7 +418,7 @@ function _next_generation(
     if !successful_mutation
         @recorder begin
             tmp_recorder["result"] = "reject"
-            tmp_recorder["reason"] = "failed_constraint_check"
+            tmp_recorder["reason"] = get(tmp_recorder, "reason", "failed_constraint_check")
         end
         mutation_accepted = false
         _fire_on_mutation_end!(
@@ -704,18 +716,117 @@ function mutate!(
     options::AbstractOptions;
     recorder::RecordType,
     dataset::Dataset,
+    parent_ref=parent_member.ref,
+    curmaxsize::Int=options.maxsize,
+    nfeatures::Int=size(dataset.X, 1),
     population_for_backsolve=nothing,
     kws...,
 ) where {N<:AbstractExpression,P<:AbstractPopMember}
-    new_tree = backsolve_rewrite_random_node(
-        new_tree,
-        dataset,
-        options;
-        backsolve_options=m,
-        population_for_backsolve=population_for_backsolve,
-    )
     @recorder recorder["type"] = "backsolve"
-    return MutationResult{N,P}(; tree=new_tree)
+    tree = get_tree(new_tree)
+    num_evals = 0.0
+
+    if tree.degree == 0
+        @recorder recorder["reason"] = "backsolve_single_node"
+        return MutationResult{N,P}(; tree=new_tree, success=false)
+    end
+
+    if preserve_sharing(tree)
+        @recorder recorder["reason"] = "backsolve_shared_nodes"
+        return MutationResult{N,P}(; tree=new_tree, success=false)
+    end
+
+    parent_complexity = compute_complexity(tree, options)
+    min_valid_rows = min(10, size(dataset.X, 2))
+    cost_margin = 1e-10 * max(1.0, abs(parent_member.cost))
+
+    setup = nothing
+    reason = "backsolve_no_viable_node"
+
+    for _ in 1:(m.node_attempts)
+        node = rand(NodeSampler(; tree, filter=Base.Fix2(!==, tree)))
+
+        target_values, valid_mask = eval_inverse_tree_array_masked(
+            tree, dataset.X, options.operators, node, dataset.y
+        )
+        if count(valid_mask) < min_valid_rows
+            reason = "backsolve_inversion_invalid"
+            continue
+        end
+
+        budget = curmaxsize - (parent_complexity - compute_complexity(node, options))
+        budget < 1 && continue
+
+        if setup === nothing
+            # Draw library terms from the whole population (capped by
+            # max_library_size): structural diversity matters more than
+            # member quality for coverage of the span.
+            top_k = population_for_backsolve === nothing ? 10 : population_for_backsolve.n
+            setup = prepare_backsolve_setup(
+                node,
+                dataset,
+                options,
+                nfeatures,
+                population_for_backsolve;
+                max_library_size=m.max_library_size,
+                top_k=top_k,
+            )
+            num_evals += length(setup.basis.terms) * dataset_fraction(dataset)
+        end
+
+        new_node = fit_sparse_expression(
+            node,
+            target_values,
+            dataset,
+            options,
+            nfeatures;
+            backsolve_options=m,
+            setup,
+            valid_mask,
+            extra_term=node,
+            max_complexity=budget,
+        )
+        num_evals += dataset_fraction(dataset)
+        if new_node === nothing
+            reason = "backsolve_fit_failed"
+            continue
+        end
+
+        parent, idx = _find_parent(tree, node)
+        set_child!(parent, new_node, idx)
+
+        child_complexity = compute_complexity(tree, options)
+        if !check_constraints(tree, options, curmaxsize, child_complexity)
+            set_child!(parent, node, idx)
+            reason = "backsolve_failed_constraint_check"
+            continue
+        end
+
+        after_cost, after_loss = eval_cost(
+            dataset, new_tree, options; complexity=child_complexity
+        )
+        num_evals += dataset_fraction(dataset)
+
+        if after_cost < parent_member.cost - cost_margin
+            child_ex = with_contents(parent_member.tree, tree)
+            baby = create_child(
+                parent_member,
+                child_ex,
+                after_cost,
+                after_loss,
+                options;
+                complexity=child_complexity,
+                parent_ref=parent_ref,
+            )
+            return MutationResult{N,P}(; member=baby, num_evals, return_immediately=true)
+        else
+            set_child!(parent, node, idx)
+            reason = "backsolve_cost_not_improved"
+        end
+    end
+
+    @recorder recorder["reason"] = reason
+    return MutationResult{N,P}(; tree=new_tree, num_evals, success=false)
 end
 
 # Handle mutations that require early return
