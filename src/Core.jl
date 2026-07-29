@@ -98,6 +98,7 @@ using .PluginModule:
     MutationEvent,
     init_plugin_state,
     init_plugin_states,
+    strictmap,
     on_search_start!,
     on_search_end!,
     on_generation_end!,

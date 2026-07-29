@@ -353,6 +353,7 @@ using .CoreModule:
     MutationEvent,
     init_plugin_state,
     init_plugin_states,
+    strictmap,
     on_search_start!,
     on_search_end!,
     on_generation_end!,
@@ -740,13 +741,13 @@ end
     HallOfFameType = HallOfFame{T,L,NT,PMType}
     plugin_states = [init_plugin_states(options, datasets[j]) for j in 1:nout]
     for j in eachindex(datasets, plugin_states)
-        map(options.plugins, plugin_states[j]) do plugin, pstate
+        strictmap(options.plugins, plugin_states[j]) do plugin, pstate
             on_search_start!(pstate, plugin, datasets[j], options, ropt)
             return nothing
         end
     end
     PluginStatesType = eltype(plugin_states)
-    worker_plugin_state_prototype = map(
+    worker_plugin_state_prototype = strictmap(
         (plugin, head_state) -> fork_plugin_state(head_state, plugin, first(datasets)),
         options.plugins,
         first(plugin_states),
@@ -757,7 +758,7 @@ end
             if j == 1 && i == 1
                 worker_plugin_state_prototype
             else
-                map(
+                strictmap(
                     (plugin, head_state) ->
                         fork_plugin_state(head_state, plugin, datasets[j]),
                     options.plugins,
@@ -1133,7 +1134,7 @@ function _main_search_loop!(
             # Update plugin state (e.g. parsimony frequency table) from the
             # population the worker actually produced, before migration mixes
             # in pareto/seed/best-of-each members from outside this cycle.
-            map(options.plugins, state.plugin_states[j]) do plugin, pstate
+            strictmap(options.plugins, state.plugin_states[j]) do plugin, pstate
                 on_generation_end!(pstate, plugin, state, dataset, options, ropt, cur_pop)
             end
 
@@ -1178,7 +1179,7 @@ function _main_search_loop!(
             end
 
             in_pop = copy(cur_pop::Population{T,L,N})
-            worker_plugin_states = map(
+            worker_plugin_states = strictmap(
                 options.plugins, returned_plugin_states, state.plugin_states[j]
             ) do plugin, worker_state, latest_head_state
                 refresh_worker_plugin_state(worker_state, latest_head_state, plugin, dataset)
@@ -1306,7 +1307,7 @@ function _tear_down!(
         end
     end
     for j in eachindex(datasets, state.plugin_states)
-        map(options.plugins, state.plugin_states[j]) do plugin, pstate
+        strictmap(options.plugins, state.plugin_states[j]) do plugin, pstate
             on_search_end!(pstate, plugin, state, datasets[j], options, ropt)
         end
     end

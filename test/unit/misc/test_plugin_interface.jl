@@ -4,6 +4,7 @@
         AbstractPlugin,
         init_plugin_state,
         init_plugin_states,
+        strictmap,
         fork_plugin_state,
         refresh_worker_plugin_state,
         on_search_start!,
@@ -44,6 +45,9 @@
         plugins=(p,),
     )
     @test init_plugin_states(plugin_opts, nothing) === (nothing,)
+    callback_called = Ref(false)
+    @test_throws DimensionMismatch strictmap((_, _) -> (callback_called[] = true), (p,), ())
+    @test !callback_called[]
     s = nothing
 
     # Observers default to no-op (return nothing). Hooks follow the convention

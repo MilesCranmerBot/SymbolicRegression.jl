@@ -10,7 +10,8 @@ using ..CoreModule:
     create_expression,
     batch,
     on_cycle_start!,
-    on_cycle_end!
+    on_cycle_end!,
+    strictmap
 using ..PopMemberModule: generate_reference
 using ..PopulationModule: Population, finalize_costs
 using ..HallOfFameModule: HallOfFame, update_hall_of_fame!
@@ -39,7 +40,7 @@ function s_r_cycle(
     batched_dataset = options.batching ? batch(dataset, options.batch_size) : dataset
 
     for cycle_idx in 1:ncycles
-        map(options.plugins, plugin_states) do plugin, pstate
+        strictmap(options.plugins, plugin_states) do plugin, pstate
             on_cycle_start!(pstate, plugin, cycle_idx, ncycles, options)
         end
         pop, tmp_num_evals = reg_evol_cycle(
@@ -53,7 +54,7 @@ function s_r_cycle(
         )
         num_evals += tmp_num_evals
         update_hall_of_fame!(best_examples_seen, pop.members, options)
-        map(options.plugins, plugin_states) do plugin, pstate
+        strictmap(options.plugins, plugin_states) do plugin, pstate
             on_cycle_end!(pstate, plugin, pop, dataset, best_examples_seen, options)
         end
     end

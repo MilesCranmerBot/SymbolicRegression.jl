@@ -12,7 +12,8 @@ using ..CoreModule:
     LOSS_TYPE,
     init_member,
     resolve_init_member,
-    tournament_cost_multiplier
+    tournament_cost_multiplier,
+    strictmap
 using ..ComplexityModule: compute_complexity
 using ..LossFunctionsModule: eval_cost, update_baseline_loss!
 using ..MutationFunctionsModule: gen_random_tree
@@ -167,7 +168,7 @@ function _best_of_sample(
     adjusted_costs = Vector{L}(undef, n)
     for i in eachindex(members, adjusted_costs)
         member = members[i]
-        multipliers = map(options.plugins, plugin_states) do plugin, pstate
+        multipliers = strictmap(options.plugins, plugin_states) do plugin, pstate
             L(tournament_cost_multiplier(pstate, plugin, member, options))
         end
         adjusted_costs[i] = L(member.cost) * prod(multipliers)

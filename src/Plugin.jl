@@ -3,6 +3,14 @@ module PluginModule
 using DispatchDoctor: @unstable
 using ..MutationsModule: AbstractMutation, ConstantMutation, ConstantMutationContext
 
+@unstable @inline function strictmap(f, xs...)
+    n = length(first(xs))
+    for x in Base.tail(xs)
+        length(x) == n || throw(DimensionMismatch("collections must have equal lengths"))
+    end
+    return map(f, xs...)
+end
+
 # ────────────────────────────────────────────────────────────────────────────
 # Hook naming taxonomy
 # ────────────────────────────────────────────────────────────────────────────
@@ -361,7 +369,7 @@ end
 # Ask every plugin, then require at most one provider. `map` over the
 # heterogeneous tuple and `Base.tail` extraction keep this inferable.
 @inline function resolve_init_member(states::Tuple, plugins::Tuple, dataset, options)
-    candidates = map((s, p) -> init_member(s, p, dataset, options), states, plugins)
+    candidates = strictmap((s, p) -> init_member(s, p, dataset, options), states, plugins)
     count(!isnothing, candidates) > 1 && _init_member_conflict(plugins, candidates)
     return _first_non_nothing(candidates)
 end

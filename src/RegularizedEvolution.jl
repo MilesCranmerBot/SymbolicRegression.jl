@@ -8,7 +8,8 @@ using ..CoreModule:
     DATA_TYPE,
     LOSS_TYPE,
     MutationStepResult,
-    wrap_mutation_step
+    wrap_mutation_step,
+    strictmap
 using ..PopulationModule: Population, best_of_sample
 using ..HallOfFameModule: HallOfFame, update_hall_of_fame!
 using ..MutateModule: next_generation, crossover_generation
@@ -96,7 +97,7 @@ function reg_evol_cycle(
 )::Tuple{P,Float64} where {T<:DATA_TYPE,L<:LOSS_TYPE,P<:Population{T,L}}
     num_evals = 0.0
     n_evol_cycles = ceil(Int, pop.n / options.tournament_selection_n)
-    mutation_wrappers = map(wrap_mutation_step, plugin_states, options.plugins)
+    mutation_wrappers = strictmap(wrap_mutation_step, plugin_states, options.plugins)
     mutation_steps = if options.use_recorder
         Tuple{eltype(pop.members),eltype(pop.members),RecordType}[]
     else

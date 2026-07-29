@@ -40,7 +40,8 @@ using ..CoreModule:
     MutationAcceptanceContext,
     ConstantMutationContext,
     prepare_mutation_context,
-    condition_mutation!
+    condition_mutation!,
+    strictmap
 using ..ComplexityModule: compute_complexity
 using ..LossFunctionsModule: eval_cost, loss_to_cost
 using ..CheckConstraintsModule: check_constraints
@@ -256,7 +257,7 @@ end
     event::MutationEvent,
     dataset,
 )
-    map(options.plugins, plugin_states) do plugin, pstate
+    strictmap(options.plugins, plugin_states) do plugin, pstate
         on_mutation_end!(pstate, plugin, mutation, event, dataset, options)
     end
     return nothing
@@ -295,7 +296,7 @@ end
     weights = copy(options.mutations)
 
     condition_mutation_weights!(weights, member, options, curmaxsize, nfeatures)
-    map(options.plugins, plugin_states) do plugin, pstate
+    strictmap(options.plugins, plugin_states) do plugin, pstate
         condition_mutation_weights!(
             weights, pstate, plugin, member, options, curmaxsize, nfeatures
         )
@@ -355,7 +356,7 @@ function _next_generation(
 
     mut_context = prepare_mutation_context(mutation_choice)
     if !isnothing(mut_context)
-        map(options.plugins, plugin_states) do plugin, pstate
+        strictmap(options.plugins, plugin_states) do plugin, pstate
             condition_mutation!(mut_context, pstate, plugin, mutation_choice, options)
         end
     end
@@ -481,7 +482,7 @@ function _next_generation(
 
     acceptance_ctx = MutationAcceptanceContext(member, tree, before_cost, after_cost)
     probChange = prod(
-        map(options.plugins, plugin_states) do plugin, pstate
+        strictmap(options.plugins, plugin_states) do plugin, pstate
             mutation_acceptance_multiplier(pstate, plugin, acceptance_ctx, options)
         end,
     )
