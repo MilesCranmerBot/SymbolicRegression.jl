@@ -46,7 +46,7 @@ function eval_inverse_tree_array(
         )
     end
     result = _eval_inverse_tree_array_masked(
-        tree, X, operators, node_to_invert_at, copy(y), trues(length(y)), (; eval_kws...)
+        tree, X, operators, node_to_invert_at, copy(y), isfinite.(y), (; eval_kws...)
     )
     return (result.x, all(result.valid))
 end
@@ -86,7 +86,7 @@ function eval_inverse_tree_array_masked(
         )
     end
     result = _eval_inverse_tree_array_masked(
-        tree, X, operators, node_to_invert_at, copy(y), trues(length(y)), (; eval_kws...)
+        tree, X, operators, node_to_invert_at, copy(y), isfinite.(y), (; eval_kws...)
     )
     return (result.x, result.valid)
 end
@@ -115,7 +115,7 @@ function _eval_inverse_tree_array(
     eval_kws::NamedTuple,
 ) where {T,N<:AbstractExpressionNode{T,2}}
     result = _eval_inverse_tree_array_masked(
-        tree, X, operators, node_to_invert_at, y, trues(length(y)), eval_kws
+        tree, X, operators, node_to_invert_at, y, isfinite.(y), eval_kws
     )
     return ResultOk(result.x, all(result.valid))
 end

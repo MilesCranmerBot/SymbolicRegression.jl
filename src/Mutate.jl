@@ -3,6 +3,8 @@ module MutateModule
 using DispatchDoctor: @unstable
 using DynamicExpressions:
     AbstractExpression,
+    AbstractExpressionNode,
+    Expression,
     copy_into!,
     get_tree,
     preserve_sharing,
@@ -33,6 +35,7 @@ using ..CoreModule:
     DoNothingMutation,
     BUILTIN_MUTATION_TYPES,
     Dataset,
+    SubDataset,
     RecordType,
     max_features,
     dataset_fraction,
@@ -60,7 +63,8 @@ using ..MutationFunctionsModule:
     randomize_tree,
     _find_parent
 using ..EvaluateInverseModule: eval_inverse_tree_array_masked
-using ..BacksolveModule: fit_sparse_expression, prepare_backsolve_setup
+using ..BacksolveModule:
+    fit_sparse_expression, prepare_backsolve_setup, _has_weighted_sum_operators
 using ..ConstantOptimizationModule: optimize_constants
 using ..RecorderModule: @recorder
 
@@ -385,7 +389,7 @@ function _next_generation(
         mutation_result::AbstractMutationResult{N,P}
         num_evals += mutation_result.num_evals::Float64
 
-        if mutation_result.return_immediately
+        if mutation_result.return_immediately && mutation_result.success
             @assert(
                 mutation_result.member isa P,
                 "Mutation result must return a `PopMember` if `return_immediately` is true"
@@ -398,6 +402,10 @@ function _next_generation(
                 dataset,
             )
             return mutation_result.member::P, true, num_evals
+        elseif mutation_result.return_immediately
+            successful_mutation = false
+            attempts += 1
+            break
         else
             @assert(
                 mutation_result.tree isa N,
@@ -723,22 +731,30 @@ function mutate!(
     kws...,
 ) where {N<:AbstractExpression,P<:AbstractPopMember}
     @recorder recorder["type"] = "backsolve"
-    tree = get_tree(new_tree)
     num_evals = 0.0
 
-    if tree.degree == 0
-        @recorder recorder["reason"] = "backsolve_single_node"
-        return MutationResult{N,P}(; tree=new_tree, success=false)
+    function backsolve_fail(reason)
+        @recorder recorder["reason"] = reason
+        return MutationResult{N,P}(; tree=new_tree, num_evals, success=false)
     end
 
-    if preserve_sharing(tree)
-        @recorder recorder["reason"] = "backsolve_shared_nodes"
-        return MutationResult{N,P}(; tree=new_tree, success=false)
-    end
+    # Only plain `Expression` wrappers support backsolve (matching
+    # `backsolve_rewrite_random_node`); other wrapper types must opt in
+    # explicitly. Inversion requires binary trees, a real target vector,
+    # and both `+` and `*` for the weighted-sum fit.
+    new_tree isa Expression || return backsolve_fail("backsolve_unsupported_expression")
+    tree = get_tree(new_tree)
 
-    parent_complexity = compute_complexity(tree, options)
+    tree isa AbstractExpressionNode{<:Any,2} ||
+        return backsolve_fail("backsolve_unsupported_node_type")
+    tree.degree == 0 && return backsolve_fail("backsolve_single_node")
+    preserve_sharing(tree) && return backsolve_fail("backsolve_shared_nodes")
+    dataset.y === nothing && return backsolve_fail("backsolve_missing_target")
+    _has_weighted_sum_operators(options) ||
+        return backsolve_fail("backsolve_missing_operators")
+
+    parent_complexity = compute_complexity(parent_member, options)
     min_valid_rows = min(10, size(dataset.X, 2))
-    cost_margin = 1e-10 * max(1.0, abs(parent_member.cost))
 
     setup = nothing
     reason = "backsolve_no_viable_node"
@@ -749,6 +765,7 @@ function mutate!(
         target_values, valid_mask = eval_inverse_tree_array_masked(
             tree, dataset.X, options.operators, node, dataset.y
         )
+        num_evals += dataset_fraction(dataset)
         if count(valid_mask) < min_valid_rows
             reason = "backsolve_inversion_invalid"
             continue
@@ -771,7 +788,7 @@ function mutate!(
                 max_library_size=m.max_library_size,
                 top_k=top_k,
             )
-            num_evals += length(setup.basis.terms) * dataset_fraction(dataset)
+            num_evals += setup.basis.n_evaluated * dataset_fraction(dataset)
         end
 
         new_node = fit_sparse_expression(
@@ -786,7 +803,7 @@ function mutate!(
             extra_term=node,
             max_complexity=budget,
         )
-        num_evals += dataset_fraction(dataset)
+        num_evals += 2 * dataset_fraction(dataset)
         if new_node === nothing
             reason = "backsolve_fit_failed"
             continue
@@ -795,8 +812,8 @@ function mutate!(
         parent, idx = _find_parent(tree, node)
         set_child!(parent, new_node, idx)
 
-        child_complexity = compute_complexity(tree, options)
-        if !check_constraints(tree, options, curmaxsize, child_complexity)
+        child_complexity = compute_complexity(new_tree, options)
+        if !check_constraints(new_tree, options, curmaxsize, child_complexity)
             set_child!(parent, node, idx)
             reason = "backsolve_failed_constraint_check"
             continue
@@ -807,7 +824,23 @@ function mutate!(
         )
         num_evals += dataset_fraction(dataset)
 
-        if after_cost < parent_member.cost - cost_margin
+        # In batching mode the parent's cached cost comes from a different
+        # batch, so re-evaluate it on the current one to keep the gate exact.
+        gate_parent_cost = parent_member.cost
+        if dataset isa SubDataset
+            gate_parent_cost, _ = eval_cost(
+                dataset, parent_member.tree, options; complexity=parent_complexity
+            )
+            num_evals += dataset_fraction(dataset)
+        end
+
+        improved = if isfinite(gate_parent_cost)
+            after_cost < gate_parent_cost - 1e-10 * max(1.0, abs(gate_parent_cost))
+        else
+            isfinite(after_cost)
+        end
+
+        if improved
             child_ex = with_contents(parent_member.tree, tree)
             baby = create_child(
                 parent_member,

@@ -58,14 +58,15 @@ Basis terms and their evaluated values for the sparse-expression fit.
 struct BasisLibrary{T,N<:AbstractExpressionNode{T}}
     terms::Vector{N}
     evaluated_terms::Matrix{T}
+    n_evaluated::Int
 
     function BasisLibrary(
-        terms::Vector{N}, evaluated_terms::Matrix{T}
+        terms::Vector{N}, evaluated_terms::Matrix{T}, n_evaluated::Int=length(terms)
     ) where {T,N<:AbstractExpressionNode{T}}
         size(evaluated_terms, 2) == length(terms) || throw(
             ArgumentError("BasisLibrary requires one evaluated_terms column per term.")
         )
-        return new{T,N}(terms, evaluated_terms)
+        return new{T,N}(terms, evaluated_terms, n_evaluated)
     end
 end
 
@@ -367,7 +368,7 @@ function build_basis_library(
     end
     evaluated_terms = evaluated_terms[:, 1:col]
 
-    return BasisLibrary(valid_terms, evaluated_terms)
+    return BasisLibrary(valid_terms, evaluated_terms, length(terms))
 end
 
 function _has_weighted_sum_operators(options::AbstractOptions)::Bool
