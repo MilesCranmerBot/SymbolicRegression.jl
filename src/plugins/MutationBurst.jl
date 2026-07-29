@@ -2,7 +2,7 @@ module MutationBurstModule
 
 using DispatchDoctor: @unstable
 using ..CoreModule: AbstractPlugin
-import ..CoreModule: wrap_mutation_step
+import ..CoreModule: wraps_mutation_step, wrap_mutation_step
 
 """
     MutationBurstPlugin(; retry_attempts=4, compound_probability=0.25, compound_max_steps=2)
@@ -30,34 +30,46 @@ The retry-around-compound nesting above is internal to this plugin's own
     a single benchmark suite — they may change behavior, defaults, or
     config-knob names in minor releases until exercised more broadly.
 """
-Base.@kwdef struct MutationBurstPlugin <: AbstractPlugin
-    retry_attempts::Int = 4
-    compound_probability::Float64 = 0.25
-    compound_max_steps::Int = 2
+struct MutationBurstPlugin <: AbstractPlugin
+    retry_attempts::Int
+    compound_probability::Float64
+    compound_max_steps::Int
+    function MutationBurstPlugin(;
+        retry_attempts::Integer=4,
+        compound_probability::Real=0.25,
+        compound_max_steps::Integer=2,
+    )
+        retry_attempts >= 1 ||
+            throw(ArgumentError("`retry_attempts` must be at least 1."))
+        0 <= compound_probability <= 1 ||
+            throw(ArgumentError("`compound_probability` must be between 0 and 1."))
+        compound_max_steps >= 1 ||
+            throw(ArgumentError("`compound_max_steps` must be at least 1."))
+        return new(
+            Int(retry_attempts), Float64(compound_probability), Int(compound_max_steps)
+        )
+    end
 end
+
+wraps_mutation_step(::MutationBurstPlugin) = Val(true)
 
 @unstable function wrap_mutation_step(
     _, p::MutationBurstPlugin, parent_member, next_step::F
 ) where {F}
-    # Retry outer.
-    member, accepted, num_evals = next_step(parent_member)
+    result = next_step(parent_member)
     for _ in 2:(p.retry_attempts)
-        accepted && break
-        m, a, n = next_step(parent_member)
-        member, accepted = m, a
-        num_evals += n
+        result.accepted && break
+        result = next_step(parent_member)
     end
-    accepted || return member, accepted, num_evals
-    # Compound inner — only after an accepted retry result.
+    result.accepted || return result
     n_steps = 1
     while n_steps < p.compound_max_steps && rand() < p.compound_probability
-        m, a, n = next_step(member)
-        num_evals += n
-        a || break
-        member = m
+        next_result = next_step(result.member)
+        next_result.accepted || break
+        result = next_result
         n_steps += 1
     end
-    return member, true, num_evals
+    return result
 end
 
 end  # module MutationBurstModule

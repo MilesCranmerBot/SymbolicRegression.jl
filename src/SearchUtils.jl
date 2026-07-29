@@ -24,18 +24,17 @@ using ..CoreModule:
     AbstractOptions,
     Options,
     RecordType,
-    max_features,
     create_expression,
     init_value
 using ..ComplexityModule: compute_complexity
 using ..PopulationModule: Population
 using ..PopMemberModule: PopMember, AbstractPopMember
-using ..HallOfFameModule: HallOfFame, string_dominating_pareto_curve
+using ..HallOfFameModule:
+    HallOfFame, string_dominating_pareto_curve, update_hall_of_fame!
 using ..ConstantOptimizationModule: optimize_constants
 using ..ProgressBarsModule: WrappedProgressBar, manually_iterate!, barlen
 using ..ExpressionBuilderModule: strip_metadata
 using ..InterfaceDynamicExpressionsModule: takes_eval_options
-using ..CheckConstraintsModule: check_constraints
 
 function logging_callback! end
 
@@ -286,13 +285,16 @@ function assign_next_worker!(
     end
 end
 
-const DefaultWorkerOutputType{P,H} = Tuple{P,H,RecordType,Float64}
+const DefaultWorkerOutputType{P,H,S<:Tuple} = Tuple{P,H,RecordType,Float64,S}
 
 function get_worker_output_type(
-    ::Val{PARALLELISM}, ::Type{PopType}, ::Type{HallOfFameType}
-) where {PARALLELISM,PopType,HallOfFameType}
+    ::Val{PARALLELISM},
+    ::Type{PopType},
+    ::Type{HallOfFameType},
+    ::Type{PluginStatesType},
+) where {PARALLELISM,PopType,HallOfFameType,PluginStatesType<:Tuple}
     if PARALLELISM == :serial
-        DefaultWorkerOutputType{PopType,HallOfFameType}
+        DefaultWorkerOutputType{PopType,HallOfFameType,PluginStatesType}
     elseif PARALLELISM == :multiprocessing
         Future
     else
@@ -301,9 +303,9 @@ function get_worker_output_type(
 end
 
 #! format: off
-extract_from_worker(p::DefaultWorkerOutputType, _, _) = p
-extract_from_worker(f::Future, ::Type{P}, ::Type{H}) where {P,H} = fetch(f)::DefaultWorkerOutputType{P,H}
-extract_from_worker(t::Task, ::Type{P}, ::Type{H}) where {P,H} = fetch(t)::DefaultWorkerOutputType{P,H}
+extract_from_worker(p::DefaultWorkerOutputType, _, _, _) = p
+extract_from_worker(f::Future, ::Type{P}, ::Type{H}, ::Type{S}) where {P,H,S<:Tuple} = fetch(f)::DefaultWorkerOutputType{P,H,S}
+extract_from_worker(t::Task, ::Type{P}, ::Type{H}, ::Type{S}) where {P,H,S<:Tuple} = fetch(t)::DefaultWorkerOutputType{P,H,S}
 #! format: on
 
 macro sr_spawner(expr, kws...)
@@ -325,32 +327,6 @@ macro sr_spawner(expr, kws...)
             error("Invalid parallel type ", string($(parallelism)), ".")
         end
     end |> esc
-end
-
-function init_dummy_pops(
-    npops::Int, datasets::Vector{D}, options::AbstractOptions
-) where {T,L,D<:Dataset{T,L}}
-    prototype = Population(
-        first(datasets);
-        population_size=1,
-        options=options,
-        nfeatures=max_features(first(datasets), options),
-    )
-    # ^ Due to occasional inference issue, we manually specify the return type
-    return [
-        typeof(prototype)[
-            if (i == 1 && j == 1)
-                prototype
-            else
-                Population(
-                    datasets[j];
-                    population_size=1,
-                    options=options,
-                    nfeatures=max_features(datasets[j], options),
-                )
-            end for i in 1:npops
-        ] for j in 1:length(datasets)
-    ]
 end
 
 struct StdinReader
@@ -600,7 +576,7 @@ Look through the source of `equation_search` to see how this is used.
 abstract type AbstractSearchState{T,L,N<:AbstractExpression{T}} end
 
 """
-    SearchState{T,L,N,PM,WorkerOutputType,ChannelType,PluginStatesType} <: AbstractSearchState{T,L,N}
+    SearchState{T,L,N,PM,WorkerOutputType,ChannelType,PluginStatesType,WorkerPluginStatesType} <: AbstractSearchState{T,L,N}
 
 The state of the search, including the populations, worker outputs, tasks, and
 channels. This is used to manage the search and keep track of runtime variables
@@ -614,6 +590,7 @@ Base.@kwdef struct SearchState{
     WorkerOutputType,
     ChannelType,
     PluginStatesType<:Tuple,
+    WorkerPluginStatesType<:Tuple,
 } <: AbstractSearchState{T,L,N}
     procs::Vector{Int}
     we_created_procs::Bool
@@ -632,6 +609,7 @@ Base.@kwdef struct SearchState{
     record::Base.RefValue{RecordType}
     seed_members::Vector{Vector{PM}}
     plugin_states::Vector{PluginStatesType}
+    worker_plugin_states::Vector{Vector{WorkerPluginStatesType}}
 end
 
 function save_to_file(
@@ -744,27 +722,6 @@ function construct_datasets(
             extra=extra,
         ) for j in 1:nout
     ]
-end
-
-function update_hall_of_fame!(
-    hall_of_fame::HallOfFame, members::Vector{PM}, options::AbstractOptions
-) where {PM<:AbstractPopMember}
-    for member in members
-        size = compute_complexity(member, options)
-        valid_size = 0 < size <= options.maxsize
-        if !valid_size
-            continue
-        end
-        if !check_constraints(member.tree, options, options.maxsize, size)
-            continue
-        end
-        not_filled = !hall_of_fame.exists[size]
-        better_than_current = member.cost < hall_of_fame.members[size].cost
-        if not_filled || better_than_current
-            hall_of_fame.members[size] = copy(member)
-            hall_of_fame.exists[size] = true
-        end
-    end
 end
 
 function _parse_guess_expression(

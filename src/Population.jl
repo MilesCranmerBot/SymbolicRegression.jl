@@ -55,15 +55,17 @@ end
 function _init_tree(
     dataset, options, nlength::Int, nfeatures::Int, ::Type{T}, plugin_states::Tuple
 ) where {T}
-    fallback = gen_random_tree(nlength, options, nfeatures, T)
     candidate = resolve_init_member(plugin_states, options.plugins, dataset, options)
-    return isnothing(candidate) ? fallback : candidate::typeof(fallback)
+    if isnothing(candidate)
+        return gen_random_tree(nlength, options, nfeatures, T)
+    end
+    return candidate
 end
 
 """
     Population(dataset::Dataset{T,L};
                population_size, nlength::Int=3, options::AbstractOptions,
-               nfeatures::Int, plugin_states=())
+               nfeatures::Int, plugin_states::Tuple)
 
 Create random population and evaluate them on the dataset.
 """
@@ -74,8 +76,10 @@ function Population(
     nlength::Int=3,
     nfeatures::Int,
     npop=nothing,
-    plugin_states::Tuple=(),
+    plugin_states::Tuple,
 ) where {T,L}
+    length(options.plugins) == length(plugin_states) ||
+        throw(ArgumentError("`options.plugins` and `plugin_states` must have the same length."))
     @assert (population_size !== nothing) ⊻ (npop !== nothing)
     population_size = something(population_size, npop)
     PM = options.popmember_type
@@ -123,6 +127,7 @@ Create random population and score them on the dataset.
     nfeatures::Int,
     loss_type::Type{L}=Nothing,
     npop=nothing,
+    plugin_states::Tuple,
 ) where {T<:DATA_TYPE,L}
     @assert (population_size !== nothing) ⊻ (npop !== nothing)
     population_size = if npop === nothing
@@ -133,7 +138,11 @@ Create random population and score them on the dataset.
     dataset = Dataset(X, y, L)
     update_baseline_loss!(dataset, options)
     return Population(
-        dataset; population_size=population_size, options=options, nfeatures=nfeatures
+        dataset;
+        population_size=population_size,
+        options=options,
+        nfeatures=nfeatures,
+        plugin_states,
     )
 end
 
@@ -154,13 +163,19 @@ end
 
 # Sample the population, and get the best member from that sample
 function best_of_sample(
-    pop::Population{T,L,N}, options::AbstractOptions; plugin_states::Tuple=()
+    pop::Population{T,L,N},
+    options::AbstractOptions;
+    plugin_states::Tuple,
 ) where {T,L,N}
+    length(options.plugins) == length(plugin_states) ||
+        throw(ArgumentError("`options.plugins` and `plugin_states` must have the same length."))
     sample = sample_pop(pop, options)
     return copy(_best_of_sample(sample.members, options; plugin_states))
 end
 function _best_of_sample(
-    members::Vector{P}, options::AbstractOptions; plugin_states::Tuple=()
+    members::Vector{P},
+    options::AbstractOptions;
+    plugin_states::Tuple,
 ) where {T,L,N,P<:AbstractPopMember{T,L,N}}
     p = options.tournament_selection_p
     n = length(members)  # == tournament_selection_n

@@ -49,8 +49,14 @@ end
     z = @. cos(X[1, :] - 3.2) * X[2, :] - X[3, :] * X[3, :]
     y = @. sin(z) + z
     dataset = Dataset(X, y)
+    plugin_states = map(
+        plugin -> SymbolicRegression.init_plugin_state(plugin, options, dataset),
+        options.plugins,
+    )
 
-    pop = Population(dataset; options, nlength=3, nfeatures=3, population_size=100)
+    pop = Population(
+        dataset; options, nlength=3, nfeatures=3, population_size=100, plugin_states
+    )
     @test pop isa Population{T,T,<:Expression{T,<:GraphNode{T}}} where {T}
 
     # Seems to not work yet:

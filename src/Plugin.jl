@@ -77,8 +77,9 @@ so the state needs no particular supertype.
 
 **Thread / Multiprocessing Safety**:
 - `on_generation_end!` runs serially on the head node — safe to mutate.
-- `on_cycle_end!` and `on_mutation_end!` run on workers, against per-dispatch
-  copies built by [`fork_plugin_state`](@ref). Cross-worker
+- `on_cycle_end!` and `on_mutation_end!` run on workers, against per-population
+  states built by [`fork_plugin_state`](@ref) before the first dispatch and
+  retained across later dispatches. Cross-worker
   communication must use `Channel` / `RemoteChannel`.
 - `init_member` reads the head node's per-output state during initial
   population creation. In multithreading mode, multiple population-creation
@@ -116,7 +117,7 @@ function init_plugin_state(::AbstractPlugin, options, dataset)
 end
 
 """
-    on_search_start!(plugin, state, dataset, options, ropt)
+    on_search_start!(state, plugin, dataset, options, ropt)
 
 Lifecycle hook called on the head node after initialization, before warmup
 and the main search loop. Called once per (plugin, output) pair.
@@ -124,7 +125,7 @@ and the main search loop. Called once per (plugin, output) pair.
 Override by dispatching on your plugin type:
 
 ```julia
-SymbolicRegression.on_search_start!(p::MyPlugin, s::MyPluginState, dataset, options, ropt) = ...
+SymbolicRegression.on_search_start!(s::MyPluginState, p::MyPlugin, dataset, options, ropt) = ...
 ```
 
 Default is a no-op.
@@ -136,7 +137,7 @@ function on_search_start!(_, ::AbstractPlugin, dataset, options, ropt)
 end
 
 """
-    on_search_end!(plugin, state, search_state, dataset, options, ropt)
+    on_search_end!(state, plugin, search_state, dataset, options, ropt)
 
 Lifecycle hook called on the head node after the main search loop exits and
 before tearing down processes/threads. Multiprocessing cycles may still be
@@ -151,7 +152,7 @@ function on_search_end!(_, ::AbstractPlugin, search_state, dataset, options, rop
 end
 
 """
-    on_generation_end!(plugin, state, search_state, dataset, options, ropt, returned_pop)
+    on_generation_end!(state, plugin, search_state, dataset, options, ropt, returned_pop)
 
 Lifecycle hook called on the HEAD NODE after each cycle's result has been
 received from a worker. Runs serially; safe to mutate plugin state, update
@@ -170,12 +171,12 @@ function on_generation_end!(
 end
 
 """
-    on_cycle_end!(plugin, state, pop, dataset, hof, options)
+    on_cycle_end!(state, plugin, pop, dataset, hof, options)
 
-Lifecycle hook called on the WORKER after each s_r_cycle finishes. May run
-concurrently across workers. Use only worker-local state, or use `Channel` /
-`RemoteChannel` for cross-worker communication. Called once per plugin per
-worker cycle.
+Lifecycle hook called on the WORKER at the end of each evolution cycle, paired
+with [`on_cycle_start!`](@ref). May run concurrently across workers. Use only
+worker-local state, or use `Channel` / `RemoteChannel` for cross-worker
+communication.
 
 Override by dispatching on your plugin type. Default is a no-op.
 
@@ -196,13 +197,16 @@ once the accept/reject decision has been made inside `next_generation`.
 - `accepted::Bool`: `true` if the mutation was accepted (via
   `return_immediately` or annealing/fitness acceptance); `false` if rejected
   (constraint failure, NaN loss, or annealing/frequency rejection).
-- `before_loss::L`: loss of the parent member before mutation.
-- `after_loss::Union{L,Nothing}`: loss after mutation. `nothing` if no valid evaluation
-  occurred (constraint failure or NaN loss).
+- `before_cost::C`: search cost of the parent member before mutation.
+- `after_cost::Union{C,Nothing}`: search cost after mutation. `nothing` if no
+  valid evaluation occurred.
+- `before_loss::L`: raw loss of the parent member before mutation.
+- `after_loss::Union{L,Nothing}`: raw loss after mutation. `nothing` if no
+  valid evaluation occurred.
 - `mutation_idx::Int`: index of the sampled mutation into `options.mutations`
   (and into the conditioned weights vector, which shares its order).
 
-`L` is the dataset's loss type (e.g. `Float32` or `Float64`).
+`C` and `L` are the cost and loss types.
 
 The mutation kind itself is passed as a separate dispatch arg to
 [`on_mutation_end!`](@ref), not stored on the event — that way plugin
@@ -210,8 +214,10 @@ authors can write type-specific methods.
 
 !!! warning "Experimental"
 """
-struct MutationEvent{L<:Real}
+struct MutationEvent{C<:Real,L<:Real}
     accepted::Bool
+    before_cost::C
+    after_cost::Union{C,Nothing}
     before_loss::L
     after_loss::Union{L,Nothing}
     mutation_idx::Int
@@ -292,9 +298,9 @@ end
 """
     fork_plugin_state(head_state, plugin, dataset) -> state
 
-Build the worker-side plugin state for one cycle's dispatch, given the head
-node's current plugin state for this output and the dataset the worker will
-operate on. Called once per (plugin, output) pair per cycle dispatch.
+Build the worker-side plugin state for one population, given the head node's
+current plugin state for this output and the dataset the worker will operate
+on. The returned state persists across that population's worker dispatches.
 
 Default returns `deepcopy(head_state)` (full snapshot).
 
@@ -302,6 +308,20 @@ Default returns `deepcopy(head_state)` (full snapshot).
 """
 function fork_plugin_state(head_state, ::AbstractPlugin, dataset)
     return deepcopy(head_state)
+end
+
+"""
+    refresh_plugin_state(worker_state, head_state, plugin, dataset) -> state
+
+Refresh a persistent per-population worker state from the current head state
+before its next dispatch. The default preserves `worker_state`. Plugins whose
+head-side hooks update data consumed by workers can return a merged or replaced
+state.
+
+!!! warning "Experimental"
+"""
+function refresh_plugin_state(worker_state, head_state, ::AbstractPlugin, dataset)
+    return worker_state
 end
 
 """
@@ -407,14 +427,36 @@ function condition_mutation!(::Any, _, ::AbstractPlugin, ::AbstractMutation, opt
 end
 
 """
-    wrap_mutation_step(state, plugin, parent_member, next_step) -> (member, accepted, num_evals)
+    MutationStepResult
+
+Result of one engine-owned mutation attempt. Middleware selects and returns a
+result produced by `next_step`; evaluation accounting, Hall-of-Fame updates,
+and recording remain owned by the engine.
+"""
+struct MutationStepResult{P}
+    member::P
+    accepted::Bool
+    attempt_id::UInt
+end
+MutationStepResult(member, accepted::Bool) = MutationStepResult(member, accepted, UInt(0))
+
+"""
+    wraps_mutation_step(plugin) -> Val
+
+Capability trait for plugins that implement [`wrap_mutation_step`](@ref).
+Override with `Val(true)` so the engine includes the plugin in the precomposed
+mutation middleware.
+"""
+wraps_mutation_step(::AbstractPlugin) = Val(false)
+
+"""
+    wrap_mutation_step(state, plugin, parent_member, next_step) -> MutationStepResult
 
 Middleware-style hook around `next_generation`. The engine builds a thunk
-`next_step(parent) -> (member, accepted, num_evals)` that runs one call to
-`next_generation` against `parent`. The plugin may call `next_step` zero,
-one, or many times — with the original parent (retry), with the previous
-result (chain), with a different member (ensemble), or skip it entirely.
-It returns the final tuple to its caller.
+`next_step(parent) -> MutationStepResult` that runs one engine-observed call to
+`next_generation` against `parent`. The plugin may call `next_step` one or
+many times with the original parent, a previous result, or another member. It
+must return one of the results produced by `next_step`.
 
 Plugins compose as nested middleware in `options.plugins` order:
 plugin 1's `wrap` wraps plugin 2's wrap wraps... wraps `next_generation`.
@@ -423,7 +465,9 @@ shape for retry, compound bursts, MCMC-style acceptance criteria,
 ensemble voting, or any control-flow extension that needs to call
 `next_generation` more than once per cycle.
 
-Default is a single pass-through: `next_step(parent_member)`.
+Default is a single pass-through: `next_step(parent_member)`. Plugins that
+override this hook must also define `wraps_mutation_step(::MyPlugin) =
+Val(true)`.
 
 !!! warning "Experimental"
 """

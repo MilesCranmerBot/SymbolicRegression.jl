@@ -4,7 +4,8 @@ import .LossFunctionsModule: score_func
 import .HallOfFameModule: calculate_pareto_frontier
 import .MutationFunctionsModule: gen_random_tree, gen_random_tree_fixed_size
 import .PopulationModule: best_of_sample
-using .AdaptiveParsimonyModule: AdaptiveParsimonyState, RunningSearchStatistics
+using .AdaptiveParsimonyModule:
+    AdaptiveParsimonyPlugin, AdaptiveParsimonyState, RunningSearchStatistics
 
 @deprecate(
     best_of_sample(
@@ -12,9 +13,10 @@ using .AdaptiveParsimonyModule: AdaptiveParsimonyState, RunningSearchStatistics
         running_search_statistics::RunningSearchStatistics,
         options::AbstractOptions,
     ),
-    best_of_sample(
-        pop, options; plugin_states=(AdaptiveParsimonyState(running_search_statistics),)
-    ),
+    best_of_sample(pop, options; plugin_states=map(options.plugins) do plugin
+        plugin isa AdaptiveParsimonyPlugin ?  # COV_EXCL_LINE
+            AdaptiveParsimonyState(running_search_statistics) : nothing
+    end),
 )
 
 @deprecate(

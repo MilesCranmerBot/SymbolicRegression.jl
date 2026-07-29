@@ -35,14 +35,20 @@ state; nothing else in the engine references it.
 
 !!! warning "Experimental"
 """
-Base.@kwdef struct SimulatedAnnealingPlugin <: AbstractPlugin
-    alpha::Float64 = 0.1
+struct SimulatedAnnealingPlugin <: AbstractPlugin
+    alpha::Float64
+end
+function SimulatedAnnealingPlugin(; alpha::Real=0.1)::SimulatedAnnealingPlugin
+    converted_alpha = Float64(alpha)
+    isfinite(converted_alpha) && converted_alpha > 0 ||
+        throw(ArgumentError("`alpha` must be finite and positive."))
+    return SimulatedAnnealingPlugin(converted_alpha)
 end
 
 """
     SimulatedAnnealingState
 
-Per-dispatch mutable state (forked via `fork_plugin_state`) for
+Per-population mutable state (forked via `fork_plugin_state`) for
 [`SimulatedAnnealingPlugin`](@ref). `temperature`
 is recomputed each cycle by [`on_cycle_start!`](@ref) and read by the
 plugin's other hooks.

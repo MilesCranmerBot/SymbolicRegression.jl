@@ -16,7 +16,10 @@
     member = PopMember(dataset, Node(Float64; feature=1), options; deterministic=false)
     population = Population([member])
     statistics = RunningSearchStatistics(; options)
-    plugin_states = (AdaptiveParsimonyState(statistics),)
+    plugin_states = map(options.plugins) do plugin
+        plugin isa SymbolicRegression.AdaptiveParsimonyPlugin ?
+            AdaptiveParsimonyState(statistics) : nothing
+    end
 
     Random.seed!(0)
     current_best = best_of_sample(population, options; plugin_states)

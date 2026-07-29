@@ -7,6 +7,7 @@ using ..PopMemberModule: AbstractPopMember
 import ..CoreModule:
     init_plugin_state,
     fork_plugin_state,
+    refresh_plugin_state,
     tournament_cost_multiplier,
     mutation_acceptance_multiplier,
     on_generation_end!,
@@ -151,6 +152,15 @@ function fork_plugin_state(
     snapshot = deepcopy(head_state.rss)::RunningSearchStatistics
     normalize_frequencies!(snapshot)
     return AdaptiveParsimonyState(snapshot)
+end
+
+function refresh_plugin_state(
+    worker_state::AdaptiveParsimonyState,
+    head_state::AdaptiveParsimonyState,
+    plugin::AdaptiveParsimonyPlugin,
+    dataset,
+)
+    return fork_plugin_state(head_state, plugin, dataset)
 end
 
 function tournament_cost_multiplier(

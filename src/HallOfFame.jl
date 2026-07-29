@@ -6,6 +6,7 @@ using ..UtilsModule: split_string, AnnotatedIOBuffer, dump_buffer
 using ..CoreModule:
     AbstractOptions, Dataset, DATA_TYPE, LOSS_TYPE, relu, create_expression, init_value
 using ..ComplexityModule: compute_complexity
+using ..CheckConstraintsModule: check_constraints
 using ..PopMemberModule: AbstractPopMember, PopMember
 using ..InterfaceDynamicExpressionsModule: format_dimensions, WILDCARD_UNIT_STRING
 using Printf: @sprintf
@@ -111,6 +112,30 @@ function Base.copy(hof::HallOfFame)
     return HallOfFame(
         [copy(member) for member in hof.members], [exists for exists in hof.exists]
     )
+end
+
+function update_hall_of_fame!(
+    hall_of_fame::HallOfFame, member::AbstractPopMember, options::AbstractOptions
+)
+    size = compute_complexity(member, options)
+    0 < size <= options.maxsize || return nothing
+    check_constraints(member.tree, options, options.maxsize, size) || return nothing
+    if !hall_of_fame.exists[size] || member.cost < hall_of_fame.members[size].cost
+        hall_of_fame.members[size] = copy(member)
+        hall_of_fame.exists[size] = true
+    end
+    return nothing
+end
+
+function update_hall_of_fame!(
+    hall_of_fame::HallOfFame,
+    members::AbstractVector{<:AbstractPopMember},
+    options::AbstractOptions,
+)
+    for member in members
+        update_hall_of_fame!(hall_of_fame, member, options)
+    end
+    return nothing
 end
 
 """

@@ -22,9 +22,20 @@
         mutations=(CustomMutation(calls) => 1.0,),
     )
     dataset = Dataset(randn(2, 16), randn(16))
+    plugin_states = map(
+        plugin -> SymbolicRegression.init_plugin_state(plugin, options, dataset),
+        options.plugins,
+    )
     member = PopMember(dataset, Node(Float64; feature=1), options; deterministic=false)
 
-    next_generation(dataset, member, options.maxsize, options; tmp_recorder=RecordType())
+    next_generation(
+        dataset,
+        member,
+        options.maxsize,
+        options;
+        tmp_recorder=RecordType(),
+        plugin_states,
+    )
 
     @test calls[] == 1
 

@@ -7,26 +7,27 @@ using ..CoreModule:
     SimplifyMutation,
     DoNothingMutation,
     MutationEvent
-import ..CoreModule: init_plugin_state, fork_plugin_state, on_mutation_end!
+import ..CoreModule: init_plugin_state, on_mutation_end!
 import ..MutateModule: condition_mutation_weights!, _scale_weight!
 
 """
     AdaptiveMutationWeightsPlugin <: AbstractPlugin
 
 Online-adapt per-mutation weights from the search's own success statistics.
-For each mutation kind, the plugin tracks attempts and "strictly improving"
-successes (`accepted && after_loss < before_loss`) and adjusts a
+For each mutation kind, the plugin tracks attempts and strictly improving
+successes in the configured reward metric and adjusts a
 multiplicative factor applied to that mutation's base weight, updated each
 mutation via an EMA over the smoothed success-ratio with a floor clamp.
 
-Statistics are local to one worker dispatch — no cross-population
-aggregation.
+Statistics persist independently for each population.
 
 # Fields
 - `smoothing::Float64 = 0.02`: EMA factor for the multiplier update.
 - `floor::Float64 = 0.05`: clamp range for a single mutation's target
   multiplier (`[floor, 1/floor]`). Prevents necessary rare ops from being
   starved.
+- `reward::Symbol = :cost`: objective used to count improvements. Supported
+  values are `:cost` and `:loss`.
 
 Mutation kinds excluded from accounting are declared by dispatch on
 `skip_in_adaptive_weights`; by default `SimplifyMutation` and
@@ -38,9 +39,23 @@ SymbolicRegression.AdaptiveMutationWeightsModule.skip_in_adaptive_weights(::MyMu
 
 !!! warning "Experimental"
 """
-Base.@kwdef struct AdaptiveMutationWeightsPlugin <: AbstractPlugin
-    smoothing::Float64 = 0.02
-    floor::Float64 = 0.05
+struct AdaptiveMutationWeightsPlugin <: AbstractPlugin
+    smoothing::Float64
+    floor::Float64
+    reward::Symbol
+    function AdaptiveMutationWeightsPlugin(;
+        smoothing::Real=0.02, floor::Real=0.05, reward::Symbol=:cost
+    )
+        converted_smoothing = Float64(smoothing)
+        converted_floor = Float64(floor)
+        0 <= converted_smoothing <= 1 ||
+            throw(ArgumentError("`smoothing` must be between 0 and 1."))
+        0 < converted_floor <= 1 ||
+            throw(ArgumentError("`floor` must be in (0, 1]."))
+        reward in (:cost, :loss) ||
+            throw(ArgumentError("`reward` must be either `:cost` or `:loss`."))
+        return new(converted_smoothing, converted_floor, reward)
+    end
 end
 
 """
@@ -57,33 +72,27 @@ Extend by dispatch:
 SymbolicRegression.AdaptiveMutationWeightsModule.skip_in_adaptive_weights(::MyMutation) = true
 ```
 """
-skip_in_adaptive_weights(::AbstractMutation) = false
-skip_in_adaptive_weights(::SimplifyMutation) = true
-skip_in_adaptive_weights(::DoNothingMutation) = true
+skip_in_adaptive_weights(::AbstractMutation) = false  # COV_EXCL_LINE
+skip_in_adaptive_weights(::SimplifyMutation) = true  # COV_EXCL_LINE
+skip_in_adaptive_weights(::DoNothingMutation) = true  # COV_EXCL_LINE
 
 """
     AdaptiveMutationWeightsState
 
-Per-dispatch (per-worker) mutable counters and multipliers, parallel to
-`options.mutations`. Reset at each `fork_plugin_state` call.
+Per-population mutable counters and multipliers, parallel to
+`options.mutations`.
 """
 struct AdaptiveMutationWeightsState
     attempts::Vector{Float64}
     successes::Vector{Float64}
     multipliers::Vector{Float64}
+    active::Vector{Bool}
 end
 
 function init_plugin_state(::AdaptiveMutationWeightsPlugin, options, dataset)
     n = length(options.mutations)
-    return AdaptiveMutationWeightsState(zeros(n), zeros(n), ones(n))
-end
-
-# Fresh stats per worker dispatch (per-population locality; no cross-pop merge).
-function fork_plugin_state(
-    head_state::AdaptiveMutationWeightsState, ::AdaptiveMutationWeightsPlugin, dataset
-)
-    n = length(head_state.multipliers)
-    return AdaptiveMutationWeightsState(zeros(n), zeros(n), ones(n))
+    active = [!skip_in_adaptive_weights(mutation) for (mutation, _) in options.mutations]
+    return AdaptiveMutationWeightsState(zeros(n), zeros(n), ones(n), active)
 end
 
 function on_mutation_end!(
@@ -94,24 +103,34 @@ function on_mutation_end!(
     dataset,
     options::AbstractOptions,
 )
-    skip_in_adaptive_weights(mutation) && return nothing
     idx = event.mutation_idx
+    s.active[idx] || return nothing
     s.attempts[idx] += 1.0
-    if event.accepted && event.after_loss < event.before_loss
+    before, after = if p.reward === :cost
+        event.before_cost, event.after_cost
+    else
+        event.before_loss, event.after_loss
+    end
+    if event.accepted && after !== nothing && after < before
         s.successes[idx] += 1.0
     end
-    # Recompute multipliers from current rates.
     total_successes = 0.0
     total_attempts = 0.0
+    n = 0
     @inbounds for i in eachindex(s.attempts)
+        s.active[i] || continue
         total_successes += s.successes[i]
         total_attempts += s.attempts[i]
+        n += 1
     end
-    n = length(s.attempts)
     mean_rate = (total_successes + n) / (total_attempts + 2n)
     f = p.floor
-    upper = f > 0 ? inv(f) : Inf
+    upper = inv(f)
     @inbounds for i in eachindex(s.multipliers)
+        if !s.active[i]
+            s.multipliers[i] = 1.0
+            continue
+        end
         rate = (s.successes[i] + 1.0) / (s.attempts[i] + 2.0)
         target = clamp(rate / mean_rate, f, upper)
         s.multipliers[i] = (1 - p.smoothing) * s.multipliers[i] + p.smoothing * target

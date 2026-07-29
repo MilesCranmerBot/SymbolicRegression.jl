@@ -17,6 +17,10 @@
     X = randn(5, 100)
     y = sin.(X[1, :] .* 2.1 .+ 0.8) .+ X[2, :] .^ 2
     dataset = Dataset(X, y)
+    plugin_states = map(
+        plugin -> SymbolicRegression.init_plugin_state(plugin, options, dataset),
+        options.plugins,
+    )
 
     x1 = Node(Float64; feature=1)
     x2 = Node(Float64; feature=2)
@@ -26,7 +30,7 @@
     maxsize = 20
 
     new_member, _, _ = next_generation(
-        dataset, member, maxsize, options; tmp_recorder=RecordType()
+        dataset, member, maxsize, options; tmp_recorder=RecordType(), plugin_states
     )
 
     resultant_constants, refs = get_scalar_constants(new_member.tree)

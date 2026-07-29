@@ -211,6 +211,9 @@ using Compat: @compat, Fix
         tournament_cost_multiplier, mutation_acceptance_multiplier,
         MutationAcceptanceContext,
         fork_plugin_state,
+        refresh_plugin_state,
+        MutationStepResult,
+        wraps_mutation_step,
         wrap_mutation_step,
         on_cycle_start!,
         prepare_mutation_context,
@@ -361,6 +364,9 @@ using .CoreModule:
     mutation_acceptance_multiplier,
     MutationAcceptanceContext,
     fork_plugin_state,
+    refresh_plugin_state,
+    MutationStepResult,
+    wraps_mutation_step,
     wrap_mutation_step,
     on_cycle_start!,
     prepare_mutation_context,
@@ -384,7 +390,10 @@ using .PopMemberModule:
 using .CoreModule.UtilsModule: get_birth_order
 using .PopulationModule: Population, best_sub_pop, record_population, best_of_sample
 using .HallOfFameModule:
-    HallOfFame, calculate_pareto_frontier, string_dominating_pareto_curve
+    HallOfFame,
+    calculate_pareto_frontier,
+    string_dominating_pareto_curve,
+    update_hall_of_fame!
 using .MutateModule: mutate!, condition_mutation_weights!, MutationResult
 using .SingleIterationModule: s_r_cycle, optimize_and_simplify_population
 using .ProgressBarsModule: WrappedProgressBar
@@ -414,13 +423,11 @@ using .SearchUtilsModule:
     estimate_work_fraction,
     update_progress_bar!,
     print_search_state,
-    init_dummy_pops,
     load_saved_hall_of_fame,
     load_saved_population,
     construct_datasets,
     save_to_file,
     get_cur_maxsize,
-    update_hall_of_fame!,
     parse_guesses,
     logging_callback!,
     infer_popmember_type
@@ -732,8 +739,42 @@ end
     NT = expression_type(PMType)
     PopType = Population{T,L,NT,PMType}
     HallOfFameType = HallOfFame{T,L,NT,PMType}
+    plugin_states = [
+        map(p -> init_plugin_state(p, options, datasets[j]), options.plugins) for
+        j in 1:nout
+    ]
+    for j in eachindex(datasets, plugin_states)
+        map(options.plugins, plugin_states[j]) do plugin, pstate
+            on_search_start!(pstate, plugin, datasets[j], options, ropt)
+            return nothing
+        end
+    end
+    PluginStatesType = eltype(plugin_states)
+    worker_plugin_state_prototype = map(
+        (plugin, head_state) -> fork_plugin_state(
+            head_state, plugin, first(datasets)
+        ),
+        options.plugins,
+        first(plugin_states),
+    )
+    WorkerPluginStatesType = typeof(worker_plugin_state_prototype)
+    worker_plugin_states = [
+        WorkerPluginStatesType[
+            if j == 1 && i == 1
+                worker_plugin_state_prototype
+            else
+                map(
+                    (plugin, head_state) -> fork_plugin_state(
+                        head_state, plugin, datasets[j]
+                    ),
+                    options.plugins,
+                    plugin_states[j],
+                )::WorkerPluginStatesType
+            end for i in 1:(options.populations)
+        ] for j in 1:nout
+    ]
     WorkerOutputType = get_worker_output_type(
-        Val(ropt.parallelism), PopType, HallOfFameType
+        Val(ropt.parallelism), PopType, HallOfFameType, WorkerPluginStatesType
     )
     ChannelType = ropt.parallelism == :multiprocessing ? RemoteChannel : Channel
 
@@ -757,6 +798,8 @@ end
             ropt.verbosity,
             example_dataset,
             ropt.runtests,
+            test_head_plugin_states=first(plugin_states),
+            test_worker_plugin_states=first(first(worker_plugin_states)),
         )
     else
         Int[], false
@@ -769,9 +812,13 @@ end
     shuffle!(task_order)
 
     # Persistent storage of last-saved population for final return:
-    last_pops = init_dummy_pops(options.populations, datasets, options)
+    last_pops = [
+        Vector{PopType}(undef, options.populations) for _ in 1:nout
+    ]
     # Best 10 members from each population for migration:
-    best_sub_pops = init_dummy_pops(options.populations, datasets, options)
+    best_sub_pops = [
+        Vector{PopType}(undef, options.populations) for _ in 1:nout
+    ]
     # Records the number of evaluations:
     # Real numbers indicate use of batching.
     num_evals = [[0.0 for i in 1:(options.populations)] for j in 1:nout]
@@ -787,13 +834,16 @@ end
 
     seed_members = [Vector{PMType}() for j in 1:nout]
 
-    plugin_states = [
-        map(p -> init_plugin_state(p, options, datasets[j]), options.plugins) for
-        j in 1:nout
-    ]
-    PluginStatesType = eltype(plugin_states)
-
-    return SearchState{T,L,NT,PMType,WorkerOutputType,ChannelType,PluginStatesType}(;
+    return SearchState{
+        T,
+        L,
+        NT,
+        PMType,
+        WorkerOutputType,
+        ChannelType,
+        PluginStatesType,
+        WorkerPluginStatesType,
+    }(;
         procs=procs,
         we_created_procs=we_created_procs,
         worker_output=worker_output,
@@ -811,6 +861,7 @@ end
         record=Ref(record),
         seed_members=seed_members,
         plugin_states=plugin_states,
+        worker_plugin_states=worker_plugin_states,
     )
 end
 function _initialize_search!(
@@ -857,19 +908,28 @@ function _initialize_search!(
             state.worker_assignment; out=j, pop=i, parallelism=ropt.parallelism, state.procs
         )
         saved_pop = load_saved_population(saved_state; out=j, pop=i)
-        new_pop =
+        new_pop = let
+            _plugin_states = state.plugin_states[j]
+            _worker_plugin_states = state.worker_plugin_states[j][i]
+            _dataset = datasets[j]
             if saved_pop !== nothing && length(saved_pop.members) == options.population_size
-                _saved_pop = strip_metadata(saved_pop, options, datasets[j])
+                _saved_pop = strip_metadata(saved_pop, options, _dataset)
                 ## Update losses:
                 for member in _saved_pop.members
-                    cost, result_loss = eval_cost(datasets[j], member, options)
+                    cost, result_loss = eval_cost(_dataset, member, options)
                     member.cost = cost
                     member.loss = result_loss
                 end
                 copy_pop = copy(_saved_pop)
                 @sr_spawner(
                     begin
-                        (copy_pop, HallOfFame(options, datasets[j]), RecordType(), 0.0)
+                        (
+                            copy_pop,
+                            HallOfFame(options, _dataset),
+                            RecordType(),
+                            0.0,
+                            _worker_plugin_states,
+                        )
                     end,
                     parallelism = ropt.parallelism,
                     worker_idx = worker_idx
@@ -878,35 +938,30 @@ function _initialize_search!(
                 if saved_pop !== nothing && ropt.verbosity > 0
                     @warn "Recreating population (output=$(j), population=$(i)), as the saved one doesn't have the correct number of members."
                 end
-                let _plugin_states = state.plugin_states[j], _dataset = datasets[j]
-                    @sr_spawner(
-                        begin
-                            (
-                                Population(
-                                    _dataset;
-                                    population_size=options.population_size,
-                                    nlength=3,
-                                    options=options,
-                                    nfeatures=max_features(_dataset, options),
-                                    plugin_states=_plugin_states,
-                                ),
-                                HallOfFame(options, _dataset),
-                                RecordType(),
-                                Float64(options.population_size),
-                            )
-                        end,
-                        parallelism = ropt.parallelism,
-                        worker_idx = worker_idx
-                    )
-                end  # let _plugin_states, _dataset
+                @sr_spawner(
+                    begin
+                        (
+                            Population(
+                                _dataset;
+                                population_size=options.population_size,
+                                nlength=3,
+                                options=options,
+                                nfeatures=max_features(_dataset, options),
+                                plugin_states=_plugin_states,
+                            ),
+                            HallOfFame(options, _dataset),
+                            RecordType(),
+                            Float64(options.population_size),
+                            _worker_plugin_states,
+                        )
+                    end,
+                    parallelism = ropt.parallelism,
+                    worker_idx = worker_idx
+                )
                 # This involves population_size evaluations, on the full dataset:
             end
-        push!(state.worker_output[j], new_pop)
-    end
-    for j in eachindex(datasets, state.plugin_states)
-        for (plugin, pstate) in zip(options.plugins, state.plugin_states[j])
-            on_search_start!(pstate, plugin, datasets[j], options, ropt)
         end
+        push!(state.worker_output[j], new_pop)
     end
     return nothing
 end
@@ -918,14 +973,19 @@ function _preserve_loaded_state!(
 ) where {T,L,N}
     nout = length(state.worker_output)
     # Get the prototype to extract types
-    prototype_pop = state.last_pops[1][1]
-    PopType = typeof(prototype_pop)
+    PopType = eltype(eltype(state.last_pops))
     PM = popmember_type(PopType)
     HallType = HallOfFame{T,L,N,PM}
 
     for j in 1:nout, i in 1:(options.populations)
-        (pop, _, _, _) = extract_from_worker(state.worker_output[j][i], PopType, HallType)
+        (pop, _, _, _, _) = extract_from_worker(
+            state.worker_output[j][i],
+            PopType,
+            HallType,
+            eltype(eltype(state.worker_plugin_states)),
+        )
         state.last_pops[j][i] = copy(pop)
+        state.best_sub_pops[j][i] = best_sub_pop(pop; topn=options.topn)
     end
     return nothing
 end
@@ -951,21 +1011,20 @@ function _warmup_search!(
 
         last_pop = state.worker_output[j][i]
 
-        # Get the prototype to extract types
-        prototype_pop = state.last_pops[j][i]
-        PopType = typeof(prototype_pop)
+        PopType = eltype(eltype(state.last_pops))
         PM = popmember_type(PopType)
         HallType = HallOfFame{T,L,N,PM}
 
-        # Snapshot each plugin's head-side state for this worker dispatch.
-        worker_plugin_states = map(
-            (p, hs) -> fork_plugin_state(hs, p, dataset),
-            options.plugins,
-            state.plugin_states[j],
+        (in_pop, _, _, _, worker_plugin_states) = extract_from_worker(
+            last_pop,
+            PopType,
+            HallType,
+            eltype(eltype(state.worker_plugin_states)),
         )
+        state.last_pops[j][i] = copy(in_pop)
+        state.best_sub_pops[j][i] = best_sub_pop(in_pop; topn=options.topn)
         updated_pop = @sr_spawner(
             begin
-                in_pop = first(extract_from_worker(last_pop, PopType, HallType))
                 _dispatch_s_r_cycle(
                     in_pop,
                     dataset,
@@ -976,7 +1035,9 @@ function _warmup_search!(
                     ropt.verbosity,
                     cur_maxsize,
                     plugin_states=worker_plugin_states,
-                )::DefaultWorkerOutputType{Population{T,L,N},HallOfFame{T,L,N}}
+                )::DefaultWorkerOutputType{
+                    Population{T,L,N},HallOfFame{T,L,N},typeof(worker_plugin_states)
+                }
             end,
             parallelism = ropt.parallelism,
             worker_idx = worker_idx
@@ -1056,7 +1117,13 @@ function _main_search_loop!(
         population_ready &= (state.cycles_remaining[j] > 0)
         if population_ready
             # Take the fetch operation from the channel since its ready
-            (cur_pop, best_seen, cur_record, cur_num_evals) = if ropt.parallelism in
+            (
+                cur_pop,
+                best_seen,
+                cur_record,
+                cur_num_evals,
+                returned_plugin_states,
+            ) = if ropt.parallelism in
                 (
                 :multiprocessing, :multithreading
             )
@@ -1065,9 +1132,14 @@ function _main_search_loop!(
                 )
             else
                 state.worker_output[j][i]
-            end::DefaultWorkerOutputType{Population{T,L,N},HallOfFame{T,L,N}}
+            end::DefaultWorkerOutputType{
+                Population{T,L,N},
+                HallOfFame{T,L,N},
+                eltype(eltype(state.worker_plugin_states)),
+            }
             state.last_pops[j][i] = copy(cur_pop)
             state.best_sub_pops[j][i] = best_sub_pop(cur_pop; topn=options.topn)
+            state.worker_plugin_states[j][i] = returned_plugin_states
             @recorder state.record[] = recursive_merge(state.record[], cur_record)
             state.num_evals[j][i] += cur_num_evals
             dataset = datasets[j]
@@ -1134,10 +1206,14 @@ function _main_search_loop!(
 
             in_pop = copy(cur_pop::Population{T,L,N})
             worker_plugin_states = map(
-                (p, hs) -> fork_plugin_state(hs, p, dataset),
+                (plugin, worker_state, head_state) -> refresh_plugin_state(
+                    worker_state, head_state, plugin, dataset
+                ),
                 options.plugins,
+                returned_plugin_states,
                 state.plugin_states[j],
             )
+            state.worker_plugin_states[j][i] = worker_plugin_states
             state.worker_output[j][i] = @sr_spawner(
                 begin
                     _dispatch_s_r_cycle(
@@ -1334,10 +1410,7 @@ end
             end
         end
     end
-    for (plugin, pstate) in zip(options.plugins, worker_plugin_states)
-        on_cycle_end!(pstate, plugin, out_pop, dataset, best_seen, options)
-    end
-    return (out_pop, best_seen, record, num_evals)
+    return (out_pop, best_seen, record, num_evals, worker_plugin_states)
 end
 function _info_dump(
     state::AbstractSearchState,

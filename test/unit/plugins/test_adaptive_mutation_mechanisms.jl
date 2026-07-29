@@ -23,7 +23,7 @@ end
 
     options = Options(;
         default_mutations=(),
-        mutations=(SkippedMutation() => 1.0, SimplifyMutation() => 1.0),
+        mutations=(ConstantMutation() => 1.0, SkippedMutation() => 1.0),
         plugins=(AdaptiveMutationWeightsPlugin(),),
         default_plugins=(),
     )
@@ -31,18 +31,62 @@ end
     state = init_plugin_state(plugin, options, nothing)
 
     on_mutation_end!(
-        state, plugin, SkippedMutation(), MutationEvent(true, 1.0, 0.5, 1), nothing, options
-    )
-    on_mutation_end!(
         state,
         plugin,
-        SimplifyMutation(),
-        MutationEvent(true, 1.0, 0.5, 2),
+        ConstantMutation(),
+        MutationEvent(true, 1.0, 0.5, 1.0, 0.5, 1),
         nothing,
         options,
     )
-    @test all(state.attempts .== 0.0)
-    @test all(state.multipliers .== 1.0)
+    @test state.attempts == [1.0, 0.0]
+    @test state.multipliers[2] == 1.0
+end
+
+@testitem "AdaptiveMutationWeightsPlugin rewards the configured objective" begin
+    using SymbolicRegression
+    using SymbolicRegression: MutationEvent, init_plugin_state, on_mutation_end!
+    using Test
+
+    options = Options(;
+        default_mutations=(),
+        mutations=(ConstantMutation() => 1.0,),
+        default_plugins=(),
+    )
+    event = MutationEvent(true, 1.0, 0.5, 1.0, 2.0, 1)
+
+    cost_plugin = AdaptiveMutationWeightsPlugin(; reward=:cost)
+    cost_state = init_plugin_state(cost_plugin, options, nothing)
+    on_mutation_end!(
+        cost_state, cost_plugin, ConstantMutation(), event, nothing, options
+    )
+    @test cost_state.successes == [1.0]
+
+    loss_plugin = AdaptiveMutationWeightsPlugin(; reward=:loss)
+    loss_state = init_plugin_state(loss_plugin, options, nothing)
+    on_mutation_end!(
+        loss_state, loss_plugin, ConstantMutation(), event, nothing, options
+    )
+    @test loss_state.successes == [0.0]
+end
+
+@testitem "Plugin constructors validate parameter domains" begin
+    using SymbolicRegression
+    using Test
+
+    @test_throws ArgumentError AdaptiveMutationWeightsPlugin(; smoothing=-0.1)
+    @test_throws ArgumentError AdaptiveMutationWeightsPlugin(; smoothing=1.1)
+    @test_throws ArgumentError AdaptiveMutationWeightsPlugin(; floor=0.0)
+    @test_throws ArgumentError AdaptiveMutationWeightsPlugin(; floor=1.1)
+    @test_throws ArgumentError AdaptiveMutationWeightsPlugin(; reward=:unknown)
+    @test_throws ArgumentError MutationBurstPlugin(; retry_attempts=0)
+    @test_throws ArgumentError MutationBurstPlugin(; compound_probability=-0.1)
+    @test_throws ArgumentError MutationBurstPlugin(; compound_probability=1.1)
+    @test_throws ArgumentError MutationBurstPlugin(; compound_max_steps=0)
+    @test_throws ArgumentError SimulatedAnnealingPlugin(; alpha=0.0)
+    @test_throws ArgumentError SimulatedAnnealingPlugin(; alpha=-0.1)
+    @test_throws ArgumentError SimulatedAnnealingPlugin(; alpha=Inf)
+    @test_throws ArgumentError SimulatedAnnealingPlugin(; alpha=big"1e10000")
+    @test_throws ArgumentError AdaptiveMutationWeightsPlugin(; floor=big"1e-10000")
 end
 
 @testitem "SimulatedAnnealingPlugin uses the requested cycle count" begin
@@ -118,94 +162,107 @@ end
     # Attribution follows `event.mutation_idx`, not instance identity: the
     # dispatch arg is the first instance, but the index names slot 2.
     on_mutation_end!(
-        state, plugin, first_mutation, MutationEvent(true, 1.0, 0.5, 2), nothing, options
+        state,
+        plugin,
+        first_mutation,
+        MutationEvent(true, 1.0, 0.5, 1.0, 0.5, 2),
+        nothing,
+        options,
     )
     @test state.attempts == [0.0, 1.0]
     @test state.successes == [0.0, 1.0]
 
     on_mutation_end!(
-        state, plugin, first_mutation, MutationEvent(true, 1.0, 0.5, 1), nothing, options
+        state,
+        plugin,
+        first_mutation,
+        MutationEvent(true, 1.0, 0.5, 1.0, 0.5, 1),
+        nothing,
+        options,
     )
     allocs = @allocated on_mutation_end!(
-        state, plugin, first_mutation, MutationEvent(true, 1.0, 0.5, 1), nothing, options
+        state,
+        plugin,
+        first_mutation,
+        MutationEvent(true, 1.0, 0.5, 1.0, 0.5, 1),
+        nothing,
+        options,
     )
     @test allocs == 0
 end
 
 @testitem "MutationBurstPlugin: retry portion retries until accepted" begin
     using SymbolicRegression
-    using SymbolicRegression: wrap_mutation_step
+    using SymbolicRegression: MutationStepResult, wrap_mutation_step
     using Test
 
     n_calls = Ref(0)
     inner = parent -> begin
         n_calls[] += 1
-        (parent, n_calls[] >= 3, 1.0)
+        MutationStepResult(parent, n_calls[] >= 3)
     end
     p = MutationBurstPlugin(;
         retry_attempts=4, compound_probability=0.0, compound_max_steps=1
     )
-    member, accepted, num_evals = wrap_mutation_step(nothing, p, :parent, inner)
-    @test accepted == true
+    result = wrap_mutation_step(nothing, p, :parent, inner)
+    @test result.accepted == true
     @test n_calls[] == 3
-    @test num_evals == 3.0
 end
 
 @testitem "MutationBurstPlugin: retry stops at budget when never accepted" begin
     using SymbolicRegression
-    using SymbolicRegression: wrap_mutation_step
+    using SymbolicRegression: MutationStepResult, wrap_mutation_step
     using Test
 
     n_calls = Ref(0)
     inner = parent -> begin
         n_calls[] += 1
-        (parent, false, 1.0)
+        MutationStepResult(parent, false)
     end
     p = MutationBurstPlugin(;
         retry_attempts=4, compound_probability=0.0, compound_max_steps=1
     )
-    member, accepted, num_evals = wrap_mutation_step(nothing, p, :parent, inner)
-    @test accepted == false
+    result = wrap_mutation_step(nothing, p, :parent, inner)
+    @test result.accepted == false
     @test n_calls[] == 4
-    @test num_evals == 4.0
 end
 
 @testitem "MutationBurstPlugin: compound portion chains on success" begin
     using SymbolicRegression
-    using SymbolicRegression: wrap_mutation_step
+    using SymbolicRegression: MutationStepResult, wrap_mutation_step
     using Random
     using Test
 
     n_calls = Ref(0)
     inner = parent -> begin
         n_calls[] += 1
-        (parent + 1, true, 1.0)
+        MutationStepResult(parent + 1, true)
     end
     p = MutationBurstPlugin(;
         retry_attempts=1, compound_probability=1.0, compound_max_steps=3
     )
     Random.seed!(0)
-    member, accepted, num_evals = wrap_mutation_step(nothing, p, 0, inner)
-    @test accepted == true
+    result = wrap_mutation_step(nothing, p, 0, inner)
+    @test result.accepted == true
     @test n_calls[] == 3
-    @test member == 3
+    @test result.member == 3
 end
 
 @testitem "MutationBurstPlugin: compound doesn't chain on rejection" begin
     using SymbolicRegression
-    using SymbolicRegression: wrap_mutation_step
+    using SymbolicRegression: MutationStepResult, wrap_mutation_step
     using Test
 
     n_calls = Ref(0)
     inner = parent -> begin
         n_calls[] += 1
-        (parent, false, 1.0)
+        MutationStepResult(parent, false)
     end
     p = MutationBurstPlugin(;
         retry_attempts=1, compound_probability=1.0, compound_max_steps=3
     )
-    member, accepted, num_evals = wrap_mutation_step(nothing, p, 0, inner)
-    @test accepted == false
+    result = wrap_mutation_step(nothing, p, 0, inner)
+    @test result.accepted == false
     @test n_calls[] == 1
 end
 
@@ -244,6 +301,7 @@ end
         end
     end
     @test length(mutation_events) == 3 * options.population_size
+    @test count(event -> event[2]["selected"], mutation_events) == options.population_size
     for (parent, event) in mutation_events
         child = record["mutations"]["$(event["child"])"]
         @test child["parent"] == parse(Int, parent)
@@ -270,18 +328,21 @@ end
         return next_step((parent..., tag))
     end
 
-    base = parent -> (parent, true, 1.0)
+    SymbolicRegression.wraps_mutation_step(::_TagPluginA) = Val(true)
+    SymbolicRegression.wraps_mutation_step(::_TagPluginB) = Val(true)
+
+    base = parent -> SymbolicRegression.MutationStepResult(parent, true)
 
     step0 = build_mutation_step((), (), base)
     @test step0 === base
-    @test @inferred(step0(())) == ((), true, 1.0)
+    @test @inferred(step0(())).member == ()
 
     step1 = build_mutation_step((_TagPluginA(),), (:a,), base)
-    @test @inferred(step1(())) == ((:a,), true, 1.0)
+    @test @inferred(step1(())).member == (:a,)
 
     # Plugin 1 is outermost, so its tag is appended first.
     step2 = build_mutation_step((_TagPluginA(), _TagPluginB()), (:a, :b), base)
-    @test @inferred(step2(())) == ((:a, :b), true, 1.0)
+    @test @inferred(step2(())).member == (:a, :b)
 
     @test_throws ArgumentError build_mutation_step((_TagPluginA(),), (), base)
     @test_throws ArgumentError build_mutation_step((), (:a,), base)
@@ -313,46 +374,87 @@ end
         population_size=2,
         tournament_selection_n=1,
         use_recorder=true,
-        skip_mutation_failures=false,
+        skip_mutation_failures=true,
     )
     dataset = Dataset(randn(1, 8), randn(8))
     plugin_states = (init_plugin_state(loop, options, dataset), nothing)
-    population = Population(
-        dataset; population_size=2, nlength=3, options, nfeatures=1, plugin_states
+    member = PopMember(
+        dataset, Node(Float64; val=1.0), options; deterministic=false
     )
+    population = Population([member, copy(member)])
     record = RecordType()
 
     reg_evol_cycle(dataset, population, options.maxsize, options, record; plugin_states)
 
-    n_mutate_events = let n = 0
+    n_mutate_events, n_selected_events, n_death_events = let
+        n_mutate = 0
+        n_selected = 0
+        n_death = 0
         for (_, member_record) in record["mutations"]
             for event in member_record["events"]
-                event["type"] == "mutate" && (n += 1)
+                if event["type"] == "mutate"
+                    n_mutate += 1
+                    n_selected += event["selected"]
+                elseif event["type"] == "death"
+                    n_death += 1
+                end
             end
         end
-        n
+        (n_mutate, n_selected, n_death)
     end
     # Every rejected retry is its own recorded event: retry_attempts per
     # tournament round, population_size rounds.
     @test n_mutate_events == 3 * options.population_size
+    @test n_selected_events == options.population_size
+    @test n_death_events == 0
+end
+
+@testitem "recorder captures accepted mutations" begin
+    using SymbolicRegression
+    using SymbolicRegression: Dataset, RecordType
+    using SymbolicRegression.MutateModule: next_generation
+    using Test
+
+    options = Options(;
+        default_mutations=(),
+        mutations=(ConstantMutation() => 1.0,),
+        default_plugins=(),
+        use_recorder=true,
+    )
+    dataset = Dataset(zeros(1, 8), zeros(8))
+    member = PopMember(
+        dataset, Node(Float64; val=1.0), options; deterministic=false
+    )
+    recorder = RecordType()
+
+    _, accepted, _ = next_generation(
+        dataset,
+        member,
+        options.maxsize,
+        options;
+        tmp_recorder=recorder,
+        plugin_states=(),
+    )
+
+    @test accepted
+    @test recorder["result"] == "accept"
+    @test recorder["reason"] == "pass"
 end
 
 @testitem "wrap_mutation_step: default plugin is pass-through" begin
     using SymbolicRegression
-    using SymbolicRegression: AbstractPlugin, wrap_mutation_step
+    using SymbolicRegression: AbstractPlugin, MutationStepResult, wrap_mutation_step
     using Test
 
     struct _NoopMidPlugin <: AbstractPlugin end
     n_calls = Ref(0)
     inner = parent -> begin
         n_calls[] += 1
-        (parent, true, 2.0)
+        MutationStepResult(parent, true)
     end
-    member, accepted, num_evals = wrap_mutation_step(
-        nothing, _NoopMidPlugin(), :parent, inner
-    )
+    result = wrap_mutation_step(nothing, _NoopMidPlugin(), :parent, inner)
     @test n_calls[] == 1
-    @test num_evals == 2.0
+    @test result.member == :parent
 end
 
 @testitem "wrap_mutation_step: third-party plugin can extend the hook" begin
@@ -360,7 +462,7 @@ end
     # keeps the better result by num_evals. Demonstrates the middleware
     # shape isn't tied to retry/chain semantics.
     using SymbolicRegression
-    using SymbolicRegression: AbstractPlugin, wrap_mutation_step
+    using SymbolicRegression: AbstractPlugin, MutationStepResult, wrap_mutation_step
     using Test
 
     struct BestOfTwoPlugin <: AbstractPlugin end
@@ -369,17 +471,467 @@ end
     ) where {F}
         r1 = next_step(parent)
         r2 = next_step(parent)
-        return r1[3] <= r2[3] ? r1 : r2
+        return r1
     end
+    SymbolicRegression.wraps_mutation_step(::BestOfTwoPlugin) = Val(true)
 
     n_calls = Ref(0)
     inner = parent -> begin
         n_calls[] += 1
-        (parent, true, Float64(n_calls[]))
+        MutationStepResult(parent, true)
     end
-    member, accepted, num_evals = wrap_mutation_step(nothing, BestOfTwoPlugin(), :p, inner)
+    result = wrap_mutation_step(nothing, BestOfTwoPlugin(), :p, inner)
     @test n_calls[] == 2
-    @test num_evals == 1.0
+    @test result.member == :p
+end
+
+@testitem "reg_evol_cycle owns middleware evaluation accounting" begin
+    using SymbolicRegression
+    using SymbolicRegression: AbstractPlugin, Dataset, MutationResult, RecordType
+    using SymbolicRegression.RegularizedEvolutionModule: reg_evol_cycle
+    using Test
+
+    struct CountedMutation <: AbstractMutation end
+    function SymbolicRegression.mutate!(
+        tree::N, ::P, ::CountedMutation, options; kws...
+    ) where {N,P}
+        return MutationResult{N,P}(; tree, num_evals=1.0)
+    end
+
+    struct KeepFirstOfTwoPlugin <: AbstractPlugin end
+    function SymbolicRegression.wrap_mutation_step(
+        _, ::KeepFirstOfTwoPlugin, parent, next_step::F
+    ) where {F}
+        first_result = next_step(parent)
+        next_step(parent)
+        return first_result
+    end
+    SymbolicRegression.wraps_mutation_step(::KeepFirstOfTwoPlugin) = Val(true)
+
+    struct SkipMutationPlugin <: AbstractPlugin end
+    SymbolicRegression.wrap_mutation_step(
+        _, ::SkipMutationPlugin, parent, next_step
+    ) = SymbolicRegression.MutationStepResult(parent, true)
+    SymbolicRegression.wraps_mutation_step(::SkipMutationPlugin) = Val(true)
+
+    struct FabricateMutationPlugin <: AbstractPlugin end
+    function SymbolicRegression.wrap_mutation_step(
+        _, ::FabricateMutationPlugin, parent, next_step
+    )
+        next_step(parent)
+        return SymbolicRegression.MutationStepResult(parent, true)
+    end
+    SymbolicRegression.wraps_mutation_step(::FabricateMutationPlugin) = Val(true)
+
+    struct ModifySelectedMutationPlugin <: AbstractPlugin end
+    function SymbolicRegression.wrap_mutation_step(
+        _, ::ModifySelectedMutationPlugin, parent, next_step
+    )
+        result = next_step(parent)
+        result.member.cost = -Inf
+        return result
+    end
+    SymbolicRegression.wraps_mutation_step(::ModifySelectedMutationPlugin) = Val(true)
+
+    plugin = KeepFirstOfTwoPlugin()
+    options = Options(;
+        default_mutations=(),
+        mutations=(CountedMutation() => 1.0,),
+        plugins=(plugin,),
+        default_plugins=(),
+        crossover_probability=0.0,
+        population_size=2,
+        tournament_selection_n=1,
+    )
+    dataset = Dataset(zeros(1, 8), zeros(8))
+    plugin_states = (nothing,)
+    population = Population(
+        dataset; population_size=1, nlength=1, options, nfeatures=1, plugin_states
+    )
+
+    _, num_evals = reg_evol_cycle(
+        dataset,
+        population,
+        options.maxsize,
+        options,
+        RecordType();
+        plugin_states,
+    )
+    @test num_evals == 4.0
+
+    skip_options = Options(;
+        default_mutations=(),
+        mutations=(CountedMutation() => 1.0,),
+        plugins=(SkipMutationPlugin(),),
+        default_plugins=(),
+        crossover_probability=0.0,
+        population_size=2,
+        tournament_selection_n=1,
+    )
+    @test_throws ArgumentError reg_evol_cycle(
+        dataset,
+        population,
+        skip_options.maxsize,
+        skip_options,
+        RecordType();
+        plugin_states=(nothing,),
+    )
+
+    fabricate_options = Options(;
+        default_mutations=(),
+        mutations=(CountedMutation() => 1.0,),
+        plugins=(FabricateMutationPlugin(),),
+        default_plugins=(),
+        crossover_probability=0.0,
+        population_size=2,
+        tournament_selection_n=1,
+    )
+    @test_throws ArgumentError reg_evol_cycle(
+        dataset,
+        population,
+        fabricate_options.maxsize,
+        fabricate_options,
+        RecordType();
+        plugin_states=(nothing,),
+    )
+
+    modify_options = Options(;
+        default_mutations=(),
+        mutations=(CountedMutation() => 1.0,),
+        plugins=(ModifySelectedMutationPlugin(),),
+        default_plugins=(),
+        crossover_probability=0.0,
+        population_size=2,
+        tournament_selection_n=1,
+        skip_mutation_failures=false,
+    )
+    modified_population, _ = reg_evol_cycle(
+        dataset,
+        population,
+        modify_options.maxsize,
+        modify_options,
+        RecordType();
+        plugin_states=(nothing,),
+    )
+    @test all(member -> member.cost != -Inf, modified_population.members)
+end
+
+@testitem "MutationBurstPlugin preserves accepted intermediate Hall-of-Fame members" begin
+    using SymbolicRegression
+    using SymbolicRegression: Dataset, MutationResult, RecordType, init_plugin_state
+    using SymbolicRegression.PopMemberModule: create_child
+    using Test
+
+    struct CostSequenceMutation <: AbstractMutation
+        calls::Base.RefValue{Int}
+    end
+    function SymbolicRegression.mutate!(
+        tree::N,
+        parent::P,
+        mutation::CostSequenceMutation,
+        options;
+        parent_ref,
+        kws...,
+    ) where {N,P}
+        mutation.calls[] += 1
+        cost = Float64(mutation.calls[])
+        child = create_child(
+            parent, copy(tree), cost, cost, options; parent_ref=parent_ref
+        )
+        return MutationResult{N,P}(; member=child, return_immediately=true)
+    end
+
+    mutation = CostSequenceMutation(Ref(0))
+    plugin = MutationBurstPlugin(;
+        retry_attempts=1, compound_probability=1.0, compound_max_steps=2
+    )
+    options = Options(;
+        default_mutations=(),
+        mutations=(mutation => 1.0,),
+        plugins=(plugin,),
+        default_plugins=(),
+        crossover_probability=0.0,
+        population_size=2,
+        tournament_selection_n=1,
+        deterministic=true,
+    )
+    dataset = Dataset(zeros(1, 8), zeros(8))
+    member = PopMember(
+        dataset, Node(Float64; val=0.0), options; deterministic=true
+    )
+    member.cost = 10.0
+    member.loss = 10.0
+    population = Population([member])
+    plugin_states = (init_plugin_state(plugin, options, dataset),)
+
+    final_population, best_seen, _ = s_r_cycle(
+        dataset,
+        population,
+        1,
+        options.maxsize;
+        options,
+        record=RecordType(),
+        plugin_states,
+    )
+
+    @test only(final_population.members).cost == 2.0
+    @test best_seen.members[1].cost == 1.0
+end
+
+@testitem "mutation-cycle entry points require plugin state" begin
+    using SymbolicRegression
+    using SymbolicRegression:
+        AbstractPlugin, Dataset, MutationEvent, RecordType, init_plugin_state
+    using SymbolicRegression.MutateModule: next_generation
+    using Test
+
+    struct MutationCounterPlugin <: AbstractPlugin
+        calls::Base.RefValue{Int}
+    end
+    SymbolicRegression.init_plugin_state(
+        plugin::MutationCounterPlugin, options, dataset
+    ) = plugin.calls
+    function SymbolicRegression.on_mutation_end!(
+        calls::Base.RefValue{Int},
+        ::MutationCounterPlugin,
+        ::AbstractMutation,
+        ::MutationEvent,
+        dataset,
+        options,
+    )
+        calls[] += 1
+        return nothing
+    end
+
+    calls = Ref(0)
+    plugin = MutationCounterPlugin(calls)
+    options = Options(;
+        default_mutations=(),
+        mutations=(DoNothingMutation() => 1.0,),
+        plugins=(plugin,),
+        default_plugins=(),
+        crossover_probability=0.0,
+        population_size=2,
+        tournament_selection_n=1,
+    )
+    dataset = Dataset(zeros(1, 8), zeros(8))
+    member = PopMember(
+        dataset, Node(Float64; val=0.0), options; deterministic=false
+    )
+    plugin_states = (init_plugin_state(plugin, options, dataset),)
+
+    next_generation(
+        dataset,
+        member,
+        options.maxsize,
+        options;
+        tmp_recorder=RecordType(),
+        plugin_states,
+    )
+    @test calls[] == 1
+    @test_throws UndefKeywordError next_generation(
+        dataset, member, options.maxsize, options; tmp_recorder=RecordType()
+    )
+    @test_throws ArgumentError next_generation(
+        dataset,
+        member,
+        options.maxsize,
+        options;
+        tmp_recorder=RecordType(),
+        plugin_states=(),
+    )
+
+    population = Population([member])
+    @test_throws UndefKeywordError Population(
+        dataset; population_size=2, options, nfeatures=1
+    )
+    @test_throws ArgumentError Population(
+        dataset; population_size=2, options, nfeatures=1, plugin_states=()
+    )
+    @test s_r_cycle(
+        dataset,
+        population,
+        1,
+        options.maxsize;
+        options,
+        record=RecordType(),
+        plugin_states,
+    ) isa Tuple
+    @test_throws UndefKeywordError s_r_cycle(
+        dataset,
+        population,
+        1,
+        options.maxsize;
+        options,
+        record=RecordType(),
+    )
+    @test_throws ArgumentError s_r_cycle(
+        dataset,
+        population,
+        1,
+        options.maxsize;
+        options,
+        record=RecordType(),
+        plugin_states=(),
+    )
+end
+
+@testitem "worker plugin state persists across dispatches" begin
+    using SymbolicRegression
+    using SymbolicRegression: AbstractPlugin, MutationEvent
+    using Test
+
+    struct PersistentPlugin <: AbstractPlugin
+        observations::Channel{Int}
+    end
+    mutable struct PersistentPluginState
+        mutations::Int
+        observations::Channel{Int}
+    end
+    SymbolicRegression.init_plugin_state(
+        plugin::PersistentPlugin, options, dataset
+    ) = PersistentPluginState(0, plugin.observations)
+    SymbolicRegression.fork_plugin_state(
+        state::PersistentPluginState, ::PersistentPlugin, dataset
+    ) = PersistentPluginState(state.mutations, state.observations)
+    function SymbolicRegression.on_cycle_start!(
+        state::PersistentPluginState,
+        ::PersistentPlugin,
+        cycle_idx::Int,
+        ncycles::Int,
+        options,
+    )
+        cycle_idx == 1 && put!(state.observations, state.mutations)
+        return nothing
+    end
+    function SymbolicRegression.on_mutation_end!(
+        state::PersistentPluginState,
+        ::PersistentPlugin,
+        ::AbstractMutation,
+        ::MutationEvent,
+        dataset,
+        options,
+    )
+        state.mutations += 1
+        return nothing
+    end
+
+    observations = Channel{Int}(100)
+    plugin = PersistentPlugin(observations)
+    options = Options(;
+        default_mutations=(),
+        mutations=(DoNothingMutation() => 1.0,),
+        plugins=(plugin,),
+        default_plugins=(),
+        populations=1,
+        population_size=2,
+        tournament_selection_n=1,
+        ncycles_per_iteration=2,
+        progress=false,
+        verbosity=0,
+        deterministic=true,
+    )
+    X = zeros(1, 8)
+    y = zeros(8)
+
+    equation_search(X, y; options, niterations=2, parallelism=:serial)
+    close(observations)
+    dispatch_starts = collect(observations)
+
+    @test first(dispatch_starts) == 0
+    @test any(>(0), dispatch_starts[2:end])
+end
+
+@testitem "worker plugin state may differ from head state" begin
+    using SymbolicRegression
+    using SymbolicRegression: AbstractPlugin
+    using Test
+
+    struct DistinctStatePlugin <: AbstractPlugin
+        observations::Channel{Int}
+    end
+    mutable struct DistinctHeadState
+        generation::Int
+    end
+    mutable struct DistinctWorkerState
+        generation::Int
+        observations::Channel{Int}
+    end
+    SymbolicRegression.init_plugin_state(
+        ::DistinctStatePlugin, options, dataset
+    ) = DistinctHeadState(0)
+    SymbolicRegression.fork_plugin_state(
+        state::DistinctHeadState, plugin::DistinctStatePlugin, dataset
+    ) = DistinctWorkerState(state.generation, plugin.observations)
+    function SymbolicRegression.refresh_plugin_state(
+        worker::DistinctWorkerState,
+        head::DistinctHeadState,
+        ::DistinctStatePlugin,
+        dataset,
+    )
+        worker.generation = head.generation
+        return worker
+    end
+    function SymbolicRegression.on_generation_end!(
+        state::DistinctHeadState,
+        ::DistinctStatePlugin,
+        search_state,
+        dataset,
+        options,
+        runtime_options,
+        population,
+    )
+        state.generation += 1
+        return nothing
+    end
+    function SymbolicRegression.on_search_start!(
+        state::DistinctHeadState,
+        ::DistinctStatePlugin,
+        dataset,
+        options,
+        runtime_options,
+    )
+        state.generation = 7
+        return nothing
+    end
+    function SymbolicRegression.on_cycle_start!(
+        state::DistinctWorkerState,
+        ::DistinctStatePlugin,
+        cycle_idx::Int,
+        ncycles::Int,
+        options,
+    )
+        cycle_idx == 1 && put!(state.observations, state.generation)
+        return nothing
+    end
+
+    observations = Channel{Int}(100)
+    options = Options(;
+        default_mutations=(),
+        mutations=(DoNothingMutation() => 1.0,),
+        plugins=(DistinctStatePlugin(observations),),
+        default_plugins=(),
+        populations=1,
+        population_size=2,
+        tournament_selection_n=1,
+        ncycles_per_iteration=2,
+        progress=false,
+        verbosity=0,
+        deterministic=false,
+    )
+    X = zeros(1, 8)
+    y = zeros(8)
+
+    @test equation_search(
+        X, y; options, niterations=2, parallelism=:serial
+    ) isa HallOfFame
+    @test equation_search(
+        X, y; options, niterations=2, parallelism=:multithreading
+    ) isa HallOfFame
+    close(observations)
+    observed_generations = collect(observations)
+    @test first(observed_generations) == 7
+    @test any(>(7), observed_generations)
 end
 
 @testitem "Integration: all three mechanisms enabled, search runs and returns a HoF" begin

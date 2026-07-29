@@ -4,11 +4,16 @@ using ADTypes: AutoEnzyme
 using DynamicExpressions: AbstractExpression, string_tree, simplify_tree!, combine_operators
 using ..UtilsModule: @threads_if
 using ..CoreModule:
-    AbstractOptions, Dataset, RecordType, create_expression, batch, on_cycle_start!
-using ..ComplexityModule: compute_complexity
+    AbstractOptions,
+    Dataset,
+    RecordType,
+    create_expression,
+    batch,
+    on_cycle_start!,
+    on_cycle_end!
 using ..PopMemberModule: generate_reference
 using ..PopulationModule: Population, finalize_costs
-using ..HallOfFameModule: HallOfFame
+using ..HallOfFameModule: HallOfFame, update_hall_of_fame!
 using ..RegularizedEvolutionModule: reg_evol_cycle
 using ..LossFunctionsModule: eval_cost
 using ..ConstantOptimizationModule: optimize_constants
@@ -24,10 +29,12 @@ function s_r_cycle(
     verbosity::Int=0,
     options::AbstractOptions,
     record::RecordType,
-    plugin_states::Tuple=(),
+    plugin_states::Tuple,
 )::Tuple{
     P,HallOfFame{T,L,N},Float64
 } where {T,L,D<:Dataset{T,L},N<:AbstractExpression{T},P<:Population{T,L,N}}
+    length(options.plugins) == length(plugin_states) ||
+        throw(ArgumentError("`options.plugins` and `plugin_states` must have the same length."))
     best_examples_seen = HallOfFame(options, dataset)
     num_evals = 0.0
 
@@ -38,18 +45,18 @@ function s_r_cycle(
             on_cycle_start!(pstate, plugin, cycle_idx, ncycles, options)
         end
         pop, tmp_num_evals = reg_evol_cycle(
-            batched_dataset, pop, curmaxsize, options, record; plugin_states
+            batched_dataset,
+            pop,
+            curmaxsize,
+            options,
+            record;
+            plugin_states,
+            best_seen=best_examples_seen,
         )
         num_evals += tmp_num_evals
-        for member in pop.members
-            size = compute_complexity(member, options)
-            if 0 < size <= options.maxsize && (
-                !best_examples_seen.exists[size] ||
-                member.cost < best_examples_seen.members[size].cost
-            )
-                best_examples_seen.exists[size] = true
-                best_examples_seen.members[size] = copy(member)
-            end
+        update_hall_of_fame!(best_examples_seen, pop.members, options)
+        for (plugin, pstate) in zip(options.plugins, plugin_states)
+            on_cycle_end!(pstate, plugin, pop, dataset, best_examples_seen, options)
         end
     end
 

@@ -98,12 +98,23 @@ function create_utils_benchmark()
 
     suite["best_of_sample"] = if new_engine_sig
         @benchmarkable(
-            best_of_sample(pop, $options),
+            best_of_sample(pop, $options; plugin_states),
             setup = (
                 nfeatures=1;
                 dataset=Dataset(randn(nfeatures, 32), randn(32));
+                plugin_states=map(
+                    plugin -> SymbolicRegression.init_plugin_state(
+                        plugin, $options, dataset
+                    ),
+                    $options.plugins,
+                );
                 pop=Population(
-                    dataset; npop=100, nlength=20, options=($options), nfeatures
+                    dataset;
+                    npop=100,
+                    nlength=20,
+                    options=($options),
+                    nfeatures,
+                    plugin_states,
                 )
             )
         )
@@ -132,6 +143,7 @@ function create_utils_benchmark()
                         curmaxsize,
                         options;
                         tmp_recorder=recorder,
+                        plugin_states,
                     )
                 end
             end,
@@ -155,6 +167,12 @@ function create_utils_benchmark()
                     unary_operators=[sin, cos],
                     binary_operators=[+, -, *, /],
                     mutation_weights,
+                );
+                plugin_states=map(
+                    plugin -> SymbolicRegression.init_plugin_state(
+                        plugin, options, dataset
+                    ),
+                    options.plugins,
                 );
                 recorder=RecordType();
                 temperature=1.0;
@@ -177,7 +195,12 @@ function create_utils_benchmark()
             let
                 for member in members
                     next_generation(
-                        dataset, member, curmaxsize, options; tmp_recorder=recorder
+                        dataset,
+                        member,
+                        curmaxsize,
+                        options;
+                        tmp_recorder=recorder,
+                        plugin_states,
                     )
                 end
             end,
@@ -201,6 +224,12 @@ function create_utils_benchmark()
                     unary_operators=[sin, cos],
                     binary_operators=[+, -, *, /],
                     mutation_weights,
+                );
+                plugin_states=map(
+                    plugin -> SymbolicRegression.init_plugin_state(
+                        plugin, options, dataset
+                    ),
+                    options.plugins,
                 );
                 recorder=RecordType();
                 curmaxsize=20;

@@ -4,17 +4,19 @@
         AbstractPlugin,
         init_plugin_state,
         fork_plugin_state,
+        refresh_plugin_state,
         on_search_start!,
         on_search_end!,
         on_generation_end!,
         on_cycle_end!,
+        on_cycle_start!,
         on_mutation_end!,
         init_member,
         tournament_cost_multiplier,
         mutation_acceptance_multiplier,
         MutationAcceptanceContext,
+        MutationStepResult,
         wrap_mutation_step,
-        on_cycle_start!,
         prepare_mutation_context,
         condition_mutation!,
         condition_mutation_weights!,
@@ -43,9 +45,14 @@
     @test on_generation_end!(s, p, nothing, nothing, opts, nothing, nothing) === nothing
     @test on_cycle_end!(s, p, nothing, nothing, nothing, opts) === nothing
     @test on_mutation_end!(
-        s, p, ConstantMutation(), MutationEvent(true, 0.5, 0.4, 1), nothing, opts
+        s,
+        p,
+        ConstantMutation(),
+        MutationEvent(true, 0.5, 0.4, 0.5, 0.4, 1),
+        nothing,
+        opts,
     ) === nothing
-    @test MutationEvent(false, 1, nothing, 1) isa MutationEvent{Int}
+    @test MutationEvent(false, 1, nothing, 1, nothing, 1) isa MutationEvent{Int,Int}
 
     # Factory defaults: init_member returns nothing, fork_plugin_state
     # deepcopies the head state.
@@ -54,6 +61,7 @@
     snap = fork_plugin_state(head, p, nothing)
     @test snap[] == head[]
     @test snap !== head
+    @test refresh_plugin_state(snap, head, p, nothing) === snap
 
     # Modifier defaults return 1.0 (multiplicative identity).
     @test tournament_cost_multiplier(s, p, nothing, opts) == 1.0
@@ -61,8 +69,8 @@
     @test mutation_acceptance_multiplier(s, p, acceptance_ctx, opts) == 1.0
 
     # wrap_mutation_step default is pass-through.
-    inner = parent -> (parent, true, 1.0)
-    @test wrap_mutation_step(s, p, :parent, inner) == (:parent, true, 1.0)
+    inner = parent -> MutationStepResult(parent, true)
+    @test wrap_mutation_step(s, p, :parent, inner).member == :parent
 
     # on_cycle_start! default is no-op.
     @test on_cycle_start!(s, p, 1, 3, opts) === nothing
@@ -94,7 +102,7 @@ end
     using Test
 
     # Use a channel to safely count from multiple threads/tasks.
-    counter_ch = Channel{Symbol}(1000)
+    counter_ch = Channel{Symbol}(10_000)
 
     struct LifecyclePlugin <: AbstractPlugin
         counter_ch::Channel{Symbol}
@@ -122,7 +130,14 @@ end
     ) = (put!(s.counter_ch, :gen); nothing)
     SymbolicRegression.on_cycle_end!(
         s::LifecyclePluginState, ::LifecyclePlugin, pop, d, h, o
-    ) = (put!(s.counter_ch, :pop); nothing)
+    ) = (put!(s.counter_ch, :cycle_end); nothing)
+    SymbolicRegression.on_cycle_start!(
+        s::LifecyclePluginState,
+        ::LifecyclePlugin,
+        cycle_idx::Int,
+        ncycles::Int,
+        o,
+    ) = (put!(s.counter_ch, :cycle_start); nothing)
 
     opts = Options(;
         binary_operators=[+, *],
@@ -145,7 +160,8 @@ end
     @test get(counts, :start, 0) == 1
     @test get(counts, :end, 0) == 1
     @test get(counts, :gen, 0) > 0
-    @test get(counts, :pop, 0) > 0
+    @test get(counts, :cycle_start, 0) > 0
+    @test get(counts, :cycle_end, 0) == get(counts, :cycle_start, 0)
 end
 
 @testitem "Plugin interface: multiple plugins all fire" begin
@@ -226,7 +242,7 @@ end
 
     equation_search(X, y; options=opts, niterations=2, parallelism=:serial)
 
-    @test init_count[] > 0
+    @test init_count[] == opts.population_size * opts.populations
 end
 
 @testitem "Plugin interface: init_member that returns a tree is consumed" begin
@@ -235,9 +251,6 @@ end
     using SymbolicRegression.MutationFunctionsModule: gen_random_tree
     using Test
 
-    # Plugin always returns a real tree of the canonical type via gen_random_tree.
-    # Exercises the non-nothing branch of `resolve_init_member` AND the
-    # `candidate::typeof(fallback)` type assertion in `_init_tree`.
     seeded_calls = Ref(0)
 
     struct SeedingPlugin <: AbstractPlugin
@@ -270,7 +283,7 @@ end
     y = X[1, :] .+ X[2, :]
 
     hof = equation_search(X, y; options=opts, niterations=2, parallelism=:serial)
-    @test seeded_calls[] > 0
+    @test seeded_calls[] == opts.population_size * opts.populations
     @test hof isa SymbolicRegression.HallOfFame
 end
 
@@ -306,13 +319,13 @@ end
     using Test
 
     # Collect MutationEvent values via a Channel
-    events_ch = Channel{MutationEvent{Float32}}(10_000)
+    events_ch = Channel{MutationEvent{Float32,Float32}}(10_000)
 
     struct MutEvalPlugin <: AbstractPlugin
-        events_ch::Channel{MutationEvent{Float32}}
+        events_ch::Channel{MutationEvent{Float32,Float32}}
     end
     mutable struct MutEvalPluginState
-        events_ch::Channel{MutationEvent{Float32}}
+        events_ch::Channel{MutationEvent{Float32,Float32}}
     end
     SymbolicRegression.init_plugin_state(p::MutEvalPlugin, o, d) = MutEvalPluginState(
         p.events_ch
@@ -357,6 +370,8 @@ end
     for ev in events
         @test ev isa MutationEvent
         @test ev.accepted isa Bool
+        @test ev.before_cost isa Float32
+        @test ev.after_cost === nothing || ev.after_cost isa Float32
         @test ev.before_loss isa Float32
         @test ev.after_loss === nothing || ev.after_loss isa Float32
         @test isfinite(ev.before_loss)

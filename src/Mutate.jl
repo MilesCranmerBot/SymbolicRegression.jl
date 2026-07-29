@@ -256,7 +256,7 @@ end
     event::MutationEvent,
     dataset,
 )
-    for (plugin, pstate) in zip(options.plugins, plugin_states)
+    map(options.plugins, plugin_states) do plugin, pstate
         on_mutation_end!(pstate, plugin, mutation, event, dataset, options)
     end
     return nothing
@@ -279,11 +279,13 @@ end
     curmaxsize::Int,
     options::AbstractOptions;
     tmp_recorder::RecordType,
-    plugin_states::Tuple=(),
+    plugin_states::Tuple,
     population_for_backsolve=nothing,
 )::Tuple{
     P,Bool,Float64
 } where {T,L,D<:Dataset{T,L},N<:AbstractExpression{T},P<:AbstractPopMember{T,L,N}}
+    length(options.plugins) == length(plugin_states) ||
+        throw(ArgumentError("`options.plugins` and `plugin_states` must have the same length."))
     parent_ref = member.ref
     num_evals = 0.0
 
@@ -295,7 +297,7 @@ end
     weights = copy(options.mutations)
 
     condition_mutation_weights!(weights, member, options, curmaxsize, nfeatures)
-    for (plugin, pstate) in zip(options.plugins, plugin_states)
+    map(options.plugins, plugin_states) do plugin, pstate
         condition_mutation_weights!(
             weights, pstate, plugin, member, options, curmaxsize, nfeatures
         )
@@ -355,7 +357,7 @@ function _next_generation(
 
     mut_context = prepare_mutation_context(mutation_choice)
     if mut_context !== nothing
-        for (plugin, pstate) in zip(options.plugins, plugin_states)
+        map(options.plugins, plugin_states) do plugin, pstate
             condition_mutation!(mut_context, pstate, plugin, mutation_choice, options)
         end
     end
@@ -396,7 +398,14 @@ function _next_generation(
                 options,
                 plugin_states,
                 mutation_choice,
-                MutationEvent(true, before_loss, mutation_result.member.loss, mutation_idx),
+                MutationEvent(
+                    true,
+                    before_cost,
+                    mutation_result.member.cost,
+                    before_loss,
+                    mutation_result.member.loss,
+                    mutation_idx,
+                ),
                 dataset,
             )
             return mutation_result.member::P, true, num_evals
@@ -423,7 +432,7 @@ function _next_generation(
             options,
             plugin_states,
             mutation_choice,
-            MutationEvent(false, before_loss, nothing, mutation_idx),
+            MutationEvent(false, before_cost, nothing, before_loss, nothing, mutation_idx),
             dataset,
         )
         return (
@@ -454,7 +463,7 @@ function _next_generation(
             options,
             plugin_states,
             mutation_choice,
-            MutationEvent(false, before_loss, nothing, mutation_idx),
+            MutationEvent(false, before_cost, nothing, before_loss, nothing, mutation_idx),
             dataset,
         )
         return (
@@ -472,13 +481,12 @@ function _next_generation(
         )
     end
 
-    probChange = 1.0
     acceptance_ctx = MutationAcceptanceContext(member, tree, before_cost, after_cost)
-    for (plugin, pstate) in zip(options.plugins, plugin_states)
-        probChange *= mutation_acceptance_multiplier(
-            pstate, plugin, acceptance_ctx, options
-        )
-    end
+    probChange = prod(
+        map(options.plugins, plugin_states) do plugin, pstate
+            mutation_acceptance_multiplier(pstate, plugin, acceptance_ctx, options)
+        end,
+    )
 
     if probChange < rand()
         @recorder begin
@@ -489,7 +497,9 @@ function _next_generation(
             options,
             plugin_states,
             mutation_choice,
-            MutationEvent(false, before_loss, after_loss, mutation_idx),
+            MutationEvent(
+                false, before_cost, after_cost, before_loss, after_loss, mutation_idx
+            ),
             dataset,
         )
         return (
@@ -517,7 +527,7 @@ function _next_generation(
         options,
         plugin_states,
         mutation_choice,
-        MutationEvent(true, before_loss, after_loss, mutation_idx),
+        MutationEvent(true, before_cost, after_cost, before_loss, after_loss, mutation_idx),
         dataset,
     )
     return (new_member, true, num_evals)
