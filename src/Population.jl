@@ -55,11 +55,10 @@ end
 function _init_tree(
     dataset, options, nlength::Int, nfeatures::Int, ::Type{T}, plugin_states::Tuple
 ) where {T}
-    candidate = resolve_init_member(plugin_states, options.plugins, dataset, options)
-    if isnothing(candidate)
-        return gen_random_tree(nlength, options, nfeatures, T)
-    end
-    return candidate
+    return @something(
+        resolve_init_member(plugin_states, options.plugins, dataset, options),
+        gen_random_tree(nlength, options, nfeatures, T),
+    )
 end
 
 """
@@ -78,9 +77,6 @@ function Population(
     npop=nothing,
     plugin_states::Tuple,
 ) where {T,L}
-    length(options.plugins) == length(plugin_states) || throw(
-        ArgumentError("`options.plugins` and `plugin_states` must have the same length."),
-    )
     @assert (population_size !== nothing) ⊻ (npop !== nothing)
     population_size = something(population_size, npop)
     PM = options.popmember_type
@@ -138,13 +134,7 @@ Create random population and score them on the dataset.
     end
     dataset = Dataset(X, y, L)
     update_baseline_loss!(dataset, options)
-    return Population(
-        dataset;
-        population_size=population_size,
-        options=options,
-        nfeatures=nfeatures,
-        plugin_states,
-    )
+    return Population(dataset; population_size, options, nfeatures, plugin_states)
 end
 
 function Base.copy(pop::P)::P where {T,L,N,PM,P<:Population{T,L,N,PM}}
@@ -166,9 +156,6 @@ end
 function best_of_sample(
     pop::Population{T,L,N}, options::AbstractOptions; plugin_states::Tuple
 ) where {T,L,N}
-    length(options.plugins) == length(plugin_states) || throw(
-        ArgumentError("`options.plugins` and `plugin_states` must have the same length."),
-    )
     sample = sample_pop(pop, options)
     return copy(_best_of_sample(sample.members, options; plugin_states))
 end
@@ -180,11 +167,10 @@ function _best_of_sample(
     adjusted_costs = Vector{L}(undef, n)
     for i in eachindex(members, adjusted_costs)
         member = members[i]
-        cost = L(member.cost)
-        for (plugin, pstate) in zip(options.plugins, plugin_states)
-            cost *= L(tournament_cost_multiplier(pstate, plugin, member, options))
+        multipliers = map(options.plugins, plugin_states) do plugin, pstate
+            L(tournament_cost_multiplier(pstate, plugin, member, options))
         end
-        adjusted_costs[i] = cost
+        adjusted_costs[i] = L(member.cost) * prod(multipliers)
     end
 
     chosen_idx = if p == 1.0

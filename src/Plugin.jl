@@ -154,7 +154,7 @@ end
 """
     on_generation_end!(state, plugin, search_state, dataset, options, ropt, returned_pop)
 
-Lifecycle hook called on the HEAD NODE after each cycle's result has been
+Lifecycle hook called on the head node after each cycle's result has been
 received from a worker. Runs serially; safe to mutate plugin state, update
 concept databases, drain feedback channels, etc. Called once per (plugin,
 output) pair per cycle. `state` is this output's state; `returned_pop` is
@@ -311,16 +311,17 @@ function fork_plugin_state(head_state, ::AbstractPlugin, dataset)
 end
 
 """
-    refresh_plugin_state(worker_state, head_state, plugin, dataset) -> state
+    refresh_worker_plugin_state(worker_state, latest_head_state, plugin, dataset) -> state
 
-Refresh a persistent per-population worker state from the current head state
-before its next dispatch. The default preserves `worker_state`. Plugins whose
-head-side hooks update data consumed by workers can return a merged or replaced
-state.
+Refresh `worker_state` from `latest_head_state` before the worker's next
+dispatch. The default preserves `worker_state`. Plugins whose head-side hooks
+update worker data can return a merged or replaced worker state.
 
 !!! warning "Experimental"
 """
-function refresh_plugin_state(worker_state, head_state, ::AbstractPlugin, dataset)
+function refresh_worker_plugin_state(
+    worker_state, latest_head_state, ::AbstractPlugin, dataset
+)
     return worker_state
 end
 
@@ -360,7 +361,10 @@ end
 end
 
 @noinline function _init_member_conflict(plugins::Tuple, candidates::Tuple)
-    providers = [string(typeof(p)) for (p, c) in zip(plugins, candidates) if c !== nothing]
+    providers = [
+        string(typeof(plugin)) for
+        (plugin, candidate) in zip(plugins, candidates) if !isnothing(candidate)
+    ]
     throw(
         ArgumentError(
             "Plugins $(join(providers, ", ")) all returned a member from " *
@@ -436,45 +440,30 @@ and recording remain owned by the engine.
 struct MutationStepResult{P}
     member::P
     accepted::Bool
-    attempt_id::UInt
+    attempt_id::Int
+    num_evals::Float64
 end
-MutationStepResult(member, accepted::Bool) = MutationStepResult(member, accepted, UInt(0))
 
 """
-    wraps_mutation_step(plugin) -> Val
+    wrap_mutation_step(state, plugin) -> wrapper or nothing
 
-Capability trait for plugins that implement [`wrap_mutation_step`](@ref).
-Override with `Val(true)` so the engine includes the plugin in the precomposed
-mutation middleware.
-"""
-wraps_mutation_step(::AbstractPlugin) = Val(false)
-
-"""
-    wrap_mutation_step(state, plugin, parent_member, next_step) -> MutationStepResult
-
-Middleware-style hook around `next_generation`. The engine builds a thunk
-`next_step(parent) -> MutationStepResult` that runs one engine-observed call to
-`next_generation` against `parent`. The plugin may call `next_step` one or
-many times with the original parent, a previous result, or another member. It
-must return one of the results produced by `next_step`.
+Return mutation middleware for `plugin`, or `nothing` when the plugin does not
+wrap mutation steps. The returned callable receives `(parent_member, next_step)`.
+`next_step(parent) -> MutationStepResult` runs one engine-observed call to
+`next_generation`. Middleware may call it one or many times and must return one
+of its results.
 
 Plugins compose as nested middleware in `options.plugins` order:
-plugin 1's `wrap` wraps plugin 2's wrap wraps... wraps `next_generation`.
-Plugin 1 sees the composed behavior of plugins 2+ as `next_step`. Use this
-shape for retry, compound bursts, MCMC-style acceptance criteria,
-ensemble voting, or any control-flow extension that needs to call
-`next_generation` more than once per cycle.
+plugin 1 wraps plugin 2, which wraps `next_generation`. Plugin 1 sees the
+composed behavior of later plugins as `next_step`. Use this hook for retry,
+compound bursts, MCMC-style acceptance criteria, or ensemble voting.
 
-Default is a single pass-through: `next_step(parent_member)`. Plugins that
-override this hook must also define `wraps_mutation_step(::MyPlugin) =
-Val(true)`.
+Default returns `nothing`.
 
 !!! warning "Experimental"
 """
-@unstable function wrap_mutation_step(
-    _, ::AbstractPlugin, parent_member, next_step::F
-) where {F}
-    return next_step(parent_member)
+@unstable function wrap_mutation_step(_, ::AbstractPlugin)
+    return nothing
 end
 
 # Forward-declared per kwarg→plugin migration. Plugin modules (loaded above

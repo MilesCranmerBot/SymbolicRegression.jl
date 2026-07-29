@@ -4,7 +4,7 @@
         AbstractPlugin,
         init_plugin_state,
         fork_plugin_state,
-        refresh_plugin_state,
+        refresh_worker_plugin_state,
         on_search_start!,
         on_search_end!,
         on_generation_end!,
@@ -15,7 +15,6 @@
         tournament_cost_multiplier,
         mutation_acceptance_multiplier,
         MutationAcceptanceContext,
-        MutationStepResult,
         wrap_mutation_step,
         prepare_mutation_context,
         condition_mutation!,
@@ -56,16 +55,14 @@
     snap = fork_plugin_state(head, p, nothing)
     @test snap[] == head[]
     @test snap !== head
-    @test refresh_plugin_state(snap, head, p, nothing) === snap
+    @test refresh_worker_plugin_state(snap, head, p, nothing) === snap
 
     # Modifier defaults return 1.0 (multiplicative identity).
     @test tournament_cost_multiplier(s, p, nothing, opts) == 1.0
     acceptance_ctx = MutationAcceptanceContext(nothing, nothing, 0.0, 0.0)
     @test mutation_acceptance_multiplier(s, p, acceptance_ctx, opts) == 1.0
 
-    # wrap_mutation_step default is pass-through.
-    inner = parent -> MutationStepResult(parent, true)
-    @test wrap_mutation_step(s, p, :parent, inner).member == :parent
+    @test wrap_mutation_step(s, p) === nothing
 
     # on_cycle_start! default is no-op.
     @test on_cycle_start!(s, p, 1, 3, opts) === nothing

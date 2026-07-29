@@ -81,7 +81,7 @@ end
         MutationAcceptanceContext,
         init_plugin_state,
         fork_plugin_state,
-        refresh_plugin_state
+        refresh_worker_plugin_state
     using SymbolicRegression.AdaptiveParsimonyModule: update_frequencies!
     using SymbolicRegression.CoreModule.DatasetModule: Dataset
     using DynamicExpressions: Node
@@ -114,7 +114,7 @@ end
     for _ in 1:100
         update_frequencies!(head_state.rss; size=2)
     end
-    refreshed_state = refresh_plugin_state(worker_state, head_state, plugin, dataset)
+    refreshed_state = refresh_worker_plugin_state(worker_state, head_state, plugin, dataset)
     @test refreshed_state.rss.normalized_frequencies[2] > old_frequency
 
     # Build members of two complexities (1 vs 5) via the popmember_type from Options.

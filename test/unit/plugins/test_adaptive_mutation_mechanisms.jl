@@ -193,12 +193,12 @@ end
     n_calls = Ref(0)
     inner = parent -> begin
         n_calls[] += 1
-        MutationStepResult(parent, n_calls[] >= 3)
+        MutationStepResult(parent, n_calls[] >= 3, 1, 0.0)
     end
     p = MutationBurstPlugin(;
         retry_attempts=4, compound_probability=0.0, compound_max_steps=1
     )
-    result = wrap_mutation_step(nothing, p, :parent, inner)
+    result = something(wrap_mutation_step(nothing, p))(:parent, inner)
     @test result.accepted == true
     @test n_calls[] == 3
 end
@@ -211,12 +211,12 @@ end
     n_calls = Ref(0)
     inner = parent -> begin
         n_calls[] += 1
-        MutationStepResult(parent, false)
+        MutationStepResult(parent, false, 1, 0.0)
     end
     p = MutationBurstPlugin(;
         retry_attempts=4, compound_probability=0.0, compound_max_steps=1
     )
-    result = wrap_mutation_step(nothing, p, :parent, inner)
+    result = something(wrap_mutation_step(nothing, p))(:parent, inner)
     @test result.accepted == false
     @test n_calls[] == 4
 end
@@ -230,13 +230,13 @@ end
     n_calls = Ref(0)
     inner = parent -> begin
         n_calls[] += 1
-        MutationStepResult(parent + 1, true)
+        MutationStepResult(parent + 1, true, 1, 0.0)
     end
     p = MutationBurstPlugin(;
         retry_attempts=1, compound_probability=1.0, compound_max_steps=3
     )
     Random.seed!(0)
-    result = wrap_mutation_step(nothing, p, 0, inner)
+    result = something(wrap_mutation_step(nothing, p))(0, inner)
     @test result.accepted == true
     @test n_calls[] == 3
     @test result.member == 3
@@ -250,12 +250,12 @@ end
     n_calls = Ref(0)
     inner = parent -> begin
         n_calls[] += 1
-        MutationStepResult(parent, false)
+        MutationStepResult(parent, false, 1, 0.0)
     end
     p = MutationBurstPlugin(;
         retry_attempts=1, compound_probability=1.0, compound_max_steps=3
     )
-    result = wrap_mutation_step(nothing, p, 0, inner)
+    result = something(wrap_mutation_step(nothing, p))(0, inner)
     @test result.accepted == false
     @test n_calls[] == 1
 end
@@ -286,7 +286,15 @@ end
     )
     record = RecordType()
 
-    reg_evol_cycle(dataset, population, options.maxsize, options, record; plugin_states)
+    reg_evol_cycle(
+        dataset,
+        population,
+        options.maxsize,
+        options,
+        record;
+        plugin_states,
+        best_seen=SymbolicRegression.HallOfFame(options, dataset),
+    )
 
     mutation_events = Tuple{String,RecordType}[]
     for (parent, member_record) in record["mutations"]
@@ -303,7 +311,7 @@ end
     end
 end
 
-@testitem "build_mutation_step composes type-stably and rejects mismatch" begin
+@testitem "build_mutation_step composes type-stably" begin
     using SymbolicRegression
     using SymbolicRegression: AbstractPlugin
     using SymbolicRegression.RegularizedEvolutionModule: build_mutation_step
@@ -311,35 +319,29 @@ end
 
     struct _TagPluginA <: AbstractPlugin end
     struct _TagPluginB <: AbstractPlugin end
-    function SymbolicRegression.wrap_mutation_step(
-        tag::Symbol, ::_TagPluginA, parent, next_step::F
-    ) where {F}
-        return next_step((parent..., tag))
+    function SymbolicRegression.wrap_mutation_step(tag::Symbol, ::_TagPluginA)
+        return (parent, next_step) -> next_step((parent..., tag))
     end
-    function SymbolicRegression.wrap_mutation_step(
-        tag::Symbol, ::_TagPluginB, parent, next_step::F
-    ) where {F}
-        return next_step((parent..., tag))
+    function SymbolicRegression.wrap_mutation_step(tag::Symbol, ::_TagPluginB)
+        return (parent, next_step) -> next_step((parent..., tag))
     end
 
-    SymbolicRegression.wraps_mutation_step(::_TagPluginA) = Val(true)
-    SymbolicRegression.wraps_mutation_step(::_TagPluginB) = Val(true)
+    base = parent -> SymbolicRegression.MutationStepResult(parent, true, 1, 0.0)
 
-    base = parent -> SymbolicRegression.MutationStepResult(parent, true)
-
-    step0 = build_mutation_step((), (), base)
+    step0 = build_mutation_step((), base)
     @test step0 === base
     @test @inferred(step0(())).member == ()
 
-    step1 = build_mutation_step((_TagPluginA(),), (:a,), base)
+    wrappers1 = map(SymbolicRegression.wrap_mutation_step, (:a,), (_TagPluginA(),))
+    step1 = build_mutation_step(wrappers1, base)
     @test @inferred(step1(())).member == (:a,)
 
     # Plugin 1 is outermost, so its tag is appended first.
-    step2 = build_mutation_step((_TagPluginA(), _TagPluginB()), (:a, :b), base)
+    wrappers2 = map(
+        SymbolicRegression.wrap_mutation_step, (:a, :b), (_TagPluginA(), _TagPluginB())
+    )
+    step2 = build_mutation_step(wrappers2, base)
     @test @inferred(step2(())).member == (:a, :b)
-
-    @test_throws ArgumentError build_mutation_step((_TagPluginA(),), (), base)
-    @test_throws ArgumentError build_mutation_step((), (:a,), base)
 end
 
 @testitem "recorder captures rejected retry branches" begin
@@ -376,7 +378,15 @@ end
     population = Population([member, copy(member)])
     record = RecordType()
 
-    reg_evol_cycle(dataset, population, options.maxsize, options, record; plugin_states)
+    reg_evol_cycle(
+        dataset,
+        population,
+        options.maxsize,
+        options,
+        record;
+        plugin_states,
+        best_seen=SymbolicRegression.HallOfFame(options, dataset),
+    )
 
     n_mutate_events, n_selected_events, n_death_events = let
         n_mutate = 0
@@ -426,50 +436,6 @@ end
     @test recorder["reason"] == "pass"
 end
 
-@testitem "wrap_mutation_step: default plugin is pass-through" begin
-    using SymbolicRegression
-    using SymbolicRegression: AbstractPlugin, MutationStepResult, wrap_mutation_step
-    using Test
-
-    struct _NoopMidPlugin <: AbstractPlugin end
-    n_calls = Ref(0)
-    inner = parent -> begin
-        n_calls[] += 1
-        MutationStepResult(parent, true)
-    end
-    result = wrap_mutation_step(nothing, _NoopMidPlugin(), :parent, inner)
-    @test n_calls[] == 1
-    @test result.member == :parent
-end
-
-@testitem "wrap_mutation_step: third-party plugin can extend the hook" begin
-    # Stress test: a plugin that runs the inner step exactly twice and
-    # keeps the better result by num_evals. Demonstrates the middleware
-    # shape isn't tied to retry/chain semantics.
-    using SymbolicRegression
-    using SymbolicRegression: AbstractPlugin, MutationStepResult, wrap_mutation_step
-    using Test
-
-    struct BestOfTwoPlugin <: AbstractPlugin end
-    function SymbolicRegression.wrap_mutation_step(
-        _, ::BestOfTwoPlugin, parent, next_step::F
-    ) where {F}
-        r1 = next_step(parent)
-        r2 = next_step(parent)
-        return r1
-    end
-    SymbolicRegression.wraps_mutation_step(::BestOfTwoPlugin) = Val(true)
-
-    n_calls = Ref(0)
-    inner = parent -> begin
-        n_calls[] += 1
-        MutationStepResult(parent, true)
-    end
-    result = wrap_mutation_step(nothing, BestOfTwoPlugin(), :p, inner)
-    @test n_calls[] == 2
-    @test result.member == :p
-end
-
 @testitem "reg_evol_cycle owns middleware evaluation accounting" begin
     using SymbolicRegression
     using SymbolicRegression: AbstractPlugin, Dataset, MutationResult, RecordType
@@ -484,39 +450,36 @@ end
     end
 
     struct KeepFirstOfTwoPlugin <: AbstractPlugin end
-    function SymbolicRegression.wrap_mutation_step(
-        _, ::KeepFirstOfTwoPlugin, parent, next_step::F
-    ) where {F}
-        first_result = next_step(parent)
-        next_step(parent)
-        return first_result
+    function SymbolicRegression.wrap_mutation_step(_, ::KeepFirstOfTwoPlugin)
+        return function (parent, next_step)
+            first_result = next_step(parent)
+            next_step(parent)
+            return first_result
+        end
     end
-    SymbolicRegression.wraps_mutation_step(::KeepFirstOfTwoPlugin) = Val(true)
 
     struct SkipMutationPlugin <: AbstractPlugin end
-    SymbolicRegression.wrap_mutation_step(_, ::SkipMutationPlugin, parent, next_step) = SymbolicRegression.MutationStepResult(
-        parent, true
-    )
-    SymbolicRegression.wraps_mutation_step(::SkipMutationPlugin) = Val(true)
+    function SymbolicRegression.wrap_mutation_step(_, ::SkipMutationPlugin)
+        return (parent, next_step) ->
+            SymbolicRegression.MutationStepResult(parent, true, 0, 0.0)
+    end
 
     struct FabricateMutationPlugin <: AbstractPlugin end
-    function SymbolicRegression.wrap_mutation_step(
-        _, ::FabricateMutationPlugin, parent, next_step
-    )
-        next_step(parent)
-        return SymbolicRegression.MutationStepResult(parent, true)
+    function SymbolicRegression.wrap_mutation_step(_, ::FabricateMutationPlugin)
+        return function (parent, next_step)
+            next_step(parent)
+            return SymbolicRegression.MutationStepResult(parent, true, 0, 0.0)
+        end
     end
-    SymbolicRegression.wraps_mutation_step(::FabricateMutationPlugin) = Val(true)
 
     struct ModifySelectedMutationPlugin <: AbstractPlugin end
-    function SymbolicRegression.wrap_mutation_step(
-        _, ::ModifySelectedMutationPlugin, parent, next_step
-    )
-        result = next_step(parent)
-        result.member.cost = -Inf
-        return result
+    function SymbolicRegression.wrap_mutation_step(_, ::ModifySelectedMutationPlugin)
+        return function (parent, next_step)
+            result = next_step(parent)
+            result.member.cost = -Inf
+            return result
+        end
     end
-    SymbolicRegression.wraps_mutation_step(::ModifySelectedMutationPlugin) = Val(true)
 
     plugin = KeepFirstOfTwoPlugin()
     options = Options(;
@@ -535,7 +498,13 @@ end
     )
 
     _, num_evals = reg_evol_cycle(
-        dataset, population, options.maxsize, options, RecordType(); plugin_states
+        dataset,
+        population,
+        options.maxsize,
+        options,
+        RecordType();
+        plugin_states,
+        best_seen=SymbolicRegression.HallOfFame(options, dataset),
     )
     @test num_evals == 4.0
 
@@ -555,6 +524,7 @@ end
         skip_options,
         RecordType();
         plugin_states=(nothing,),
+        best_seen=SymbolicRegression.HallOfFame(skip_options, dataset),
     )
 
     fabricate_options = Options(;
@@ -573,6 +543,7 @@ end
         fabricate_options,
         RecordType();
         plugin_states=(nothing,),
+        best_seen=SymbolicRegression.HallOfFame(fabricate_options, dataset),
     )
 
     modify_options = Options(;
@@ -592,6 +563,7 @@ end
         modify_options,
         RecordType();
         plugin_states=(nothing,),
+        best_seen=SymbolicRegression.HallOfFame(modify_options, dataset),
     )
     @test all(member -> member.cost != -Inf, modified_population.members)
 end
@@ -689,36 +661,16 @@ end
     @test_throws UndefKeywordError next_generation(
         dataset, member, options.maxsize, options; tmp_recorder=RecordType()
     )
-    @test_throws ArgumentError next_generation(
-        dataset,
-        member,
-        options.maxsize,
-        options;
-        tmp_recorder=RecordType(),
-        plugin_states=(),
-    )
 
     population = Population([member])
     @test_throws UndefKeywordError Population(
         dataset; population_size=2, options, nfeatures=1
-    )
-    @test_throws ArgumentError Population(
-        dataset; population_size=2, options, nfeatures=1, plugin_states=()
     )
     @test s_r_cycle(
         dataset, population, 1, options.maxsize; options, record=RecordType(), plugin_states
     ) isa Tuple
     @test_throws UndefKeywordError s_r_cycle(
         dataset, population, 1, options.maxsize; options, record=RecordType()
-    )
-    @test_throws ArgumentError s_r_cycle(
-        dataset,
-        population,
-        1,
-        options.maxsize;
-        options,
-        record=RecordType(),
-        plugin_states=(),
     )
 end
 
@@ -809,10 +761,13 @@ end
     SymbolicRegression.fork_plugin_state(state::DistinctHeadState, plugin::DistinctStatePlugin, dataset) = DistinctWorkerState(
         state.generation, plugin.observations
     )
-    function SymbolicRegression.refresh_plugin_state(
-        worker::DistinctWorkerState, head::DistinctHeadState, ::DistinctStatePlugin, dataset
+    function SymbolicRegression.refresh_worker_plugin_state(
+        worker::DistinctWorkerState,
+        latest_head::DistinctHeadState,
+        ::DistinctStatePlugin,
+        dataset,
     )
-        worker.generation = head.generation
+        worker.generation = latest_head.generation
         return worker
     end
     function SymbolicRegression.on_generation_end!(
@@ -898,25 +853,4 @@ end
     hof = equation_search(X, y; options=opts, niterations=3, parallelism=:serial)
     @test hof isa SymbolicRegression.HallOfFame
     @test any(hof.exists)
-end
-
-@testitem "Integration: defaults match upstream single-step loop" begin
-    using SymbolicRegression
-    using Random
-    using Test
-
-    Random.seed!(0)
-    X = rand(Float32, 2, 30)
-    y = X[1, :] .+ X[2, :]
-    opts = Options(;
-        binary_operators=[+, *],
-        populations=2,
-        population_size=30,
-        ncycles_per_iteration=10,
-        verbosity=0,
-        progress=false,
-        deterministic=true,
-    )
-    hof = equation_search(X, y; options=opts, niterations=2, parallelism=:serial)
-    @test hof isa SymbolicRegression.HallOfFame
 end

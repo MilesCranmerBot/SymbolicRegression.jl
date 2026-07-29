@@ -211,9 +211,8 @@ using Compat: @compat, Fix
         tournament_cost_multiplier, mutation_acceptance_multiplier,
         MutationAcceptanceContext,
         fork_plugin_state,
-        refresh_plugin_state,
+        refresh_worker_plugin_state,
         MutationStepResult,
-        wraps_mutation_step,
         wrap_mutation_step,
         on_cycle_start!,
         prepare_mutation_context,
@@ -364,9 +363,8 @@ using .CoreModule:
     mutation_acceptance_multiplier,
     MutationAcceptanceContext,
     fork_plugin_state,
-    refresh_plugin_state,
+    refresh_worker_plugin_state,
     MutationStepResult,
-    wraps_mutation_step,
     wrap_mutation_step,
     on_cycle_start!,
     prepare_mutation_context,
@@ -1117,7 +1115,6 @@ function _main_search_loop!(
                 }
             state.last_pops[j][i] = copy(cur_pop)
             state.best_sub_pops[j][i] = best_sub_pop(cur_pop; topn=options.topn)
-            state.worker_plugin_states[j][i] = returned_plugin_states
             @recorder state.record[] = recursive_merge(state.record[], cur_record)
             state.num_evals[j][i] += cur_num_evals
             dataset = datasets[j]
@@ -1138,7 +1135,7 @@ function _main_search_loop!(
             # Update plugin state (e.g. parsimony frequency table) from the
             # population the worker actually produced, before migration mixes
             # in pareto/seed/best-of-each members from outside this cycle.
-            for (plugin, pstate) in zip(options.plugins, state.plugin_states[j])
+            map(options.plugins, state.plugin_states[j]) do plugin, pstate
                 on_generation_end!(pstate, plugin, state, dataset, options, ropt, cur_pop)
             end
 
@@ -1184,13 +1181,10 @@ function _main_search_loop!(
 
             in_pop = copy(cur_pop::Population{T,L,N})
             worker_plugin_states = map(
-                (plugin, worker_state, head_state) ->
-                    refresh_plugin_state(worker_state, head_state, plugin, dataset),
-                options.plugins,
-                returned_plugin_states,
-                state.plugin_states[j],
-            )
-            state.worker_plugin_states[j][i] = worker_plugin_states
+                options.plugins, returned_plugin_states, state.plugin_states[j]
+            ) do plugin, worker_state, latest_head_state
+                refresh_worker_plugin_state(worker_state, latest_head_state, plugin, dataset)
+            end
             state.worker_output[j][i] = @sr_spawner(
                 begin
                     _dispatch_s_r_cycle(
@@ -1314,7 +1308,7 @@ function _tear_down!(
         end
     end
     for j in eachindex(datasets, state.plugin_states)
-        for (plugin, pstate) in zip(options.plugins, state.plugin_states[j])
+        map(options.plugins, state.plugin_states[j]) do plugin, pstate
             on_search_end!(pstate, plugin, state, datasets[j], options, ropt)
         end
     end
@@ -1355,8 +1349,6 @@ end
     cur_maxsize::Int,
     plugin_states::Tuple,
 ) where {T,L,N}
-    worker_plugin_states = plugin_states
-
     record = RecordType()
     @recorder record["out$(out)_pop$(pop)"] = RecordType(
         "iteration$(iteration)" => record_population(in_pop, options)
@@ -1370,7 +1362,7 @@ end
         verbosity=verbosity,
         options=options,
         record=record,
-        plugin_states=worker_plugin_states,
+        plugin_states,
     )
     num_evals += evals_from_cycle
     out_pop, evals_from_optimize = optimize_and_simplify_population(
@@ -1387,7 +1379,7 @@ end
             end
         end
     end
-    return (out_pop, best_seen, record, num_evals, worker_plugin_states)
+    return (out_pop, best_seen, record, num_evals, plugin_states)
 end
 function _info_dump(
     state::AbstractSearchState,

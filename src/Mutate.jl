@@ -284,9 +284,6 @@ end
 )::Tuple{
     P,Bool,Float64
 } where {T,L,D<:Dataset{T,L},N<:AbstractExpression{T},P<:AbstractPopMember{T,L,N}}
-    length(options.plugins) == length(plugin_states) || throw(
-        ArgumentError("`options.plugins` and `plugin_states` must have the same length."),
-    )
     parent_ref = member.ref
     num_evals = 0.0
 
@@ -357,7 +354,7 @@ function _next_generation(
     node_storage = allocate_container(member.tree)
 
     mut_context = prepare_mutation_context(mutation_choice)
-    if mut_context !== nothing
+    if !isnothing(mut_context)
         map(options.plugins, plugin_states) do plugin, pstate
             condition_mutation!(mut_context, pstate, plugin, mutation_choice, options)
         end
@@ -586,7 +583,7 @@ function mutate!(
     context::Union{Nothing,ConstantMutationContext}=nothing,
     kws...,
 ) where {N<:AbstractExpression,P<:AbstractPopMember}
-    scale = context === nothing ? 1.0 : context.scale
+    scale = isnothing(context) ? 1.0 : context.scale
     new_tree = mutate_constant(new_tree, scale, options, m)
     @recorder recorder["type"] = "mutate_constant"
     return MutationResult{N,P}(; tree=new_tree)

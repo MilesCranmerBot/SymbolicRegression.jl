@@ -33,16 +33,13 @@ function s_r_cycle(
 )::Tuple{
     P,HallOfFame{T,L,N},Float64
 } where {T,L,D<:Dataset{T,L},N<:AbstractExpression{T},P<:Population{T,L,N}}
-    length(options.plugins) == length(plugin_states) || throw(
-        ArgumentError("`options.plugins` and `plugin_states` must have the same length."),
-    )
     best_examples_seen = HallOfFame(options, dataset)
     num_evals = 0.0
 
     batched_dataset = options.batching ? batch(dataset, options.batch_size) : dataset
 
     for cycle_idx in 1:ncycles
-        for (plugin, pstate) in zip(options.plugins, plugin_states)
+        map(options.plugins, plugin_states) do plugin, pstate
             on_cycle_start!(pstate, plugin, cycle_idx, ncycles, options)
         end
         pop, tmp_num_evals = reg_evol_cycle(
@@ -56,7 +53,7 @@ function s_r_cycle(
         )
         num_evals += tmp_num_evals
         update_hall_of_fame!(best_examples_seen, pop.members, options)
-        for (plugin, pstate) in zip(options.plugins, plugin_states)
+        map(options.plugins, plugin_states) do plugin, pstate
             on_cycle_end!(pstate, plugin, pop, dataset, best_examples_seen, options)
         end
     end

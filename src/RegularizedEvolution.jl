@@ -8,7 +8,6 @@ using ..CoreModule:
     DATA_TYPE,
     LOSS_TYPE,
     MutationStepResult,
-    wraps_mutation_step,
     wrap_mutation_step
 using ..PopulationModule: Population, best_of_sample
 using ..HallOfFameModule: HallOfFame, update_hall_of_fame!
@@ -16,33 +15,33 @@ using ..MutateModule: next_generation, crossover_generation
 using ..RecorderModule: @recorder
 using ..UtilsModule: argmin_fast
 
-struct MutationStepLayer{S,P,F}
-    state::S
-    plugin::P
+"""
+One precomposed mutation-middleware layer.
+"""
+struct MutationStepLayer{W,F}
+    wrapper::W
     next_step::F
 end
 @inline function (layer::MutationStepLayer)(parent)
-    return wrap_mutation_step(layer.state, layer.plugin, parent, layer.next_step)
+    return layer.wrapper(parent, layer.next_step)
 end
 
-build_mutation_step(::Tuple{}, ::Tuple{}, base_step) = base_step
-build_mutation_step(::Tuple{}, ::Tuple, base_step) = _plugin_state_mismatch()
-build_mutation_step(::Tuple, ::Tuple{}, base_step) = _plugin_state_mismatch()
-function build_mutation_step(plugins::Tuple, states::Tuple, base_step::F) where {F}
-    inner = build_mutation_step(Base.tail(plugins), Base.tail(states), base_step)
-    plugin = first(plugins)
-    state = first(states)
-    return _add_mutation_step_layer(wraps_mutation_step(plugin), state, plugin, inner)
+build_mutation_step(::Tuple{}, base_step) = base_step
+function build_mutation_step(wrappers::Tuple, base_step::F) where {F}
+    inner = build_mutation_step(Base.tail(wrappers), base_step)
+    return _add_mutation_step_layer(first(wrappers), inner)
 end
-_add_mutation_step_layer(::Val{false}, state, plugin, inner) = inner
-function _add_mutation_step_layer(::Val{true}, state, plugin, inner)  # COV_EXCL_LINE
-    return MutationStepLayer(state, plugin, inner)
-end
-@noinline function _plugin_state_mismatch()
-    throw(ArgumentError("`options.plugins` and `plugin_states` must have the same length."))
+_add_mutation_step_layer(::Nothing, inner) = inner
+function _add_mutation_step_layer(wrapper, inner)  # COV_EXCL_LINE
+    return MutationStepLayer(wrapper, inner)
 end
 
-mutable struct MutationStep{D,P,O,S,H,A,M,R}
+"""
+Engine-owned state for one mutation step. Mutable contents accumulate every
+middleware attempt so evaluation counts, Hall-of-Fame updates, and recording
+stay under engine control.
+"""
+struct MutationStep{D,P,O,S,H,A,M,R}
     dataset::D
     population::P
     curmaxsize::Int
@@ -52,7 +51,6 @@ mutable struct MutationStep{D,P,O,S,H,A,M,R}
     attempted_results::A
     attempted_members::M
     recorded_steps::R
-    num_evals::Float64
 end
 
 function (step::MutationStep)(parent)
@@ -66,11 +64,12 @@ function (step::MutationStep)(parent)
         plugin_states=step.plugin_states,
         population_for_backsolve=step.population,
     )
-    step.num_evals += num_evals
-    result = MutationStepResult(member, accepted, UInt(length(step.attempted_results) + 1))
+    result = MutationStepResult(
+        member, accepted, length(step.attempted_results) + 1, num_evals
+    )
     push!(step.attempted_results, result)
-    step.attempted_members !== nothing && push!(step.attempted_members, copy(member))
-    if step.recorded_steps !== nothing
+    !isnothing(step.attempted_members) && push!(step.attempted_members, copy(member))
+    if !isnothing(step.recorded_steps)
         push!(step.recorded_steps, (copy(parent), copy(member), step_recorder))
     end
     accepted && update_hall_of_fame!(step.best_seen, member, step.options)
@@ -78,10 +77,9 @@ function (step::MutationStep)(parent)
 end
 
 function reset!(step::MutationStep)
-    step.num_evals = 0.0
     empty!(step.attempted_results)
-    step.attempted_members !== nothing && empty!(step.attempted_members)
-    step.recorded_steps !== nothing && empty!(step.recorded_steps)
+    !isnothing(step.attempted_members) && empty!(step.attempted_members)
+    !isnothing(step.recorded_steps) && empty!(step.recorded_steps)
     return nothing
 end
 
@@ -94,58 +92,47 @@ function reg_evol_cycle(
     options::AbstractOptions,
     record::RecordType;
     plugin_states::Tuple,
-    best_seen::Union{Nothing,HallOfFame}=nothing,
+    best_seen::HallOfFame,
 )::Tuple{P,Float64} where {T<:DATA_TYPE,L<:LOSS_TYPE,P<:Population{T,L}}
     num_evals = 0.0
     n_evol_cycles = ceil(Int, pop.n / options.tournament_selection_n)
-    actual_best_seen = best_seen === nothing ? HallOfFame(options, dataset) : best_seen
+    mutation_wrappers = map(wrap_mutation_step, plugin_states, options.plugins)
     mutation_steps = if options.use_recorder
         Tuple{eltype(pop.members),eltype(pop.members),RecordType}[]
     else
         nothing
     end
-    attempted_members =
-        if any(plugin -> wraps_mutation_step(plugin) === Val(true), options.plugins)
-            eltype(pop.members)[]
-        else
-            nothing
-        end
+    attempted_members = any(!isnothing, mutation_wrappers) ? eltype(pop.members)[] : nothing
     base_step = MutationStep(
         dataset,
         pop,
         curmaxsize,
         options,
         plugin_states,
-        actual_best_seen,
+        best_seen,
         MutationStepResult{eltype(pop.members)}[],
         attempted_members,
         mutation_steps,
-        0.0,
     )
-    wrapped_step = build_mutation_step(options.plugins, plugin_states, base_step)
+    wrapped_step = build_mutation_step(mutation_wrappers, base_step)
 
     for i in 1:n_evol_cycles
         if rand() > options.crossover_probability
             allstar = best_of_sample(pop, options; plugin_states)
             reset!(base_step)
             result = wrapped_step(allstar)
-            selected_attempt = findfirst(
-                attempt ->
-                    result.attempt_id != 0 && attempt.attempt_id == result.attempt_id,
-                base_step.attempted_results,
-            )
-            selected_attempt === nothing && throw(
+            selected_attempt_idx = result.attempt_id
+            checkbounds(Bool, base_step.attempted_results, selected_attempt_idx) || throw(
                 ArgumentError("Mutation middleware must return a result from `next_step`."),
             )
-            selected_attempt_idx = selected_attempt::Int
             selected_result = base_step.attempted_results[selected_attempt_idx]
-            baby = if base_step.attempted_members === nothing
+            baby = if isnothing(base_step.attempted_members)
                 selected_result.member
             else
                 base_step.attempted_members[selected_attempt_idx]
             end
             mutation_accepted = selected_result.accepted
-            num_evals += base_step.num_evals
+            num_evals += sum(attempt -> attempt.num_evals, base_step.attempted_results)
 
             should_replace = mutation_accepted || !options.skip_mutation_failures
             oldest = if should_replace
@@ -214,8 +201,8 @@ function reg_evol_cycle(
             )
             num_evals += tmp_num_evals
             if crossover_accepted
-                update_hall_of_fame!(actual_best_seen, baby1, options)
-                update_hall_of_fame!(actual_best_seen, baby2, options)
+                update_hall_of_fame!(best_seen, baby1, options)
+                update_hall_of_fame!(best_seen, baby2, options)
             end
 
             if !crossover_accepted && options.skip_mutation_failures

@@ -110,7 +110,7 @@ function on_mutation_end!(
     else
         event.before_loss, event.after_loss
     end
-    if event.accepted && after !== nothing && after < before
+    if event.accepted && !isnothing(after) && after < before
         s.successes[idx] += 1.0
     end
     total_successes = 0.0

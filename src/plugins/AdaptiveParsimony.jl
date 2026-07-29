@@ -7,7 +7,7 @@ using ..PopMemberModule: AbstractPopMember
 import ..CoreModule:
     init_plugin_state,
     fork_plugin_state,
-    refresh_plugin_state,
+    refresh_worker_plugin_state,
     tournament_cost_multiplier,
     mutation_acceptance_multiplier,
     on_generation_end!,
@@ -154,13 +154,13 @@ function fork_plugin_state(
     return AdaptiveParsimonyState(snapshot)
 end
 
-function refresh_plugin_state(
+function refresh_worker_plugin_state(
     worker_state::AdaptiveParsimonyState,
-    head_state::AdaptiveParsimonyState,
+    latest_head_state::AdaptiveParsimonyState,
     plugin::AdaptiveParsimonyPlugin,
     dataset,
 )
-    return fork_plugin_state(head_state, plugin, dataset)
+    return fork_plugin_state(latest_head_state, plugin, dataset)
 end
 
 function tournament_cost_multiplier(
