@@ -173,7 +173,7 @@ end
 """
     on_cycle_end!(state, plugin, pop, dataset, hof, options)
 
-Lifecycle hook called on the WORKER at the end of each evolution cycle, paired
+Lifecycle hook called on the worker at the end of each evolution cycle, paired
 with [`on_cycle_start!`](@ref). May run concurrently across workers. Use only
 worker-local state, or use `Channel` / `RemoteChannel` for cross-worker
 communication.
@@ -226,7 +226,7 @@ end
 """
     on_mutation_end!(state, plugin, mutation::AbstractMutation, event::MutationEvent, dataset, options)
 
-Lifecycle hook called on the WORKER immediately before each return from
+Lifecycle hook called on the worker immediately before each return from
 `next_generation`, after the final accept/reject decision for a mutation.
 Called once per plugin per mutation. Plugins can dispatch on the mutation
 type (e.g. `::ConstantMutation`) for type-specific handling, or
