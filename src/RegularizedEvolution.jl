@@ -8,13 +8,12 @@ using ..CoreModule:
     DATA_TYPE,
     LOSS_TYPE,
     MutationStepResult,
-    wrap_mutation_step,
-    strictmap
+    wrap_mutation_step
 using ..PopulationModule: Population, best_of_sample
 using ..HallOfFameModule: HallOfFame, update_hall_of_fame!
 using ..MutateModule: next_generation, crossover_generation
 using ..RecorderModule: @recorder
-using ..UtilsModule: argmin_fast
+using ..UtilsModule: argmin_fast, strictmap
 
 """
 One precomposed mutation-middleware layer.

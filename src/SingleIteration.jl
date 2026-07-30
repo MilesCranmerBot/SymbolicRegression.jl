@@ -2,7 +2,7 @@ module SingleIterationModule
 
 using ADTypes: AutoEnzyme
 using DynamicExpressions: AbstractExpression, string_tree, simplify_tree!, combine_operators
-using ..UtilsModule: @threads_if
+using ..UtilsModule: @threads_if, strictmap
 using ..CoreModule:
     AbstractOptions,
     Dataset,
@@ -10,8 +10,7 @@ using ..CoreModule:
     create_expression,
     batch,
     on_cycle_start!,
-    on_cycle_end!,
-    strictmap
+    on_cycle_end!
 using ..PopMemberModule: generate_reference
 using ..PopulationModule: Population, finalize_costs
 using ..HallOfFameModule: HallOfFame, update_hall_of_fame!

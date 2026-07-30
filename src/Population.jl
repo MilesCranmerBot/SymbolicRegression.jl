@@ -12,14 +12,13 @@ using ..CoreModule:
     LOSS_TYPE,
     init_member,
     resolve_init_member,
-    tournament_cost_multiplier,
-    strictmap
+    tournament_cost_multiplier
 using ..ComplexityModule: compute_complexity
 using ..LossFunctionsModule: eval_cost, update_baseline_loss!
 using ..MutationFunctionsModule: gen_random_tree
 using ..PopMemberModule: AbstractPopMember, PopMember
 import ..PopMemberModule: popmember_type
-using ..UtilsModule: bottomk_fast, argmin_fast, PerTaskCache
+using ..UtilsModule: bottomk_fast, argmin_fast, PerTaskCache, strictmap
 # A list of members of the population, with easy constructors,
 #  which allow for random generation of new populations
 struct Population{

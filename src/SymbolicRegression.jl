@@ -353,7 +353,6 @@ using .CoreModule:
     MutationEvent,
     init_plugin_state,
     init_plugin_states,
-    strictmap,
     on_search_start!,
     on_search_end!,
     on_generation_end!,
@@ -372,7 +371,7 @@ using .CoreModule:
     prepare_mutation_context,
     condition_mutation!,
     ConstantMutationContext
-using .UtilsModule: is_anonymous_function, recursive_merge, json3_write, @ignore
+using .UtilsModule: is_anonymous_function, recursive_merge, json3_write, strictmap, @ignore
 using .ComplexityModule: compute_complexity
 using .CheckConstraintsModule: check_constraints
 using .MutationFunctionsModule:

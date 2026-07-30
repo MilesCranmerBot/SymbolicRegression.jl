@@ -40,12 +40,12 @@ using ..CoreModule:
     MutationAcceptanceContext,
     ConstantMutationContext,
     prepare_mutation_context,
-    condition_mutation!,
-    strictmap
+    condition_mutation!
 using ..ComplexityModule: compute_complexity
 using ..LossFunctionsModule: eval_cost, loss_to_cost
 using ..CheckConstraintsModule: check_constraints
 using ..PopMemberModule: AbstractPopMember, PopMember, create_child
+using ..UtilsModule: strictmap
 using ..MutationFunctionsModule:
     mutate_constant,
     mutate_operator,

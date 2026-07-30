@@ -93,7 +93,6 @@ using .ExpressionSpecModule:
     get_expression_options,
     get_node_type
 using .InterfaceDataTypesModule: init_value, sample_value, mutate_value
-using .UtilsModule: strictmap
 using .PluginModule:
     AbstractPlugin,
     MutationEvent,
