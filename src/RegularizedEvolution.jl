@@ -72,7 +72,9 @@ function (step::MutationStep)(parent)
     if !isnothing(step.recorded_steps)
         push!(step.recorded_steps, (copy(parent), copy(member), step_recorder))
     end
-    accepted && update_hall_of_fame!(step.best_seen, member, step.options)
+    accepted &&
+        !isnothing(step.attempted_members) &&
+        update_hall_of_fame!(step.best_seen, member, step.options)
     return result
 end
 

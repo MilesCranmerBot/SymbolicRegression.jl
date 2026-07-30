@@ -54,7 +54,7 @@ function s_r_cycle(
         num_evals += tmp_num_evals
         update_hall_of_fame!(best_examples_seen, pop.members, options)
         strictmap(options.plugins, plugin_states) do plugin, pstate
-            on_cycle_end!(pstate, plugin, pop, dataset, best_examples_seen, options)
+            on_cycle_end!(pstate, plugin, pop, batched_dataset, best_examples_seen, options)
         end
     end
 

@@ -388,7 +388,7 @@ const OPTION_DESCRIPTIONS = """- `defaults`: What set of defaults to use for `Op
     and returns an integer.
 - `alpha`: The probability of accepting an equation mutation
     during regularized evolution is given by exp(-delta_loss/(alpha * T)),
-    where T goes from 1 to 0. Thus, alpha=infinite is the same as no annealing.
+    where T goes from 1 to 0. Set `annealing=false` to disable annealing.
 - `maxsize`: Maximum size of equations during the search.
 - `maxdepth`: Maximum depth of equations during the search, by default
     this is set equal to the maxsize.

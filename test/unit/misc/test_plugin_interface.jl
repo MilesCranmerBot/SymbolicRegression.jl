@@ -107,13 +107,13 @@ end
     using Test
 
     # Use a channel to safely count from multiple threads/tasks.
-    counter_ch = Channel{Symbol}(10_000)
+    counter_ch = Channel{Any}(10_000)
 
     struct LifecyclePlugin <: AbstractPlugin
-        counter_ch::Channel{Symbol}
+        counter_ch::Channel{Any}
     end
     mutable struct LifecyclePluginState
-        counter_ch::Channel{Symbol}
+        counter_ch::Channel{Any}
     end
 
     SymbolicRegression.init_plugin_state(p::LifecyclePlugin, options, datasets) = LifecyclePluginState(
@@ -135,7 +135,7 @@ end
     ) = (put!(s.counter_ch, :gen); nothing)
     SymbolicRegression.on_cycle_end!(
         s::LifecyclePluginState, ::LifecyclePlugin, pop, d, h, o
-    ) = (put!(s.counter_ch, :cycle_end); nothing)
+    ) = (put!(s.counter_ch, :cycle_end); put!(s.counter_ch, (:batch_size, d.n)); nothing)
     SymbolicRegression.on_cycle_start!(
         s::LifecyclePluginState, ::LifecyclePlugin, cycle_idx::Int, ncycles::Int, o
     ) = (put!(s.counter_ch, :cycle_start); nothing)
@@ -145,6 +145,8 @@ end
         populations=2,
         verbosity=0,
         progress=false,
+        batching=true,
+        batch_size=7,
         plugins=(LifecyclePlugin(counter_ch),),
     )
     X = rand(Float32, 2, 30)
@@ -154,8 +156,13 @@ end
 
     close(counter_ch)
     counts = Dict{Symbol,Int}()
-    for s in counter_ch
-        counts[s] = get(counts, s, 0) + 1
+    observed_batch_sizes = Int[]
+    for event in counter_ch
+        if event isa Symbol
+            counts[event] = get(counts, event, 0) + 1
+        else
+            push!(observed_batch_sizes, event[2])
+        end
     end
 
     @test get(counts, :start, 0) == 1
@@ -163,6 +170,8 @@ end
     @test get(counts, :gen, 0) > 0
     @test get(counts, :cycle_start, 0) > 0
     @test get(counts, :cycle_end, 0) == get(counts, :cycle_start, 0)
+    @test !isempty(observed_batch_sizes)
+    @test all(==(opts.batch_size), observed_batch_sizes)
 end
 
 @testitem "Plugin interface: multiple plugins all fire" begin

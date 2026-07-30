@@ -20,7 +20,13 @@ using DynamicExpressions:
     constructorof
 using ..UtilsModule: subscriptify
 using ..CoreModule:
-    Dataset, AbstractOptions, Options, RecordType, create_expression, init_value
+    Dataset,
+    AbstractOptions,
+    Options,
+    RecordType,
+    max_features,
+    create_expression,
+    init_value
 using ..ComplexityModule: compute_complexity
 using ..PopulationModule: Population
 using ..PopMemberModule: PopMember, AbstractPopMember
@@ -318,6 +324,33 @@ macro sr_spawner(expr, kws...)
             error("Invalid parallel type ", string($(parallelism)), ".")
         end
     end |> esc
+end
+
+function init_dummy_pops(
+    npops::Int, datasets::Vector{D}, options::AbstractOptions
+) where {T,L,D<:Dataset{T,L}}
+    prototype = Population(
+        first(datasets);
+        population_size=1,
+        options,
+        nfeatures=max_features(first(datasets), options),
+        plugin_states=(),
+    )
+    return [
+        typeof(prototype)[
+            if i == 1 && j == 1
+                prototype
+            else
+                Population(
+                    datasets[j];
+                    population_size=1,
+                    options,
+                    nfeatures=max_features(datasets[j], options),
+                    plugin_states=(),
+                )
+            end for i in 1:npops
+        ] for j in eachindex(datasets)
+    ]
 end
 
 struct StdinReader

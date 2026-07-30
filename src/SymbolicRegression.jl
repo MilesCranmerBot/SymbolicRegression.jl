@@ -427,6 +427,7 @@ using .SearchUtilsModule:
     construct_datasets,
     save_to_file,
     get_cur_maxsize,
+    init_dummy_pops,
     parse_guesses,
     logging_callback!,
     infer_popmember_type
@@ -805,9 +806,9 @@ end
     shuffle!(task_order)
 
     # Persistent storage of last-saved population for final return:
-    last_pops = [Vector{PopType}(undef, options.populations) for _ in 1:nout]
+    last_pops = init_dummy_pops(options.populations, datasets, options)
     # Best 10 members from each population for migration:
-    best_sub_pops = [Vector{PopType}(undef, options.populations) for _ in 1:nout]
+    best_sub_pops = init_dummy_pops(options.populations, datasets, options)
     # Records the number of evaluations:
     # Real numbers indicate use of batching.
     num_evals = [[0.0 for i in 1:(options.populations)] for j in 1:nout]
@@ -967,7 +968,6 @@ function _preserve_loaded_state!(
             eltype(eltype(state.worker_plugin_states)),
         )
         state.last_pops[j][i] = copy(pop)
-        state.best_sub_pops[j][i] = best_sub_pop(pop; topn=options.topn)
     end
     return nothing
 end
@@ -1000,8 +1000,6 @@ function _warmup_search!(
         (in_pop, _, _, _, worker_plugin_states) = extract_from_worker(
             last_pop, PopType, HallType, eltype(eltype(state.worker_plugin_states))
         )
-        state.last_pops[j][i] = copy(in_pop)
-        state.best_sub_pops[j][i] = best_sub_pop(in_pop; topn=options.topn)
         updated_pop = @sr_spawner(
             begin
                 _dispatch_s_r_cycle(
