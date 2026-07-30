@@ -10,7 +10,9 @@ using ..CoreModule:
     MutationStepResult,
     wrap_mutation_step
 using ..PopulationModule: Population, best_of_sample
-using ..HallOfFameModule: HallOfFame, update_hall_of_fame!
+using ..HallOfFameModule:
+    HallOfFame, update_hall_of_fame!, _update_hall_of_fame_unchecked!
+using ..ComplexityModule: compute_complexity
 using ..MutateModule: next_generation, crossover_generation
 using ..RecorderModule: @recorder
 using ..UtilsModule: argmin_fast, strictmap
@@ -203,8 +205,12 @@ function reg_evol_cycle(
             )
             num_evals += tmp_num_evals
             if crossover_accepted
-                update_hall_of_fame!(best_seen, baby1, options)
-                update_hall_of_fame!(best_seen, baby2, options)
+                _update_hall_of_fame_unchecked!(
+                    best_seen, baby1, compute_complexity(baby1, options)
+                )
+                _update_hall_of_fame_unchecked!(
+                    best_seen, baby2, compute_complexity(baby2, options)
+                )
             end
 
             if !crossover_accepted && options.skip_mutation_failures

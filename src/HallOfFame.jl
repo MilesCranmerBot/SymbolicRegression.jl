@@ -6,6 +6,7 @@ using ..UtilsModule: split_string, AnnotatedIOBuffer, dump_buffer
 using ..CoreModule:
     AbstractOptions, Dataset, DATA_TYPE, LOSS_TYPE, relu, create_expression, init_value
 using ..ComplexityModule: compute_complexity
+using ..CheckConstraintsModule: check_constraints
 using ..PopMemberModule: AbstractPopMember, PopMember
 using ..InterfaceDynamicExpressionsModule: format_dimensions, WILDCARD_UNIT_STRING
 using Printf: @sprintf
@@ -118,6 +119,13 @@ function update_hall_of_fame!(
 )
     size = compute_complexity(member, options)
     0 < size <= options.maxsize || return nothing
+    check_constraints(member.tree, options, options.maxsize, size) || return nothing
+    return _update_hall_of_fame_unchecked!(hall_of_fame, member, size)
+end
+
+function _update_hall_of_fame_unchecked!(
+    hall_of_fame::HallOfFame, member::AbstractPopMember, size::Int
+)
     if !hall_of_fame.exists[size] || member.cost < hall_of_fame.members[size].cost
         hall_of_fame.members[size] = copy(member)
         hall_of_fame.exists[size] = true

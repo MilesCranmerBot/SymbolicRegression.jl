@@ -18,9 +18,9 @@ using .AdaptiveParsimonyModule:
         options;
         plugin_states=map(options.plugins) do plugin
             if plugin isa AdaptiveParsimonyPlugin  # COV_EXCL_LINE
-                AdaptiveParsimonyState(running_search_statistics)
+                AdaptiveParsimonyState(running_search_statistics)  # COV_EXCL_LINE
             else
-                nothing
+                nothing  # COV_EXCL_LINE
             end
         end,
     ),

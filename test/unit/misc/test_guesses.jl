@@ -25,6 +25,25 @@
     @test !any(m -> m.loss < 1e-10, dominating)
 end
 
+@testitem "Guesses violating constraints do not enter the Hall of Fame" begin
+    using SymbolicRegression
+    using Test
+
+    X = randn(2, 8)
+    y = randn(8)
+    options = Options(;
+        binary_operators=(+,),
+        constraints=((+) => (0, 0),),
+        verbosity=0,
+        progress=false,
+    )
+
+    hall_of_fame = equation_search(
+        X, y; niterations=0, options, guesses=["x1 + x2"], parallelism=:serial
+    )
+    @test !any(hall_of_fame.exists)
+end
+
 @testitem "parse_guesses with NamedTuple" begin
     using SymbolicRegression
     using SymbolicRegression: parse_guesses, Dataset, PopMember

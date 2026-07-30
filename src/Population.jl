@@ -44,14 +44,7 @@ Initialize a tree for a new population member. Asks every plugin via
 expression (two or more providers throw). If all plugins return `nothing`
 (the common case — no plugin overrides `init_member`), falls back to
 `gen_random_tree`.
-
-The empty-tuple specialisation keeps the no-plugin path fully type-stable.
 """
-function _init_tree(
-    dataset, options, nlength::Int, nfeatures::Int, ::Type{T}, ::Tuple{}
-) where {T}
-    return gen_random_tree(nlength, options, nfeatures, T)
-end
 function _init_tree(
     dataset, options, nlength::Int, nfeatures::Int, ::Type{T}, plugin_states::Tuple
 ) where {T}
@@ -107,11 +100,29 @@ function Population(
 
     return Population(members, population_size)
 end
+
+function _population_without_plugins(
+    dataset::Dataset{T,L};
+    options::AbstractOptions,
+    nlength::Int=3,
+    nfeatures::Int,
+) where {T,L}
+    PM = options.popmember_type
+    member = constructorof(PM)(
+        dataset,
+        gen_random_tree(nlength, options, nfeatures, T),
+        options;
+        parent=-1,
+        deterministic=options.deterministic,
+    )
+    return Population([member])
+end
+
 """
     Population(X::AbstractMatrix{T}, y::AbstractVector{T};
                population_size, nlength::Int=3,
                options::AbstractOptions, nfeatures::Int,
-               loss_type::Type=Nothing)
+               loss_type::Type=Nothing, plugin_states::Tuple)
 
 Create random population and score them on the dataset.
 """
