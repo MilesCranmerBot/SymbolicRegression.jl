@@ -13,7 +13,7 @@ using ..CoreModule:
     on_cycle_end!
 using ..PopMemberModule: generate_reference
 using ..PopulationModule: Population, finalize_costs
-using ..HallOfFameModule: HallOfFame, update_hall_of_fame!
+using ..HallOfFameModule: HallOfFame, _update_hall_of_fame_unchecked!
 using ..RegularizedEvolutionModule: reg_evol_cycle
 using ..LossFunctionsModule: eval_cost
 using ..ConstantOptimizationModule: optimize_constants
@@ -52,7 +52,7 @@ function s_r_cycle(
             best_seen=best_examples_seen,
         )
         num_evals += tmp_num_evals
-        update_hall_of_fame!(best_examples_seen, pop.members, options)
+        _update_hall_of_fame_unchecked!(best_examples_seen, pop.members, options)
         strictmap(options.plugins, plugin_states) do plugin, pstate
             on_cycle_end!(pstate, plugin, pop, batched_dataset, best_examples_seen, options)
         end

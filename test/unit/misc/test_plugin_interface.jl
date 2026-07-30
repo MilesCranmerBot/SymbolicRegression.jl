@@ -47,11 +47,7 @@
     @test init_plugin_states(plugin_opts, nothing) === (nothing,)
     dataset = Dataset(randn(1, 4), randn(4))
     @test_throws DimensionMismatch Population(
-        dataset;
-        population_size=1,
-        options=plugin_opts,
-        nfeatures=1,
-        plugin_states=(),
+        dataset; population_size=1, options=plugin_opts, nfeatures=1, plugin_states=()
     )
     callback_called = Ref(false)
     @test_throws DimensionMismatch strictmap((_, _) -> (callback_called[] = true), (p,), ())

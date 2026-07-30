@@ -102,10 +102,7 @@ function Population(
 end
 
 function _population_without_plugins(
-    dataset::Dataset{T,L};
-    options::AbstractOptions,
-    nlength::Int=3,
-    nfeatures::Int,
+    dataset::Dataset{T,L}; options::AbstractOptions, nlength::Int=3, nfeatures::Int
 ) where {T,L}
     PM = options.popmember_type
     member = constructorof(PM)(

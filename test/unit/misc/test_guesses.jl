@@ -32,10 +32,7 @@ end
     X = randn(2, 8)
     y = randn(8)
     options = Options(;
-        binary_operators=(+,),
-        constraints=((+) => (0, 0),),
-        verbosity=0,
-        progress=false,
+        binary_operators=(+,), constraints=((+) => (0, 0),), verbosity=0, progress=false
     )
 
     hall_of_fame = equation_search(

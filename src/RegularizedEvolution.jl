@@ -10,8 +10,7 @@ using ..CoreModule:
     MutationStepResult,
     wrap_mutation_step
 using ..PopulationModule: Population, best_of_sample
-using ..HallOfFameModule:
-    HallOfFame, update_hall_of_fame!, _update_hall_of_fame_unchecked!
+using ..HallOfFameModule: HallOfFame, update_hall_of_fame!, _update_hall_of_fame_unchecked!
 using ..ComplexityModule: compute_complexity
 using ..MutateModule: next_generation, crossover_generation
 using ..RecorderModule: @recorder

@@ -133,6 +133,19 @@ function _update_hall_of_fame_unchecked!(
     return nothing
 end
 
+function _update_hall_of_fame_unchecked!(
+    hall_of_fame::HallOfFame,
+    members::AbstractVector{<:AbstractPopMember},
+    options::AbstractOptions,
+)
+    for member in members
+        size = compute_complexity(member, options)
+        0 < size <= options.maxsize || continue
+        _update_hall_of_fame_unchecked!(hall_of_fame, member, size)
+    end
+    return nothing
+end
+
 function update_hall_of_fame!(
     hall_of_fame::HallOfFame,
     members::AbstractVector{<:AbstractPopMember},

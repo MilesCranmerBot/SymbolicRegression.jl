@@ -330,9 +330,7 @@ function init_dummy_pops(
     npops::Int, datasets::Vector{D}, options::AbstractOptions
 ) where {T,L,D<:Dataset{T,L}}
     prototype = _population_without_plugins(
-        first(datasets);
-        options,
-        nfeatures=max_features(first(datasets), options),
+        first(datasets); options, nfeatures=max_features(first(datasets), options)
     )
     return [
         typeof(prototype)[
@@ -340,9 +338,7 @@ function init_dummy_pops(
                 prototype
             else
                 _population_without_plugins(
-                    datasets[j];
-                    options,
-                    nfeatures=max_features(datasets[j], options),
+                    datasets[j]; options, nfeatures=max_features(datasets[j], options)
                 )
             end for i in 1:npops
         ] for j in eachindex(datasets)
