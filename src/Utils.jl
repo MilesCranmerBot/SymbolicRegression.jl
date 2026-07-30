@@ -6,6 +6,13 @@ using MacroTools: splitdef
 using StyledStrings: StyledStrings
 using Random: AbstractRNG, default_rng
 using DispatchDoctor: @unstable
+import Compat
+
+@unstable @inline function strictmap(f, xs...)
+    Compat.allequal(length, xs) ||
+        throw(DimensionMismatch("collections must have equal lengths"))
+    return map(f, xs...)
+end
 
 macro ignore(args...) end
 

@@ -2,14 +2,7 @@ module PluginModule
 
 using DispatchDoctor: @unstable
 using ..MutationsModule: AbstractMutation, ConstantMutation, ConstantMutationContext
-
-@unstable @inline function strictmap(f, xs...)
-    n = length(first(xs))
-    for x in Base.tail(xs)
-        length(x) == n || throw(DimensionMismatch("collections must have equal lengths"))
-    end
-    return map(f, xs...)
-end
+using ..UtilsModule: strictmap
 
 # ────────────────────────────────────────────────────────────────────────────
 # Hook naming taxonomy
