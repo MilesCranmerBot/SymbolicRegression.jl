@@ -65,10 +65,9 @@ function (step::MutationStep)(parent)
         plugin_states=step.plugin_states,
         population_for_backsolve=step.population,
     )
-    result = MutationStepResult(
-        member, accepted, length(step.attempted_results) + 1, num_evals
-    )
-    push!(step.attempted_results, result)
+    attempt_id = isnothing(step.attempted_results) ? 1 : length(step.attempted_results) + 1
+    result = MutationStepResult(member, accepted, attempt_id, num_evals)
+    !isnothing(step.attempted_results) && push!(step.attempted_results, result)
     !isnothing(step.attempted_members) && push!(step.attempted_members, copy(member))
     if !isnothing(step.recorded_steps)
         push!(step.recorded_steps, (copy(parent), copy(member), step_recorder))
@@ -80,7 +79,7 @@ function (step::MutationStep)(parent)
 end
 
 function reset!(step::MutationStep)
-    empty!(step.attempted_results)
+    !isnothing(step.attempted_results) && empty!(step.attempted_results)
     !isnothing(step.attempted_members) && empty!(step.attempted_members)
     !isnothing(step.recorded_steps) && empty!(step.recorded_steps)
     return nothing
@@ -105,7 +104,10 @@ function reg_evol_cycle(
     else
         nothing
     end
-    attempted_members = any(!isnothing, mutation_wrappers) ? eltype(pop.members)[] : nothing
+    has_mutation_wrappers = any(!isnothing, mutation_wrappers)
+    attempted_results =
+        has_mutation_wrappers ? MutationStepResult{eltype(pop.members)}[] : nothing
+    attempted_members = has_mutation_wrappers ? eltype(pop.members)[] : nothing
     base_step = MutationStep(
         dataset,
         pop,
@@ -113,7 +115,7 @@ function reg_evol_cycle(
         options,
         plugin_states,
         best_seen,
-        MutationStepResult{eltype(pop.members)}[],
+        attempted_results,
         attempted_members,
         mutation_steps,
     )
@@ -125,17 +127,25 @@ function reg_evol_cycle(
             reset!(base_step)
             result = wrapped_step(allstar)
             selected_attempt_idx = result.attempt_id
-            checkbounds(Bool, base_step.attempted_results, selected_attempt_idx) || throw(
-                ArgumentError("Mutation middleware must return a result from `next_step`."),
-            )
-            selected_result = base_step.attempted_results[selected_attempt_idx]
+            selected_result = if isnothing(base_step.attempted_results)
+                num_evals += result.num_evals
+                result
+            else
+                checkbounds(Bool, base_step.attempted_results, selected_attempt_idx) ||
+                    throw(
+                        ArgumentError(
+                            "Mutation middleware must return a result from `next_step`."
+                        ),
+                    )
+                num_evals += sum(attempt -> attempt.num_evals, base_step.attempted_results)
+                base_step.attempted_results[selected_attempt_idx]
+            end
             baby = if isnothing(base_step.attempted_members)
                 selected_result.member
             else
                 base_step.attempted_members[selected_attempt_idx]
             end
             mutation_accepted = selected_result.accepted
-            num_evals += sum(attempt -> attempt.num_evals, base_step.attempted_results)
 
             should_replace = mutation_accepted || !options.skip_mutation_failures
             oldest = if should_replace
