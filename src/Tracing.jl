@@ -6,76 +6,63 @@ using ..ComplexityModule: compute_complexity
 using ..UtilsModule: json3_write, recursive_merge
 
 @inline new_trace(options::AbstractOptions) = new_trace(options.use_tracing)
-@inline new_trace(::Val{false}) = nothing
-@inline new_trace(::Val{true}) = TraceType()
-@inline new_trace(::Nothing) = nothing
-@inline new_trace(::TraceType) = TraceType()
+@inline new_trace(::Val{enabled}) where {enabled} = enabled ? TraceType() : nothing
+@inline new_trace(trace::MaybeTrace) = isnothing(trace) ? nothing : TraceType()
 
-@inline new_step_trace(::Nothing) = nothing
-@inline new_step_trace(steps) = TraceType()
+@inline new_step_trace(steps) = isnothing(steps) ? nothing : TraceType()
 
-@inline new_traced_steps(::Nothing, ::Type) = nothing
-@inline function new_traced_steps(::TraceType, ::Type{P}) where {P}
-    return Tuple{P,P,TraceType}[]
+@inline function new_traced_steps(trace::MaybeTrace, ::Type{P}) where {P}
+    return isnothing(trace) ? nothing : Tuple{P,P,TraceType}[]
 end
 
-@inline trace_mutation_step!(::Nothing, parent, member, trace) = nothing
-@inline function trace_mutation_step!(
-    steps::AbstractVector, parent, member, trace::TraceType
-)
-    push!(steps, (copy(parent), copy(member), trace))
+@inline function trace_mutation_step!(steps, parent, member, trace::MaybeTrace)
+    isnothing(steps) && return nothing
+    push!(steps, (copy(parent), copy(member), trace::TraceType))
     return nothing
 end
 
-@inline reset_traced_steps!(::Nothing) = nothing
-@inline reset_traced_steps!(steps) = empty!(steps)
+@inline reset_traced_steps!(steps) = isnothing(steps) ? nothing : empty!(steps)
 
-@inline trace_mutation_type!(::Nothing, ::Symbol) = nothing
-@inline function trace_mutation_type!(trace::TraceType, type::Symbol)
-    trace["type"] = string(type)
+@inline function trace_mutation_type!(trace::MaybeTrace, type::Symbol)
+    !isnothing(trace) && (trace["type"] = string(type))
     return nothing
 end
 
-@inline trace_mutation_result!(::Nothing, result, reason) = nothing
-@inline function trace_mutation_result!(trace::TraceType, result, reason)
+@inline function trace_mutation_result!(trace::MaybeTrace, result, reason)
+    isnothing(trace) && return nothing
     trace["result"] = result
     trace["reason"] = reason
     return nothing
 end
 
-@inline trace_identity_mutation!(::Nothing) = nothing
-@inline function trace_identity_mutation!(trace::TraceType)
+@inline function trace_identity_mutation!(trace::MaybeTrace)
+    isnothing(trace) && return nothing
     trace["type"] = "identity"
     trace["result"] = "accept"
     trace["reason"] = "identity"
     return nothing
 end
 
-@inline trace_search_options!(::Nothing, options) = nothing
-function trace_search_options!(trace::TraceType, options)
-    trace["options"] = string(options)
+@inline function trace_search_options!(trace::MaybeTrace, options)
+    !isnothing(trace) && (trace["options"] = string(options))
     return nothing
 end
 
-@inline trace_worker!(::Nothing, out, pop) = nothing
-function trace_worker!(trace::TraceType, out, pop)
-    trace["out$(out)_pop$(pop)"] = TraceType()
+@inline function trace_worker!(trace::MaybeTrace, out, pop)
+    !isnothing(trace) && (trace["out$(out)_pop$(pop)"] = TraceType())
     return nothing
 end
 
-@inline merge_traces(::Nothing, incoming) = nothing
-@inline merge_traces(trace::TraceType, incoming::TraceType) = recursive_merge(
-    trace, incoming
-)
+@inline merge_traces(trace::MaybeTrace, incoming) =
+    isnothing(trace) ? nothing : recursive_merge(trace, incoming)
 
-@inline write_trace(::Nothing, filename) = nothing
-function write_trace(trace::TraceType, filename)
-    json3_write(trace, filename)
+@inline function write_trace(trace::MaybeTrace, filename)
+    !isnothing(trace) && json3_write(trace, filename)
     return nothing
 end
 
-@inline next_trace_iteration(::Nothing, out, pop) = 0
-function next_trace_iteration(trace::TraceType, out, pop)
+@inline function next_trace_iteration(trace::MaybeTrace, out, pop)
+    isnothing(trace) && return 0
     key = "out$(out)_pop$(pop)"
     return find_iteration_from_trace(key, trace) + 1
 end
@@ -88,9 +75,10 @@ function find_iteration_from_trace(key::String, trace::TraceType)
     return iteration - 1
 end
 
-@inline trace_iteration_start!(::Nothing, out, pop, iteration, population, options) =
-    nothing
-function trace_iteration_start!(trace::TraceType, out, pop, iteration, population, options)
+@inline function trace_iteration_start!(
+    trace::MaybeTrace, out, pop, iteration, population, options
+)
+    isnothing(trace) && return nothing
     trace["out$(out)_pop$(pop)"] = TraceType(
         "iteration$(iteration)" => _trace_population(population, options)
     )
@@ -128,9 +116,10 @@ function _trace_member!(mutations::TraceType, member, options)
     return nothing
 end
 
-@inline trace_optimization!(::Nothing, member, old_ref, new_ref, optimized, options) =
-    nothing
-function trace_optimization!(trace::TraceType, member, old_ref, new_ref, optimized, options)
+@inline function trace_optimization!(
+    trace::MaybeTrace, member, old_ref, new_ref, optimized, options
+)
+    isnothing(trace) && return nothing
     @assert haskey(trace, "mutations")
     mutations = trace["mutations"]::TraceType
     _trace_member!(mutations, member, options)
@@ -152,12 +141,7 @@ function trace_optimization!(trace::TraceType, member, old_ref, new_ref, optimiz
 end
 
 @inline function trace_mutation_attempts!(
-    ::Nothing, steps, population, oldest, should_replace, selected_attempt_idx, options
-)
-    return nothing
-end
-function trace_mutation_attempts!(
-    trace::TraceType,
+    trace::MaybeTrace,
     steps,
     population,
     oldest,
@@ -165,6 +149,7 @@ function trace_mutation_attempts!(
     selected_attempt_idx,
     options,
 )
+    isnothing(trace) && return nothing
     mutations = get!(TraceType, trace, "mutations")
     members = should_replace ? [population.members[oldest]] : eltype(population.members)[]
     for (parent, child, _) in steps
@@ -191,21 +176,7 @@ function trace_mutation_attempts!(
 end
 
 @inline function trace_crossover!(
-    ::Nothing,
-    parent1,
-    parent2,
-    child1,
-    child2,
-    population,
-    oldest1,
-    oldest2,
-    crossover_trace,
-    options,
-)
-    return nothing
-end
-function trace_crossover!(
-    trace::TraceType,
+    trace::MaybeTrace,
     parent1,
     parent2,
     child1,
@@ -216,6 +187,7 @@ function trace_crossover!(
     crossover_trace::MaybeTrace,
     options,
 )
+    isnothing(trace) && return nothing
     @assert crossover_trace isa TraceType
     mutations = get!(TraceType, trace, "mutations")
     for member in (
