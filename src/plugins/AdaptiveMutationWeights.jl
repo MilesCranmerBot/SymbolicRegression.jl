@@ -8,7 +8,7 @@ using ..CoreModule:
     DoNothingMutation,
     MutationEvent
 import ..CoreModule: init_plugin_state, on_mutation_end!
-import ..MutateModule: condition_mutation_weights!, _scale_weight!
+import ..MutateModule: condition_mutation_weights!
 
 """
     AdaptiveMutationWeightsPlugin <: AbstractPlugin

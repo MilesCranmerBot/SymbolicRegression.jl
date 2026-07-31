@@ -99,7 +99,7 @@ function reg_evol_cycle(
     num_evals = 0.0
     n_evol_cycles = ceil(Int, pop.n / options.tournament_selection_n)
     mutation_wrappers = strictmap(wrap_mutation_step, plugin_states, options.plugins)
-    mutation_steps = if options.use_recorder
+    recorded_steps = if options.use_recorder
         Tuple{eltype(pop.members),eltype(pop.members),RecordType}[]
     else
         nothing
@@ -117,7 +117,7 @@ function reg_evol_cycle(
         best_seen,
         attempted_results,
         attempted_members,
-        mutation_steps,
+        recorded_steps,
     )
     wrapped_step = build_mutation_step(mutation_wrappers, base_step)
 
@@ -155,14 +155,14 @@ function reg_evol_cycle(
             end
 
             @recorder begin
-                recorded_steps = something(mutation_steps)
+                steps = something(recorded_steps)
 
                 if !haskey(record, "mutations")
                     record["mutations"] = RecordType()
                 end
                 members_to_record =
                     should_replace ? [pop.members[oldest]] : eltype(pop.members)[]
-                for (parent, child, _) in recorded_steps
+                for (parent, child, _) in steps
                     push!(members_to_record, parent, child)
                 end
                 for member in members_to_record
@@ -176,8 +176,7 @@ function reg_evol_cycle(
                         )
                     end
                 end
-                for (attempt_idx, (parent, child, step_recorder)) in
-                    enumerate(recorded_steps)
+                for (attempt_idx, (parent, child, step_recorder)) in enumerate(steps)
                     mutate_event = RecordType(
                         "type" => "mutate",
                         "time" => time(),
