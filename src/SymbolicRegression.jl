@@ -205,10 +205,9 @@ using Compat: @compat, Fix
         optimize_constants, get_constants_for_optimization,
         set_constants_for_optimization!, extract_gradient_for_optimization,
         AbstractPlugin, MutationEvent,
-        init_plugin_state, init_plugin_states,
+        init_plugin_state,
         on_search_start!, on_search_end!,
         on_generation_end!, on_cycle_end!, on_mutation_end!, init_member,
-        tournament_cost_multiplier, mutation_acceptance_multiplier,
         fork_plugin_state,
     )
 )
