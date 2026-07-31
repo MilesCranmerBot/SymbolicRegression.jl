@@ -350,6 +350,7 @@ function test_entire_pipeline(
                     verbosity=verbosity,
                     options=options,
                     record=RecordType(),
+                    # TODO: Use isolated states so this smoke test does not emit synthetic lifecycle events to shared plugin resources.
                     plugin_states=worker_plugin_states,
                 )[1]
                 tmp_pop = optimize_and_simplify_population(
