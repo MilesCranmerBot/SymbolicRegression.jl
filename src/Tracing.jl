@@ -3,7 +3,9 @@ module TracingModule
 using DynamicExpressions: string_tree
 using ..CoreModule: AbstractOptions, MaybeTrace, TraceType
 using ..ComplexityModule: compute_complexity
-using ..UtilsModule: json3_write, recursive_merge
+using ..UtilsModule: json3_write
+
+const TRACE_SCHEMA_VERSION = 1
 
 @inline new_trace(options::AbstractOptions) = new_trace(options.use_tracing)
 @inline new_trace(::Val{enabled}) where {enabled} = enabled ? TraceType() : nothing
@@ -43,63 +45,53 @@ end
     return nothing
 end
 
-@inline function trace_search_options!(trace::MaybeTrace, options)
-    !isnothing(trace) && (trace["options"] = string(options))
+@inline function initialize_trace!(trace::MaybeTrace, options, filename)
+    isnothing(trace) && return nothing
+    trace["schema_version"] = TRACE_SCHEMA_VERSION
+    trace["record_type"] = "search"
+    trace["started_at"] = time()
+    trace["options"] = string(options)
+    write_trace(trace, filename; append=false)
+    empty!(trace)
     return nothing
 end
 
-@inline function trace_worker!(trace::MaybeTrace, out, pop)
-    !isnothing(trace) && (trace["out$(out)_pop$(pop)"] = TraceType())
+@inline function write_trace(trace::MaybeTrace, filename; append::Bool=true)
+    !isnothing(trace) && json3_write(trace, filename; append)
     return nothing
 end
 
-@inline merge_traces(trace::MaybeTrace, incoming) =
-    isnothing(trace) ? nothing : recursive_merge(trace, incoming)
-
-@inline function write_trace(trace::MaybeTrace, filename)
-    !isnothing(trace) && json3_write(trace, filename)
-    return nothing
-end
-
-@inline function next_trace_iteration(trace::MaybeTrace, out, pop)
-    isnothing(trace) && return 0
-    key = "out$(out)_pop$(pop)"
-    return find_iteration_from_trace(key, trace) + 1
-end
-
-function find_iteration_from_trace(key::String, trace::TraceType)
-    iteration = 0
-    while haskey(trace[key], "iteration$(iteration)")
-        iteration += 1
-    end
-    return iteration - 1
+@inline function next_trace_iteration(trace::MaybeTrace)
+    return isnothing(trace) ? 0 : (trace["iteration"]::Int) + 1
 end
 
 @inline function trace_iteration_start!(
     trace::MaybeTrace, out, pop, iteration, population, options
 )
     isnothing(trace) && return nothing
-    trace["out$(out)_pop$(pop)"] = TraceType(
-        "iteration$(iteration)" => _trace_population(population, options)
-    )
+    trace["schema_version"] = TRACE_SCHEMA_VERSION
+    trace["record_type"] = "iteration"
+    trace["output"] = out
+    trace["population"] = pop
+    trace["iteration"] = iteration
+    trace["started_at"] = time()
+    trace["members"] = _trace_population(population, options)
+    trace["mutations"] = TraceType()
     return nothing
 end
 
 function _trace_population(population, options)
-    return TraceType(
-        "population" => [
-            TraceType(
-                "tree" => string_tree(member.tree, options; pretty=false),
-                "loss" => member.loss,
-                "cost" => member.cost,
-                "complexity" => compute_complexity(member, options),
-                "birth" => member.birth,
-                "ref" => member.ref,
-                "parent" => member.parent,
-            ) for member in population.members
-        ],
-        "time" => time(),
-    )
+    return [
+        TraceType(
+            "tree" => string_tree(member.tree, options; pretty=false),
+            "loss" => member.loss,
+            "cost" => member.cost,
+            "complexity" => compute_complexity(member, options),
+            "birth" => member.birth,
+            "ref" => member.ref,
+            "parent" => member.parent,
+        ) for member in population.members
+    ]
 end
 
 function _trace_member!(mutations::TraceType, member, options)

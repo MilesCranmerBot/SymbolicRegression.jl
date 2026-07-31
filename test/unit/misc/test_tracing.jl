@@ -1,7 +1,7 @@
 @testitem "Disabled tracing is allocation-free" begin
     using SymbolicRegression: Options, TraceType
     using SymbolicRegression.TracingModule:
-        merge_traces,
+        initialize_trace!,
         new_step_trace,
         new_trace,
         new_traced_steps,
@@ -15,8 +15,6 @@
         trace_mutation_step!,
         trace_mutation_type!,
         trace_optimization!,
-        trace_search_options!,
-        trace_worker!,
         write_trace
     using Test
 
@@ -31,11 +29,9 @@
     @test trace_mutation_type!(nothing, :optimize) === nothing
     @test trace_mutation_result!(nothing, "reject", "acceptance") === nothing
     @test trace_identity_mutation!(nothing) === nothing
-    @test trace_search_options!(nothing, options) === nothing
-    @test trace_worker!(nothing, 1, 1) === nothing
-    @test merge_traces(nothing, nothing) === nothing
-    @test write_trace(nothing, "unused.json") === nothing
-    @test next_trace_iteration(nothing, 1, 1) == 0
+    @test initialize_trace!(nothing, options, "unused.jsonl") === nothing
+    @test write_trace(nothing, "unused.jsonl") === nothing
+    @test next_trace_iteration(nothing) == 0
     @test trace_iteration_start!(nothing, 1, 1, 0, nothing, options) === nothing
     @test trace_optimization!(nothing, nothing, 1, 2, false, options) === nothing
     @test trace_mutation_attempts!(nothing, nothing, nothing, 1, false, 0, options) ===
@@ -53,11 +49,9 @@
     @test @allocated(trace_mutation_type!(nothing, :optimize)) == 0
     @test @allocated(trace_mutation_result!(nothing, "reject", "acceptance")) == 0
     @test @allocated(trace_identity_mutation!(nothing)) == 0
-    @test @allocated(trace_search_options!(nothing, options)) == 0
-    @test @allocated(trace_worker!(nothing, 1, 1)) == 0
-    @test @allocated(merge_traces(nothing, nothing)) == 0
-    @test @allocated(write_trace(nothing, "unused.json")) == 0
-    @test @allocated(next_trace_iteration(nothing, 1, 1)) == 0
+    @test @allocated(initialize_trace!(nothing, options, "unused.jsonl")) == 0
+    @test @allocated(write_trace(nothing, "unused.jsonl")) == 0
+    @test @allocated(next_trace_iteration(nothing)) == 0
     @test @allocated(trace_iteration_start!(nothing, 1, 1, 0, nothing, options)) == 0
     @test @allocated(trace_optimization!(nothing, nothing, 1, 2, false, options)) == 0
     @test @allocated(
@@ -78,4 +72,6 @@
     trace_mutation_result!(trace, "accept", "pass")
     @test trace ==
         TraceType("type" => "mutate_constant", "result" => "accept", "reason" => "pass")
+    trace["iteration"] = 4
+    @test next_trace_iteration(trace) == 5
 end

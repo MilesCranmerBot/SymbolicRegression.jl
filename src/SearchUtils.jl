@@ -629,7 +629,7 @@ Base.@kwdef struct SearchState{
     cycles_remaining::Vector{Int}
     cur_maxsizes::Vector{Int}
     stdin_reader::StdinReader
-    trace::Base.RefValue{TraceStateType}
+    trace_prototype::TraceStateType
     seed_members::Vector{Vector{PM}}
     plugin_states::Vector{PluginStatesType}
     worker_plugin_states::Vector{Vector{WorkerPluginStatesType}}

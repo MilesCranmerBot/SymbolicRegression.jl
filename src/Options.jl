@@ -668,7 +668,7 @@ $(OPTION_DESCRIPTIONS)
     una_constraints=nothing,
     terminal_width::Union{Nothing,Integer}=nothing,
     use_tracing::Bool=false,
-    tracing_file::AbstractString="pysr_trace.json",
+    tracing_file::AbstractString="pysr_trace.jsonl",
     popmember_type::Type=default_popmember_type(),
     plugins::Union{Tuple,AbstractVector}=(),
     default_plugins::Union{Nothing,Tuple,AbstractVector}=nothing,

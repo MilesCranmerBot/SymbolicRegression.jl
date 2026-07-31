@@ -1,11 +1,12 @@
 @testitem "Test JSON3 tracing" begin
     using SymbolicRegression
-    using SymbolicRegression.UtilsModule: recursive_merge
+    using SymbolicRegression: TraceType
+    using SymbolicRegression.TracingModule: initialize_trace!
     using JSON3
     include(joinpath(@__DIR__, "..", "..", "..", "test_params.jl"))
 
     base_dir = mktempdir()
-    tracing_file = joinpath(base_dir, "pysr_trace.json")
+    tracing_file = joinpath(base_dir, "pysr_trace.jsonl")
     X = 2 .* randn(Float32, 2, 1000)
     y = 3 * cos.(X[2, :]) + X[1, :] .^ 2 .- 2
 
@@ -20,34 +21,52 @@
         complexity_of_operators=[cos => 2],
     )
 
+    prototype = TraceType()
+    prototype_file = joinpath(base_dir, "prototype.jsonl")
+    initialize_trace!(prototype, options, prototype_file)
+    @test isempty(prototype)
+    @test length(readlines(prototype_file)) == 1
+
     hall_of_fame = equation_search(
         X, y; niterations=5, options=options, parallelism=:multithreading
     )
 
-    data = open(options.tracing_file, "r") do io
-        JSON3.read(io; allow_inf=true)
+    contents = read(options.tracing_file, String)
+    records = [JSON3.read(line; allow_inf=true) for line in eachline(IOBuffer(contents))]
+    search_record = first(records)
+    iteration_records = records[2:end]
+
+    @test endswith(contents, '\n')
+    @test search_record.schema_version == 1
+    @test search_record.record_type == "search"
+    @test contains(search_record.options, "Options")
+    @test search_record.started_at isa Real
+
+    @test !isempty(iteration_records)
+    @test all(record -> record.schema_version == 1, iteration_records)
+    @test all(record -> record.record_type == "iteration", iteration_records)
+    @test all(record -> record.output == 1, iteration_records)
+    @test Set(record.population for record in iteration_records) == Set((1, 2))
+    @test all(
+        record -> length(record.members) == options.population_size, iteration_records
+    )
+    @test all(record -> haskey(record, :mutations), iteration_records)
+
+    for population in 1:(options.populations)
+        iterations = sort([
+            record.iteration for
+            record in iteration_records if record.population == population
+        ])
+        @test iterations == collect(0:(length(iterations) - 1))
     end
 
-    @test haskey(data, :options)
-    @test haskey(data, :out1_pop1)
-    @test haskey(data, :out1_pop2)
-    @test haskey(data, :mutations)
-
-    # Test that "Options" is part of the string in `data.options`:
-    @test contains(data.options, "Options")
-    @test length(data.mutations) > 1000
-
-    # Check whether 10 random elements have the right properties:
-    for (i, key) in enumerate(keys(data.mutations))
-        @test haskey(data.mutations[key], :events)
-        @test haskey(data.mutations[key], :cost)
-        @test haskey(data.mutations[key], :tree)
-        @test haskey(data.mutations[key], :loss)
-        @test haskey(data.mutations[key], :parent)
-        if i > 10
-            break
+    mutations = [
+        mutation for record in iteration_records for mutation in values(record.mutations)
+    ]
+    @test length(mutations) > 1000
+    for mutation in mutations[1:10]
+        for key in (:events, :cost, :tree, :loss, :parent)
+            @test haskey(mutation, key)
         end
     end
-
-    @test_throws ErrorException recursive_merge()
 end

@@ -43,7 +43,6 @@
         worker_output::Vector{Vector{Future}}
         plugin_states::Vector{Tuple{TeardownProbeState}}
         stdin_reader::TeardownProbeReader
-        trace::Base.RefValue{Nothing}
     end
 
     called = Ref(false)
@@ -64,7 +63,7 @@
     try
         future = Future(proc)
         search_state = TeardownProbeSearchState(
-            [proc], true, [[future]], [(plugin_state,)], TeardownProbeReader(), Ref(nothing)
+            [proc], true, [[future]], [(plugin_state,)], TeardownProbeReader()
         )
 
         elapsed = @elapsed SymbolicRegression._tear_down!(

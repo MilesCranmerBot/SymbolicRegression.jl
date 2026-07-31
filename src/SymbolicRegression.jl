@@ -388,13 +388,7 @@ using .MutateModule: mutate!, condition_mutation_weights!, MutationResult
 using .SingleIterationModule: s_r_cycle, optimize_and_simplify_population
 using .ProgressBarsModule: WrappedProgressBar
 using .TracingModule:
-    merge_traces,
-    new_trace,
-    next_trace_iteration,
-    trace_iteration_start!,
-    trace_search_options!,
-    trace_worker!,
-    write_trace
+    initialize_trace!, new_trace, next_trace_iteration, trace_iteration_start!, write_trace
 using .MigrationModule: migrate!
 using .SearchUtilsModule:
     AbstractSearchState,
@@ -730,7 +724,7 @@ end
     stdin_reader = watch_stream(options.input_stream)
     example_dataset = first(datasets)
     trace = new_trace(options)
-    trace_search_options!(trace, options)
+    initialize_trace!(trace, options, options.tracing_file)
 
     nout = length(datasets)
     PMType = infer_popmember_type(T, L, example_dataset, options)
@@ -851,7 +845,7 @@ end
         cycles_remaining=cycles_remaining,
         cur_maxsizes=cur_maxsizes,
         stdin_reader=stdin_reader,
-        trace=Ref(trace),
+        trace_prototype=trace,
         seed_members=seed_members,
         plugin_states=plugin_states,
         worker_plugin_states=worker_plugin_states,
@@ -975,7 +969,7 @@ function _preserve_loaded_state!(
             state.worker_output[j][i],
             PopType,
             HallType,
-            eltype(typeof(state.trace)),
+            typeof(state.trace_prototype),
             eltype(eltype(state.worker_plugin_states)),
         )
         state.last_pops[j][i] = copy(pop)
@@ -997,7 +991,6 @@ function _warmup_search!(
     for j in 1:nout, i in 1:(options.populations)
         dataset = datasets[j]
         cur_maxsize = state.cur_maxsizes[j]
-        trace_worker!(state.trace[], j, i)
         worker_idx = assign_next_worker!(
             state.worker_assignment; out=j, pop=i, parallelism=ropt.parallelism, state.procs
         )
@@ -1012,7 +1005,7 @@ function _warmup_search!(
             last_pop,
             PopType,
             HallType,
-            eltype(typeof(state.trace)),
+            typeof(state.trace_prototype),
             eltype(eltype(state.worker_plugin_states)),
         )
         updated_pop = @sr_spawner(
@@ -1030,7 +1023,7 @@ function _warmup_search!(
                 )::DefaultWorkerOutputType{
                     Population{T,L,N},
                     HallOfFame{T,L,N},
-                    eltype(typeof(state.trace)),
+                    typeof(state.trace_prototype),
                     typeof(worker_plugin_states),
                 }
             end,
@@ -1125,12 +1118,12 @@ function _main_search_loop!(
                 end::DefaultWorkerOutputType{
                     Population{T,L,N},
                     HallOfFame{T,L,N},
-                    eltype(typeof(state.trace)),
+                    typeof(state.trace_prototype),
                     eltype(eltype(state.worker_plugin_states)),
                 }
             state.last_pops[j][i] = copy(cur_pop)
             state.best_sub_pops[j][i] = best_sub_pop(cur_pop; topn=options.topn)
-            state.trace[] = merge_traces(state.trace[], cur_trace)
+            write_trace(cur_trace, options.tracing_file)
             state.num_evals[j][i] += cur_num_evals
             dataset = datasets[j]
             cur_maxsize = state.cur_maxsizes[j]
@@ -1189,7 +1182,7 @@ function _main_search_loop!(
                 parallelism=ropt.parallelism,
                 state.procs,
             )
-            iteration = next_trace_iteration(state.trace[], j, i)
+            iteration = next_trace_iteration(cur_trace)
 
             in_pop = copy(cur_pop::Population{T,L,N})
             worker_plugin_states = strictmap(
@@ -1330,7 +1323,6 @@ function _tear_down!(
         # TODO: We should unwrap the error monitors here
         state.we_created_procs && rmprocs(state.procs)
     end
-    write_trace(state.trace[], options.tracing_file)
     return nothing
 end
 function _format_output(
