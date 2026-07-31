@@ -23,7 +23,7 @@ using ..CoreModule:
     Dataset,
     AbstractOptions,
     Options,
-    RecordType,
+    MaybeTrace,
     max_features,
     create_expression,
     init_value
@@ -285,13 +285,19 @@ function assign_next_worker!(
     end
 end
 
-const DefaultWorkerOutputType{P,H,S<:Tuple} = Tuple{P,H,RecordType,Float64,S}
+const DefaultWorkerOutputType{P,H,TR<:MaybeTrace,S<:Tuple} = Tuple{P,H,TR,Float64,S}
 
 function get_worker_output_type(
-    ::Val{PARALLELISM}, ::Type{PopType}, ::Type{HallOfFameType}, ::Type{PluginStatesType}
-) where {PARALLELISM,PopType,HallOfFameType,PluginStatesType<:Tuple}
+    ::Val{PARALLELISM},
+    ::Type{PopType},
+    ::Type{HallOfFameType},
+    ::Type{TraceStateType},
+    ::Type{PluginStatesType},
+) where {
+    PARALLELISM,PopType,HallOfFameType,TraceStateType<:MaybeTrace,PluginStatesType<:Tuple
+}
     if PARALLELISM == :serial
-        DefaultWorkerOutputType{PopType,HallOfFameType,PluginStatesType}
+        DefaultWorkerOutputType{PopType,HallOfFameType,TraceStateType,PluginStatesType}
     elseif PARALLELISM == :multiprocessing
         Future
     else
@@ -300,9 +306,9 @@ function get_worker_output_type(
 end
 
 #! format: off
-extract_from_worker(p::DefaultWorkerOutputType, _, _, _) = p
-extract_from_worker(f::Future, ::Type{P}, ::Type{H}, ::Type{S}) where {P,H,S<:Tuple} = fetch(f)::DefaultWorkerOutputType{P,H,S}
-extract_from_worker(t::Task, ::Type{P}, ::Type{H}, ::Type{S}) where {P,H,S<:Tuple} = fetch(t)::DefaultWorkerOutputType{P,H,S}
+extract_from_worker(p::DefaultWorkerOutputType, _, _, _, _) = p
+extract_from_worker(f::Future, ::Type{P}, ::Type{H}, ::Type{TR}, ::Type{S}) where {P,H,TR<:MaybeTrace,S<:Tuple} = fetch(f)::DefaultWorkerOutputType{P,H,TR,S}
+extract_from_worker(t::Task, ::Type{P}, ::Type{H}, ::Type{TR}, ::Type{S}) where {P,H,TR<:MaybeTrace,S<:Tuple} = fetch(t)::DefaultWorkerOutputType{P,H,TR,S}
 #! format: on
 
 macro sr_spawner(expr, kws...)
@@ -406,7 +412,7 @@ end
 function _check_for_loss_threshold(halls_of_fame, f::F, options::AbstractOptions) where {F}
     return all(halls_of_fame) do hof
         any(hof.members[hof.exists]) do member
-            f(member.loss, compute_complexity(member, options))::Bool
+            return f(member.loss, compute_complexity(member, options))::Bool
         end
     end
 end
@@ -592,7 +598,7 @@ Look through the source of `equation_search` to see how this is used.
 abstract type AbstractSearchState{T,L,N<:AbstractExpression{T}} end
 
 """
-    SearchState{T,L,N,PM,WorkerOutputType,ChannelType,PluginStatesType,WorkerPluginStatesType} <: AbstractSearchState{T,L,N}
+    SearchState{T,L,N,PM,WorkerOutputType,ChannelType,TraceStateType,PluginStatesType,WorkerPluginStatesType} <: AbstractSearchState{T,L,N}
 
 The state of the search, including the populations, worker outputs, tasks, and
 channels. This is used to manage the search and keep track of runtime variables
@@ -605,6 +611,7 @@ Base.@kwdef struct SearchState{
     PM<:AbstractPopMember{T,L,N},
     WorkerOutputType,
     ChannelType,
+    TraceStateType<:MaybeTrace,
     PluginStatesType<:Tuple,
     WorkerPluginStatesType<:Tuple,
 } <: AbstractSearchState{T,L,N}
@@ -622,7 +629,7 @@ Base.@kwdef struct SearchState{
     cycles_remaining::Vector{Int}
     cur_maxsizes::Vector{Int}
     stdin_reader::StdinReader
-    record::Base.RefValue{RecordType}
+    trace::Base.RefValue{TraceStateType}
     seed_members::Vector{Vector{PM}}
     plugin_states::Vector{PluginStatesType}
     worker_plugin_states::Vector{Vector{WorkerPluginStatesType}}

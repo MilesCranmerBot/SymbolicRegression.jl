@@ -189,7 +189,7 @@ struct Options{
     _return_state,
     AD,
     print_precision,
-    _use_recorder,
+    _use_tracing,
 } <: AbstractOptions
     operators::OP
     op_constraints::OP_CONSTRAINTS
@@ -245,7 +245,7 @@ struct Options{
     optimizer_nrestarts::Int
     optimizer_options::Optim.Options
     autodiff_backend::AD
-    recorder_file::String
+    tracing_file::String
     prob_pick_first::Float64
     early_stop_condition::Union{Function,Nothing}
     return_state::Val{_return_state}
@@ -255,7 +255,7 @@ struct Options{
     skip_mutation_failures::Bool
     deterministic::Bool
     define_helper_functions::Bool
-    use_recorder::Val{_use_recorder}
+    use_tracing::Val{_use_tracing}
     popmember_type::Type{PM}
     plugins::PT
 end

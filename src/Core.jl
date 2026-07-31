@@ -14,7 +14,7 @@ include("Plugin.jl")
 include("Options.jl")
 include("InterfaceDataTypes.jl")
 
-using .ProgramConstantsModule: RecordType, DATA_TYPE, LOSS_TYPE
+using .ProgramConstantsModule: MaybeTrace, TraceType, DATA_TYPE, LOSS_TYPE
 using .DatasetModule:
     Dataset,
     BasicDataset,

@@ -447,7 +447,7 @@ end
 
 Result of one engine-owned mutation attempt. Middleware selects and returns a
 result produced by `next_step`; evaluation accounting, Hall-of-Fame updates,
-and recording remain owned by the engine.
+and tracing remain owned by the engine.
 """
 struct MutationStepResult{P}
     member::P
