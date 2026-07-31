@@ -1,19 +1,19 @@
-@testitem "Test JSON3 recorder" begin
+@testitem "Test JSON3 tracing" begin
     using SymbolicRegression
     using SymbolicRegression.UtilsModule: recursive_merge
     using JSON3
     include(joinpath(@__DIR__, "..", "..", "..", "test_params.jl"))
 
     base_dir = mktempdir()
-    recorder_file = joinpath(base_dir, "pysr_recorder.json")
+    tracing_file = joinpath(base_dir, "pysr_trace.json")
     X = 2 .* randn(Float32, 2, 1000)
     y = 3 * cos.(X[2, :]) + X[1, :] .^ 2 .- 2
 
     options = SymbolicRegression.Options(;
         binary_operators=(+, *, /, -),
         unary_operators=(cos,),
-        use_recorder=true,
-        recorder_file=recorder_file,
+        use_tracing=true,
+        tracing_file=tracing_file,
         populations=2,
         population_size=100,
         maxsize=20,
@@ -24,7 +24,7 @@
         X, y; niterations=5, options=options, parallelism=:multithreading
     )
 
-    data = open(options.recorder_file, "r") do io
+    data = open(options.tracing_file, "r") do io
         JSON3.read(io; allow_inf=true)
     end
 

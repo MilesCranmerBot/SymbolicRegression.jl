@@ -237,7 +237,6 @@ using DispatchDoctor: @stable, @unstable
     include("InterfaceDynamicQuantities.jl")
     include("Core.jl")
     include("InterfaceDynamicExpressions.jl")
-    include("Recorder.jl")
     include("Complexity.jl")
     include("DimensionalAnalysis.jl")
     include("CheckConstraints.jl")
@@ -250,6 +249,7 @@ using DispatchDoctor: @stable, @unstable
     include("ConstantOptimization.jl")
     include("Population.jl")
     include("HallOfFame.jl")
+    include("Tracing.jl")
     include("ExpressionBuilder.jl")
     include("Mutate.jl")
     include("RegularizedEvolution.jl")
@@ -273,7 +273,7 @@ end
 using .CoreModule:
     DATA_TYPE,
     LOSS_TYPE,
-    RecordType,
+    TraceType,
     Dataset,
     BasicDataset,
     SubDataset,
@@ -362,7 +362,7 @@ using .CoreModule:
     prepare_mutation_context,
     condition_mutation!,
     ConstantMutationContext
-using .UtilsModule: is_anonymous_function, recursive_merge, json3_write, strictmap, @ignore
+using .UtilsModule: is_anonymous_function, strictmap, @ignore
 using .ComplexityModule: compute_complexity
 using .CheckConstraintsModule: check_constraints
 using .MutationFunctionsModule:
@@ -378,7 +378,7 @@ using .ConstantOptimizationModule:
 using .PopMemberModule:
     AbstractPopMember, PopMember, reset_birth!, popmember_type, expression_type
 using .CoreModule.UtilsModule: get_birth_order
-using .PopulationModule: Population, best_sub_pop, record_population, best_of_sample
+using .PopulationModule: Population, best_sub_pop, best_of_sample
 using .HallOfFameModule:
     HallOfFame,
     calculate_pareto_frontier,
@@ -387,7 +387,14 @@ using .HallOfFameModule:
 using .MutateModule: mutate!, condition_mutation_weights!, MutationResult
 using .SingleIterationModule: s_r_cycle, optimize_and_simplify_population
 using .ProgressBarsModule: WrappedProgressBar
-using .RecorderModule: @recorder, find_iteration_from_record
+using .TracingModule:
+    merge_traces,
+    new_trace,
+    next_trace_iteration,
+    trace_iteration_start!,
+    trace_search_options!,
+    trace_worker!,
+    write_trace
 using .MigrationModule: migrate!
 using .SearchUtilsModule:
     AbstractSearchState,
@@ -722,8 +729,8 @@ end
 ) where {T,L,D<:Dataset{T,L}}
     stdin_reader = watch_stream(options.input_stream)
     example_dataset = first(datasets)
-    record = RecordType()
-    @recorder record["options"] = "$(options)"
+    trace = new_trace(options)
+    trace_search_options!(trace, options)
 
     nout = length(datasets)
     PMType = infer_popmember_type(T, L, example_dataset, options)
@@ -759,7 +766,11 @@ end
         ] for j in 1:nout
     ]
     WorkerOutputType = get_worker_output_type(
-        Val(ropt.parallelism), PopType, HallOfFameType, WorkerPluginStatesType
+        Val(ropt.parallelism),
+        PopType,
+        HallOfFameType,
+        typeof(trace),
+        WorkerPluginStatesType,
     )
     ChannelType = ropt.parallelism == :multiprocessing ? RemoteChannel : Channel
 
@@ -816,7 +827,15 @@ end
     seed_members = [Vector{PMType}() for j in 1:nout]
 
     return SearchState{
-        T,L,NT,PMType,WorkerOutputType,ChannelType,PluginStatesType,WorkerPluginStatesType
+        T,
+        L,
+        NT,
+        PMType,
+        WorkerOutputType,
+        ChannelType,
+        typeof(trace),
+        PluginStatesType,
+        WorkerPluginStatesType,
     }(;
         procs=procs,
         we_created_procs=we_created_procs,
@@ -832,7 +851,7 @@ end
         cycles_remaining=cycles_remaining,
         cur_maxsizes=cur_maxsizes,
         stdin_reader=stdin_reader,
-        record=Ref(record),
+        trace=Ref(trace),
         seed_members=seed_members,
         plugin_states=plugin_states,
         worker_plugin_states=worker_plugin_states,
@@ -900,7 +919,7 @@ function _initialize_search!(
                         (
                             copy_pop,
                             HallOfFame(options, _dataset),
-                            RecordType(),
+                            new_trace(options),
                             0.0,
                             _worker_plugin_states,
                         )
@@ -924,7 +943,7 @@ function _initialize_search!(
                                 plugin_states=_plugin_states,
                             ),
                             HallOfFame(options, _dataset),
-                            RecordType(),
+                            new_trace(options),
                             Float64(options.population_size),
                             _worker_plugin_states,
                         )
@@ -956,6 +975,7 @@ function _preserve_loaded_state!(
             state.worker_output[j][i],
             PopType,
             HallType,
+            eltype(typeof(state.trace)),
             eltype(eltype(state.worker_plugin_states)),
         )
         state.last_pops[j][i] = copy(pop)
@@ -977,7 +997,7 @@ function _warmup_search!(
     for j in 1:nout, i in 1:(options.populations)
         dataset = datasets[j]
         cur_maxsize = state.cur_maxsizes[j]
-        @recorder state.record[]["out$(j)_pop$(i)"] = RecordType()
+        trace_worker!(state.trace[], j, i)
         worker_idx = assign_next_worker!(
             state.worker_assignment; out=j, pop=i, parallelism=ropt.parallelism, state.procs
         )
@@ -989,7 +1009,11 @@ function _warmup_search!(
         HallType = HallOfFame{T,L,N,PM}
 
         (in_pop, _, _, _, worker_plugin_states) = extract_from_worker(
-            last_pop, PopType, HallType, eltype(eltype(state.worker_plugin_states))
+            last_pop,
+            PopType,
+            HallType,
+            eltype(typeof(state.trace)),
+            eltype(eltype(state.worker_plugin_states)),
         )
         updated_pop = @sr_spawner(
             begin
@@ -1004,7 +1028,10 @@ function _warmup_search!(
                     cur_maxsize,
                     plugin_states=worker_plugin_states,
                 )::DefaultWorkerOutputType{
-                    Population{T,L,N},HallOfFame{T,L,N},typeof(worker_plugin_states)
+                    Population{T,L,N},
+                    HallOfFame{T,L,N},
+                    eltype(typeof(state.trace)),
+                    typeof(worker_plugin_states),
                 }
             end,
             parallelism = ropt.parallelism,
@@ -1085,7 +1112,7 @@ function _main_search_loop!(
         population_ready &= (state.cycles_remaining[j] > 0)
         if population_ready
             # Take the fetch operation from the channel since its ready
-            (cur_pop, best_seen, cur_record, cur_num_evals, returned_plugin_states) =
+            (cur_pop, best_seen, cur_trace, cur_num_evals, returned_plugin_states) =
                 if ropt.parallelism in
                     (
                     :multiprocessing, :multithreading
@@ -1098,11 +1125,12 @@ function _main_search_loop!(
                 end::DefaultWorkerOutputType{
                     Population{T,L,N},
                     HallOfFame{T,L,N},
+                    eltype(typeof(state.trace)),
                     eltype(eltype(state.worker_plugin_states)),
                 }
             state.last_pops[j][i] = copy(cur_pop)
             state.best_sub_pops[j][i] = best_sub_pop(cur_pop; topn=options.topn)
-            @recorder state.record[] = recursive_merge(state.record[], cur_record)
+            state.trace[] = merge_traces(state.trace[], cur_trace)
             state.num_evals[j][i] += cur_num_evals
             dataset = datasets[j]
             cur_maxsize = state.cur_maxsizes[j]
@@ -1123,7 +1151,9 @@ function _main_search_loop!(
             # population the worker actually produced, before migration mixes
             # in pareto/seed/best-of-each members from outside this cycle.
             strictmap(options.plugins, state.plugin_states[j]) do plugin, pstate
-                on_generation_end!(pstate, plugin, state, dataset, options, ropt, cur_pop)
+                return on_generation_end!(
+                    pstate, plugin, state, dataset, options, ropt, cur_pop
+                )
             end
 
             ###################################################################
@@ -1159,18 +1189,15 @@ function _main_search_loop!(
                 parallelism=ropt.parallelism,
                 state.procs,
             )
-            iteration = if options.use_recorder isa Val{true}
-                key = "out$(j)_pop$(i)"
-                find_iteration_from_record(key, state.record[]) + 1
-            else
-                0
-            end
+            iteration = next_trace_iteration(state.trace[], j, i)
 
             in_pop = copy(cur_pop::Population{T,L,N})
             worker_plugin_states = strictmap(
                 options.plugins, returned_plugin_states, state.plugin_states[j]
             ) do plugin, worker_state, latest_head_state
-                refresh_worker_plugin_state(worker_state, latest_head_state, plugin, dataset)
+                return refresh_worker_plugin_state(
+                    worker_state, latest_head_state, plugin, dataset
+                )
             end
             state.worker_output[j][i] = @sr_spawner(
                 begin
@@ -1296,14 +1323,14 @@ function _tear_down!(
     end
     for j in eachindex(datasets, state.plugin_states)
         strictmap(options.plugins, state.plugin_states[j]) do plugin, pstate
-            on_search_end!(pstate, plugin, state, datasets[j], options, ropt)
+            return on_search_end!(pstate, plugin, state, datasets[j], options, ropt)
         end
     end
     if ropt.parallelism == :multiprocessing
         # TODO: We should unwrap the error monitors here
         state.we_created_procs && rmprocs(state.procs)
     end
-    @recorder json3_write(state.record[], options.recorder_file)
+    write_trace(state.trace[], options.tracing_file)
     return nothing
 end
 function _format_output(
@@ -1336,10 +1363,8 @@ end
     cur_maxsize::Int,
     plugin_states::Tuple,
 ) where {T,L,N}
-    record = RecordType()
-    @recorder record["out$(out)_pop$(pop)"] = RecordType(
-        "iteration$(iteration)" => record_population(in_pop, options)
-    )
+    trace = new_trace(options)
+    trace_iteration_start!(trace, out, pop, iteration, in_pop, options)
     num_evals = 0.0
     out_pop, best_seen, evals_from_cycle = s_r_cycle(
         dataset,
@@ -1348,12 +1373,12 @@ end
         cur_maxsize;
         verbosity=verbosity,
         options=options,
-        record=record,
+        trace=trace,
         plugin_states,
     )
     num_evals += evals_from_cycle
     out_pop, evals_from_optimize = optimize_and_simplify_population(
-        dataset, out_pop, options, cur_maxsize, record
+        dataset, out_pop, options, cur_maxsize, trace
     )
     num_evals += evals_from_optimize
     if options.batching
@@ -1366,7 +1391,7 @@ end
             end
         end
     end
-    return (out_pop, best_seen, record, num_evals, plugin_states)
+    return (out_pop, best_seen, trace, num_evals, plugin_states)
 end
 function _info_dump(
     state::AbstractSearchState,
@@ -1441,7 +1466,7 @@ using ConstructionBase: ConstructionBase as _
 include("precompile.jl")
 redirect_stdout(devnull) do
     redirect_stderr(devnull) do
-        do_precompilation(Val(:precompile))
+        return do_precompilation(Val(:precompile))
     end
 end
 

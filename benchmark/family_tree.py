@@ -4,10 +4,10 @@ from tqdm import tqdm
 
 
 def load_pysr_graph(json_path, progress=True):
-    """Load a PySR recorder JSON file into a NetworkX directed graph.
+    """Load a PySR trace JSON file into a NetworkX directed graph.
 
     Args:
-        json_path: Path to pysr_recorder.json
+        json_path: Path to pysr_trace.json
         progress: Show progress bars
 
     Returns:
@@ -190,7 +190,7 @@ def simplify_graph(G):
 
 if __name__ == "__main__":
     # Example usage
-    G = load_pysr_graph("pysr_recorder.json")
+    G = load_pysr_graph("pysr_trace.json")
 
     # Basic stats
     print(f"Loaded graph with {len(G)} nodes and {G.size()} edges")

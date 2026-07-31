@@ -2,7 +2,7 @@ using BenchmarkTools
 using SymbolicRegression, BenchmarkTools, Random
 using SymbolicRegression.MutateModule: next_generation
 using SymbolicRegression.AdaptiveParsimonyModule: RunningSearchStatistics
-using SymbolicRegression.RecorderModule: RecordType
+using SymbolicRegression: TraceType
 using SymbolicRegression.PopulationModule: best_of_sample
 using SymbolicRegression.ConstantOptimizationModule: optimize_constants
 using SymbolicRegression.CheckConstraintsModule: check_constraints
@@ -83,7 +83,7 @@ end
 function _plugin_states(options, dataset)
     return if hasproperty(options, :plugins)
         map(options.plugins) do plugin
-            SymbolicRegression.init_plugin_state(plugin, options, dataset)
+            return SymbolicRegression.init_plugin_state(plugin, options, dataset)
         end
     else
         ()
@@ -109,7 +109,7 @@ function _best_of_sample_api(state)
     elseif applicable(best_of_sample, state.pop, state.rss, state.options)
         return Val(:rss)
     end
-    error("Unsupported `best_of_sample` signature.")
+    return error("Unsupported `best_of_sample` signature.")
 end
 
 function _run_best_of_sample(::Val{:plugin_states}, state)
@@ -139,7 +139,7 @@ function _setup_next_generation()
         unary_operators=[sin, cos], binary_operators=[+, -, *, /], mutation_weights
     )
     plugin_states = _plugin_states(options, dataset)
-    recorder = RecordType()
+    trace = TraceType()
     temperature = 1.0
     curmaxsize = 20
     rss = RunningSearchStatistics(; options)
@@ -152,9 +152,7 @@ function _setup_next_generation()
         PopMember(dataset, expression, options; deterministic=false) for
         expression in expressions
     ]
-    return (;
-        dataset, options, plugin_states, recorder, temperature, curmaxsize, rss, members
-    )
+    return (; dataset, options, plugin_states, trace, temperature, curmaxsize, rss, members)
 end
 
 function _next_generation_api(state)
@@ -181,7 +179,7 @@ function _next_generation_api(state)
     )
         return Val(:rss)
     end
-    error("Unsupported `next_generation` signature.")
+    return error("Unsupported `next_generation` signature.")
 end
 
 function _run_next_generation(::Val{:plugin_states}, state)
@@ -191,7 +189,7 @@ function _run_next_generation(::Val{:plugin_states}, state)
             member,
             state.curmaxsize,
             state.options;
-            tmp_recorder=state.recorder,
+            tmp_trace=state.trace,
             plugin_states=state.plugin_states,
         )
     end
@@ -204,7 +202,7 @@ function _run_next_generation(::Val{:temperature}, state)
             state.temperature,
             state.curmaxsize,
             state.options;
-            tmp_recorder=state.recorder,
+            tmp_trace=state.trace,
             plugin_states=state.plugin_states,
         )
     end
@@ -218,7 +216,7 @@ function _run_next_generation(::Val{:rss}, state)
             state.curmaxsize,
             state.rss,
             state.options;
-            tmp_recorder=state.recorder,
+            tmp_trace=state.trace,
         )
     end
 end

@@ -1,0 +1,81 @@
+@testitem "Disabled tracing is allocation-free" begin
+    using SymbolicRegression: Options, TraceType
+    using SymbolicRegression.TracingModule:
+        merge_traces,
+        new_step_trace,
+        new_trace,
+        new_traced_steps,
+        next_trace_iteration,
+        reset_traced_steps!,
+        trace_crossover!,
+        trace_identity_mutation!,
+        trace_iteration_start!,
+        trace_mutation_attempts!,
+        trace_mutation_result!,
+        trace_mutation_step!,
+        trace_mutation_type!,
+        trace_optimization!,
+        trace_search_options!,
+        trace_worker!,
+        write_trace
+    using Test
+
+    options = Options(; binary_operators=(+, *), default_plugins=())
+
+    @test new_trace(options) === nothing
+    @test new_trace(nothing) === nothing
+    @test new_step_trace(nothing) === nothing
+    @test new_traced_steps(nothing, Int) === nothing
+    @test reset_traced_steps!(nothing) === nothing
+    @test trace_mutation_step!(nothing, nothing, nothing, nothing) === nothing
+    @test trace_mutation_type!(nothing, "mutate_constant") === nothing
+    @test trace_mutation_result!(nothing, "reject", "acceptance") === nothing
+    @test trace_identity_mutation!(nothing) === nothing
+    @test trace_search_options!(nothing, options) === nothing
+    @test trace_worker!(nothing, 1, 1) === nothing
+    @test merge_traces(nothing, nothing) === nothing
+    @test write_trace(nothing, "unused.json") === nothing
+    @test next_trace_iteration(nothing, 1, 1) == 0
+    @test trace_iteration_start!(nothing, 1, 1, 0, nothing, options) === nothing
+    @test trace_optimization!(nothing, nothing, 1, 2, false, options) === nothing
+    @test trace_mutation_attempts!(nothing, nothing, nothing, 1, false, 0, options) ===
+        nothing
+    @test trace_crossover!(
+        nothing, nothing, nothing, nothing, nothing, nothing, 1, 2, nothing, options
+    ) === nothing
+
+    @test @allocated(new_trace(options)) == 0
+    @test @allocated(new_trace(nothing)) == 0
+    @test @allocated(new_step_trace(nothing)) == 0
+    @test @allocated(new_traced_steps(nothing, Int)) == 0
+    @test @allocated(reset_traced_steps!(nothing)) == 0
+    @test @allocated(trace_mutation_step!(nothing, nothing, nothing, nothing)) == 0
+    @test @allocated(trace_mutation_type!(nothing, "mutate_constant")) == 0
+    @test @allocated(trace_mutation_result!(nothing, "reject", "acceptance")) == 0
+    @test @allocated(trace_identity_mutation!(nothing)) == 0
+    @test @allocated(trace_search_options!(nothing, options)) == 0
+    @test @allocated(trace_worker!(nothing, 1, 1)) == 0
+    @test @allocated(merge_traces(nothing, nothing)) == 0
+    @test @allocated(write_trace(nothing, "unused.json")) == 0
+    @test @allocated(next_trace_iteration(nothing, 1, 1)) == 0
+    @test @allocated(trace_iteration_start!(nothing, 1, 1, 0, nothing, options)) == 0
+    @test @allocated(trace_optimization!(nothing, nothing, 1, 2, false, options)) == 0
+    @test @allocated(
+        trace_mutation_attempts!(nothing, nothing, nothing, 1, false, 0, options)
+    ) == 0
+    @test @allocated(
+        trace_crossover!(
+            nothing, nothing, nothing, nothing, nothing, nothing, 1, 2, nothing, options
+        )
+    ) == 0
+
+    enabled_options = Options(;
+        binary_operators=(+, *), default_plugins=(), use_tracing=true
+    )
+    trace = new_trace(enabled_options)
+    @test trace isa TraceType
+    trace_mutation_type!(trace, "mutate_constant")
+    trace_mutation_result!(trace, "accept", "pass")
+    @test trace ==
+        TraceType("type" => "mutate_constant", "result" => "accept", "reason" => "pass")
+end

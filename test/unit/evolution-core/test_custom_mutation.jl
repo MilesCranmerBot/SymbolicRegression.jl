@@ -1,6 +1,6 @@
 @testitem "Custom mutation dispatch" begin
     using SymbolicRegression
-    using SymbolicRegression: Dataset, MutationResult, RecordType, mutate!, sample_mutation
+    using SymbolicRegression: Dataset, MutationResult, TraceType, mutate!, sample_mutation
     using SymbolicRegression.MutateModule: _sample_mutation, next_generation
     using Random: seed!
 
@@ -26,7 +26,7 @@
     member = PopMember(dataset, Node(Float64; feature=1), options; deterministic=false)
 
     next_generation(
-        dataset, member, options.maxsize, options; tmp_recorder=RecordType(), plugin_states
+        dataset, member, options.maxsize, options; tmp_trace=TraceType(), plugin_states
     )
 
     @test calls[] == 1
