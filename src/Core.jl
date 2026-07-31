@@ -44,6 +44,7 @@ using .MutationsModule:
     RandomizeMutation,
     OptimizeMutation,
     DoNothingMutation,
+    ConstantMutationContext,
     BUILTIN_MUTATION_TYPES,
     default_mutations
 using .OptionsStructModule:
@@ -96,6 +97,7 @@ using .PluginModule:
     AbstractPlugin,
     MutationEvent,
     init_plugin_state,
+    init_plugin_states,
     on_search_start!,
     on_search_end!,
     on_generation_end!,
@@ -104,8 +106,16 @@ using .PluginModule:
     init_member,
     tournament_cost_multiplier,
     mutation_acceptance_multiplier,
+    MutationAcceptanceContext,
     fork_plugin_state,
+    refresh_worker_plugin_state,
     resolve_init_member,
-    default_adaptive_parsimony_plugin
+    MutationStepResult,
+    wrap_mutation_step,
+    on_cycle_start!,
+    prepare_mutation_context,
+    condition_mutation!,
+    default_adaptive_parsimony_plugin,
+    default_simulated_annealing_plugin
 
 end

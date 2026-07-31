@@ -52,6 +52,7 @@ jobs:
           - precompile
           - backsolve
           - misc
+          - plugins
         exclude:
           # Only run Julia 1.10 on ubuntu
           - os: macOS-latest

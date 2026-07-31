@@ -40,7 +40,10 @@ using ..MutationWeightsModule: MutationWeightsModule, MutationWeights, _mutation
 using ..MutationsModule: MutationsModule
 import ..OptionsStructModule: Options
 using ..OptionsStructModule: ComplexityMapping, operator_specialization
-using ..PluginModule: default_adaptive_parsimony_plugin, _merge_with_default_plugins
+using ..PluginModule:
+    default_adaptive_parsimony_plugin,
+    default_simulated_annealing_plugin,
+    _merge_with_default_plugins
 using ..UtilsModule: @save_kwargs, @ignore
 using ..ExpressionSpecModule:
     AbstractExpressionSpec,
@@ -385,7 +388,7 @@ const OPTION_DESCRIPTIONS = """- `defaults`: What set of defaults to use for `Op
     and returns an integer.
 - `alpha`: The probability of accepting an equation mutation
     during regularized evolution is given by exp(-delta_loss/(alpha * T)),
-    where T goes from 1 to 0. Thus, alpha=infinite is the same as no annealing.
+    where T goes from 1 to 0. Set `annealing=false` to disable annealing.
 - `maxsize`: Maximum size of equations during the search.
 - `maxdepth`: Maximum depth of equations during the search, by default
     this is set equal to the maxsize.
@@ -1056,7 +1059,10 @@ $(OPTION_DESCRIPTIONS)
 
     user_plugin_tuple = Tuple(plugins)
     default_plugin_tuple = if default_plugins === nothing
-        (default_adaptive_parsimony_plugin(; use_frequency, use_frequency_in_tournament),)
+        (
+            default_simulated_annealing_plugin(; annealing, alpha),
+            default_adaptive_parsimony_plugin(; use_frequency, use_frequency_in_tournament),
+        )
     else
         Tuple(default_plugins)
     end
@@ -1095,6 +1101,7 @@ $(OPTION_DESCRIPTIONS)
         deprecated_return_state::Union{Bool,Nothing},
         typeof(_autodiff_backend),
         print_precision,
+        use_recorder,
     }(
         operators,
         op_constraints,
@@ -1105,7 +1112,6 @@ $(OPTION_DESCRIPTIONS)
         parsimony,
         dimensional_constraint_penalty,
         dimensionless_constants_only,
-        alpha,
         maxsize,
         maxdepth,
         Val(turbo),
@@ -1117,7 +1123,6 @@ $(OPTION_DESCRIPTIONS)
         _output_directory,
         populations,
         perturbation_factor,
-        annealing,
         batching,
         batch_size,
         _resolved_mutations,
@@ -1162,7 +1167,7 @@ $(OPTION_DESCRIPTIONS)
         skip_mutation_failures,
         deterministic,
         define_helper_functions,
-        use_recorder,
+        Val(use_recorder),
         popmember_type,
         plugin_tuple,
     )

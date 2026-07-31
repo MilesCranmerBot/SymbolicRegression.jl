@@ -189,6 +189,7 @@ struct Options{
     _return_state,
     AD,
     print_precision,
+    _use_recorder,
 } <: AbstractOptions
     operators::OP
     op_constraints::OP_CONSTRAINTS
@@ -199,7 +200,6 @@ struct Options{
     parsimony::Float64
     dimensional_constraint_penalty::Union{Float64,Nothing}
     dimensionless_constants_only::Bool
-    alpha::Float64
     maxsize::Int
     maxdepth::Int
     turbo::Val{_turbo}
@@ -211,7 +211,6 @@ struct Options{
     output_directory::Union{String,Nothing}
     populations::Int
     perturbation_factor::Float64
-    annealing::Bool
     batching::Bool
     batch_size::Int
     mutations::Vector{Pair{AbstractMutation,Float64}}
@@ -256,7 +255,7 @@ struct Options{
     skip_mutation_failures::Bool
     deterministic::Bool
     define_helper_functions::Bool
-    use_recorder::Bool
+    use_recorder::Val{_use_recorder}
     popmember_type::Type{PM}
     plugins::PT
 end

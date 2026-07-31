@@ -36,11 +36,16 @@ using ..CoreModule:
     AbstractPlugin,
     MutationEvent,
     on_mutation_end!,
-    mutation_acceptance_multiplier
+    mutation_acceptance_multiplier,
+    MutationAcceptanceContext,
+    ConstantMutationContext,
+    prepare_mutation_context,
+    condition_mutation!
 using ..ComplexityModule: compute_complexity
 using ..LossFunctionsModule: eval_cost, loss_to_cost
 using ..CheckConstraintsModule: check_constraints
 using ..PopMemberModule: AbstractPopMember, PopMember, create_child
+using ..UtilsModule: strictmap
 using ..MutationFunctionsModule:
     mutate_constant,
     mutate_operator,
@@ -237,11 +242,11 @@ end
 
     threshold = rand() * total_weight
     cumulative_weight = 0.0
-    for (mutation, weight) in mutations
+    for (i, (_, weight)) in enumerate(mutations)
         cumulative_weight += weight
-        threshold < cumulative_weight && return mutation
+        threshold < cumulative_weight && return i
     end
-    return last(mutations).first
+    return lastindex(mutations)
 end
 
 # Go through one simulated options.annealing mutation cycle
@@ -252,7 +257,7 @@ end
     event::MutationEvent,
     dataset,
 )
-    for (plugin, pstate) in zip(options.plugins, plugin_states)
+    strictmap(options.plugins, plugin_states) do plugin, pstate
         on_mutation_end!(pstate, plugin, mutation, event, dataset, options)
     end
     return nothing
@@ -269,15 +274,13 @@ let mutation_types = BUILTIN_MUTATION_TYPES
     end
 end
 
-#  exp(-delta/T) defines probability of accepting a change
 @unstable function next_generation(
     dataset::D,
     member::P,
-    temperature,
     curmaxsize::Int,
     options::AbstractOptions;
     tmp_recorder::RecordType,
-    plugin_states::Tuple=(),
+    plugin_states::Tuple,
     population_for_backsolve=nothing,
 )::Tuple{
     P,Bool,Float64
@@ -293,20 +296,21 @@ end
     weights = copy(options.mutations)
 
     condition_mutation_weights!(weights, member, options, curmaxsize, nfeatures)
-    for (plugin, pstate) in zip(options.plugins, plugin_states)
+    strictmap(options.plugins, plugin_states) do plugin, pstate
         condition_mutation_weights!(
             weights, pstate, plugin, member, options, curmaxsize, nfeatures
         )
     end
 
-    mutation_choice = _sample_mutation(weights)
+    mutation_idx = _sample_mutation(weights)
+    mutation_choice = weights[mutation_idx].first
 
     # Preserve concrete mutation dispatch through the hot path.
     return _dispatch_next_generation(
         mutation_choice,
+        mutation_idx,
         dataset,
         member,
-        temperature,
         curmaxsize,
         nfeatures,
         before_cost,
@@ -322,9 +326,9 @@ end
 
 function _next_generation(
     mutation_choice::M,
+    mutation_idx::Int,
     dataset::D,
     member::P,
-    temperature,
     curmaxsize::Int,
     nfeatures::Int,
     before_cost,
@@ -350,6 +354,13 @@ function _next_generation(
     max_attempts = 10
     node_storage = allocate_container(member.tree)
 
+    mut_context = prepare_mutation_context(mutation_choice)
+    if !isnothing(mut_context)
+        strictmap(options.plugins, plugin_states) do plugin, pstate
+            condition_mutation!(mut_context, pstate, plugin, mutation_choice, options)
+        end
+    end
+
     #############################################
     # Mutations
     #############################################
@@ -364,7 +375,7 @@ function _next_generation(
             mutation_choice,
             options;
             recorder=tmp_recorder,
-            temperature,
+            context=mut_context,
             dataset,
             cost=before_cost,
             loss=before_loss,
@@ -386,7 +397,14 @@ function _next_generation(
                 options,
                 plugin_states,
                 mutation_choice,
-                MutationEvent(true, before_loss, mutation_result.member.loss),
+                MutationEvent(
+                    true,
+                    before_cost,
+                    mutation_result.member.cost,
+                    before_loss,
+                    mutation_result.member.loss,
+                    mutation_idx,
+                ),
                 dataset,
             )
             return mutation_result.member::P, true, num_evals
@@ -413,7 +431,7 @@ function _next_generation(
             options,
             plugin_states,
             mutation_choice,
-            MutationEvent(false, before_loss, nothing),
+            MutationEvent(false, before_cost, nothing, before_loss, nothing, mutation_idx),
             dataset,
         )
         return (
@@ -444,7 +462,7 @@ function _next_generation(
             options,
             plugin_states,
             mutation_choice,
-            MutationEvent(false, before_loss, nothing),
+            MutationEvent(false, before_cost, nothing, before_loss, nothing, mutation_idx),
             dataset,
         )
         return (
@@ -462,27 +480,25 @@ function _next_generation(
         )
     end
 
-    probChange = 1.0
-    if options.annealing
-        # TODO: Try using log(after_cost) - log(before_cost) here
-        delta = after_cost - before_cost
-        probChange *= exp(-delta / (temperature * options.alpha))
-    end
-    for (plugin, pstate) in zip(options.plugins, plugin_states)
-        probChange *= mutation_acceptance_multiplier(pstate, plugin, member, tree, options)
-    end
+    acceptance_ctx = MutationAcceptanceContext(member, tree, before_cost, after_cost)
+    probChange = prod(
+        strictmap(options.plugins, plugin_states) do plugin, pstate
+            mutation_acceptance_multiplier(pstate, plugin, acceptance_ctx, options)
+        end,
+    )
 
     if probChange < rand()
         @recorder begin
             tmp_recorder["result"] = "reject"
-            tmp_recorder["reason"] = "annealing_or_frequency"
+            tmp_recorder["reason"] = "acceptance"
         end
-        mutation_accepted = false
         _fire_on_mutation_end!(
             options,
             plugin_states,
             mutation_choice,
-            MutationEvent(false, before_loss, after_loss),
+            MutationEvent(
+                false, before_cost, after_cost, before_loss, after_loss, mutation_idx
+            ),
             dataset,
         )
         return (
@@ -494,27 +510,26 @@ function _next_generation(
                 options;
                 parent_ref=parent_ref,
             ),
-            mutation_accepted,
+            false,
             num_evals,
         )
-    else
-        @recorder begin
-            tmp_recorder["result"] = "accept"
-            tmp_recorder["reason"] = "pass"
-        end
-        mutation_accepted = true
-        new_member = create_child(
-            member, tree, after_cost, after_loss, options; parent_ref=parent_ref
-        )
-        _fire_on_mutation_end!(
-            options,
-            plugin_states,
-            mutation_choice,
-            MutationEvent(true, before_loss, after_loss),
-            dataset,
-        )
-        return (new_member, mutation_accepted, num_evals)
     end
+
+    @recorder begin
+        tmp_recorder["result"] = "accept"
+        tmp_recorder["reason"] = "pass"
+    end
+    new_member = create_child(
+        member, tree, after_cost, after_loss, options; parent_ref=parent_ref
+    )
+    _fire_on_mutation_end!(
+        options,
+        plugin_states,
+        mutation_choice,
+        MutationEvent(true, before_cost, after_cost, before_loss, after_loss, mutation_idx),
+        dataset,
+    )
+    return (new_member, true, num_evals)
 end
 
 """
@@ -535,7 +550,6 @@ Add a new mutation by defining a struct subtyping
 
 # Keywords
 
-- `temperature`: The temperature parameter for annealing-based mutations.
 - `dataset::Dataset`: The dataset used for scoring.
 - `cost`: The cost of `parent_member` before mutation.
 - `loss`: The loss of `parent_member` before mutation.
@@ -543,6 +557,9 @@ Add a new mutation by defining a struct subtyping
 - `nfeatures`: The number of features in the dataset.
 - `parent_ref`: Reference to `parent_member`'s parent (used for lineage logging).
 - `recorder::RecordType`: A recorder to log mutation details.
+- `context`: per-call mutable context for the selected mutation type (built by
+  [`prepare_mutation_context`](@ref) and conditioned by plugins via
+  [`condition_mutation!`](@ref)); `nothing` for mutations without one.
 - `plugin_states::Tuple`: The active worker plugin states, in tuple order matching
   `options.plugins`.
 
@@ -564,10 +581,11 @@ function mutate!(
     m::ConstantMutation,
     options::AbstractOptions;
     recorder::RecordType,
-    temperature,
+    context::Union{Nothing,ConstantMutationContext}=nothing,
     kws...,
 ) where {N<:AbstractExpression,P<:AbstractPopMember}
-    new_tree = mutate_constant(new_tree, temperature, options, m)
+    scale = isnothing(context) ? 1.0 : context.scale
+    new_tree = mutate_constant(new_tree, scale, options, m)
     @recorder recorder["type"] = "mutate_constant"
     return MutationResult{N,P}(; tree=new_tree)
 end
