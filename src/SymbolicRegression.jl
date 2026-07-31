@@ -209,15 +209,7 @@ using Compat: @compat, Fix
         on_search_start!, on_search_end!,
         on_generation_end!, on_cycle_end!, on_mutation_end!, init_member,
         tournament_cost_multiplier, mutation_acceptance_multiplier,
-        MutationAcceptanceContext,
         fork_plugin_state,
-        refresh_worker_plugin_state,
-        MutationStepResult,
-        wrap_mutation_step,
-        on_cycle_start!,
-        prepare_mutation_context,
-        condition_mutation!,
-        ConstantMutationContext,
     )
 )
 #! format: on
