@@ -1160,7 +1160,7 @@ function _main_search_loop!(
                 parallelism=ropt.parallelism,
                 state.procs,
             )
-            iteration = if options.use_recorder
+            iteration = if options.use_recorder isa Val{true}
                 key = "out$(j)_pop$(i)"
                 find_iteration_from_record(key, state.record[]) + 1
             else

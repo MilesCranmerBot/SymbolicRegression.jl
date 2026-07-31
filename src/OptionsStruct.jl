@@ -189,6 +189,7 @@ struct Options{
     _return_state,
     AD,
     print_precision,
+    _use_recorder,
 } <: AbstractOptions
     operators::OP
     op_constraints::OP_CONSTRAINTS
@@ -254,7 +255,7 @@ struct Options{
     skip_mutation_failures::Bool
     deterministic::Bool
     define_helper_functions::Bool
-    use_recorder::Bool
+    use_recorder::Val{_use_recorder}
     popmember_type::Type{PM}
     plugins::PT
 end

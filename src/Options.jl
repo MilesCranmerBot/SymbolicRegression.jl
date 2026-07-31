@@ -1101,6 +1101,7 @@ $(OPTION_DESCRIPTIONS)
         deprecated_return_state::Union{Bool,Nothing},
         typeof(_autodiff_backend),
         print_precision,
+        use_recorder,
     }(
         operators,
         op_constraints,
@@ -1166,7 +1167,7 @@ $(OPTION_DESCRIPTIONS)
         skip_mutation_failures,
         deterministic,
         define_helper_functions,
-        use_recorder,
+        Val(use_recorder),
         popmember_type,
         plugin_tuple,
     )

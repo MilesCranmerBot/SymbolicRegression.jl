@@ -99,7 +99,7 @@ function reg_evol_cycle(
     num_evals = 0.0
     n_evol_cycles = ceil(Int, pop.n / options.tournament_selection_n)
     mutation_wrappers = strictmap(wrap_mutation_step, plugin_states, options.plugins)
-    recorded_steps = if options.use_recorder
+    recorded_steps = if options.use_recorder isa Val{true}
         Tuple{eltype(pop.members),eltype(pop.members),RecordType}[]
     else
         nothing
