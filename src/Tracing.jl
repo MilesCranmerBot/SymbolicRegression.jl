@@ -18,8 +18,8 @@ const TRACE_SCHEMA_VERSION = 1
 end
 
 @inline function trace_mutation_step!(steps, parent, member, trace::MaybeTrace)
-    isnothing(steps) && return nothing
-    push!(steps, (copy(parent), copy(member), trace::TraceType))
+    isnothing(trace) && return nothing
+    push!(steps, (copy(parent), copy(member), trace))
     return nothing
 end
 

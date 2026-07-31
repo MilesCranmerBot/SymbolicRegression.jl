@@ -26,6 +26,9 @@
     @test new_traced_steps(nothing, Int) === nothing
     @test reset_traced_steps!(nothing) === nothing
     @test trace_mutation_step!(nothing, nothing, nothing, nothing) === nothing
+    disabled_steps = Any[]
+    @test trace_mutation_step!(disabled_steps, nothing, nothing, nothing) === nothing
+    @test isempty(disabled_steps)
     @test trace_mutation_type!(nothing, :optimize) === nothing
     @test trace_mutation_result!(nothing, "reject", "acceptance") === nothing
     @test trace_identity_mutation!(nothing) === nothing
