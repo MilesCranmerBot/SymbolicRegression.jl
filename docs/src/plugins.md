@@ -156,56 +156,6 @@ page for its full docstring.
 init_member
 ```
 
-## Working with expressions in plugins
-
-Several hooks receive a `member` (a `PopMember`) or `new_tree` (an `Expression`).
-To inspect the actual expression tree, use `get_contents(member.tree)` to get the
-raw `Node`, then walk it. Each `Node` has fields `degree` (0 = leaf, 1 = unary,
-2 = binary), `op` (index into the operator list), `feature` (for variable leaves),
-`l` (left child), and `r` (right child). See the [Types](types.md) page for the
-full `Node` API.
-
-Here is a plugin that penalizes deeply nested expressions during tournament
-selection. The built-in complexity metric counts nodes, but nesting depth
-can matter independently (e.g., deeply nested compositions are harder
-to interpret even at the same node count):
-
-```julia
-using SymbolicRegression
-using SymbolicRegression: AbstractPlugin, AbstractPopMember, AbstractOptions
-using DynamicExpressions: get_contents
-
-struct DepthPenaltyPlugin <: AbstractPlugin
-    max_depth::Int
-    penalty::Float64
-end
-DepthPenaltyPlugin(; max_depth=5, penalty=10.0) = DepthPenaltyPlugin(max_depth, penalty)
-
-function tree_depth(node)
-    node.degree == 0 && return 0
-    d = 1 + tree_depth(node.l)
-    if node.degree == 2
-        d = max(d, 1 + tree_depth(node.r))
-    end
-    return d
-end
-
-function SymbolicRegression.tournament_cost_multiplier(
-    state, p::DepthPenaltyPlugin, member::AbstractPopMember, options::AbstractOptions
-)
-    tree = get_contents(member.tree)
-    return tree_depth(tree) > p.max_depth ? p.penalty : 1.0
-end
-```
-
-```julia
-model = SRRegressor(
-    binary_operators=[+, -, *, /],
-    unary_operators=[cos, exp],
-    plugins=(DepthPenaltyPlugin(; max_depth=4),),
-)
-```
-
 ## Thread and process safety
 
 - `on_generation_end!` runs serially on the head node. Safe to mutate state.
