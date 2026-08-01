@@ -12,15 +12,17 @@ in parallel. Each population runs on a **worker** (a thread or process);
 a single **head node** coordinates them.
 
 A **cycle** is one round of evolution on a single population. Within a cycle,
-the engine runs many **generations**: each generation picks a random member
-via **tournament selection** (sample a few members, keep the one with the
-lowest cost), mutates it, and decides whether to accept the result. The
-**cost** used in tournament selection combines the raw loss with a complexity
-penalty.
+the engine runs many steps: each step picks a random member via **tournament
+selection** (sample a few members, keep the one with the lowest cost), mutates
+it, and decides whether to accept the result. The **cost** used in tournament
+selection combines the raw loss with a complexity penalty.
 
 After a cycle finishes, the worker sends its updated population back to the
 head node. The head node merges results, updates the hall of fame, and
-dispatches the next cycle. Plugins can hook into any of these stages.
+dispatches the next cycle. Plugins can hook into any of these stages. Note:
+`on_generation_end!` fires on the head when a completed cycle is received
+(not per inner step), while `on_cycle_end!` fires on the worker at the end
+of its cycle.
 
 ## Using a plugin
 
