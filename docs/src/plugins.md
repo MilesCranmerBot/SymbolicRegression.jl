@@ -52,69 +52,8 @@ Define a struct that subtypes [`AbstractPlugin`](@ref), then override whichever
 hooks you need. The struct holds immutable configuration; mutable runtime state
 lives in a separate object returned by [`init_plugin_state`](@ref).
 
-Here is a plugin that counts how many mutations are accepted vs rejected
-across the entire search, useful for diagnosing whether the search is
-exploring effectively:
-
-```julia
-using SymbolicRegression
-using SymbolicRegression: AbstractPlugin, MutationEvent, AbstractMutation
-
-struct MutationCounterPlugin <: AbstractPlugin end
-
-mutable struct MutationCounterState
-    accepted::Int
-    rejected::Int
-end
-```
-
-Create the state object once per output at search start:
-
-```julia
-function SymbolicRegression.init_plugin_state(::MutationCounterPlugin, options, dataset)
-    return MutationCounterState(0, 0)
-end
-```
-
-Count each mutation's accept/reject decision:
-
-```julia
-function SymbolicRegression.on_mutation_end!(
-    state::MutationCounterState,
-    ::MutationCounterPlugin,
-    ::AbstractMutation,
-    event::MutationEvent,
-    dataset,
-    options,
-)
-    if event.accepted
-        state.accepted += 1
-    else
-        state.rejected += 1
-    end
-    return nothing
-end
-```
-
-The default `fork_plugin_state` uses `deepcopy` to snapshot state for each
-worker dispatch. For simple state like this the default is fine; override it
-when your state is large or contains non-serializable fields.
-
-Pass it to the search:
-
-```julia
-X = 2randn(100, 5)
-y = @. cos(X[:, 1]) + X[:, 2]^2
-
-model = SRRegressor(
-    binary_operators=[+, -, *, /],
-    unary_operators=[cos],
-    plugins=(MutationCounterPlugin(),),
-    niterations=10,
-)
-mach = machine(model, X, y)
-fit!(mach)
-```
+See the [Writing a Custom Plugin](examples/plugin_tutorial.md) tutorial for a
+complete walkthrough that builds a plugin from scratch.
 
 ## Lifecycle hooks
 
