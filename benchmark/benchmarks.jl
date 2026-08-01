@@ -2,7 +2,6 @@ using BenchmarkTools
 using SymbolicRegression, BenchmarkTools, Random
 using SymbolicRegression.MutateModule: next_generation
 using SymbolicRegression.AdaptiveParsimonyModule: RunningSearchStatistics
-using SymbolicRegression.CoreModule: TraceType
 using SymbolicRegression.PopulationModule: best_of_sample
 using SymbolicRegression.ConstantOptimizationModule: optimize_constants
 using SymbolicRegression.CheckConstraintsModule: check_constraints
@@ -139,7 +138,7 @@ function _setup_next_generation()
         unary_operators=[sin, cos], binary_operators=[+, -, *, /], mutation_weights
     )
     plugin_states = _plugin_states(options, dataset)
-    trace = TraceType()
+    trace = Dict{String,Any}()
     temperature = 1.0
     curmaxsize = 20
     rss = RunningSearchStatistics(; options)
