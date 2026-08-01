@@ -14,7 +14,19 @@ using SymbolicRegression:
     MutationResult,
     AbstractRuntimeOptions,
     AbstractSearchState,
-    @extend_operators
+    @extend_operators,
+    AbstractPlugin,
+    MutationEvent,
+    init_plugin_state,
+    fork_plugin_state,
+    on_search_start!,
+    on_search_end!,
+    on_generation_end!,
+    on_cycle_end!,
+    on_mutation_end!,
+    init_member,
+    tournament_cost_multiplier,
+    mutation_acceptance_multiplier
 using DynamicExpressions
 
 include("utils.jl")
@@ -347,6 +359,7 @@ makedocs(;
         "Losses" => "losses.md",
         "Types" => "types.md",
         "Customization" => "customization.md",
+        "Plugins" => "plugins.md",
     ],
 )
 
