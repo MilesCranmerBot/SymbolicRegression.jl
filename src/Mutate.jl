@@ -281,6 +281,7 @@ end
     options::AbstractOptions;
     tmp_recorder::RecordType,
     plugin_states::Tuple,
+    eval_options=nothing,
     population_for_backsolve=nothing,
 )::Tuple{
     P,Bool,Float64
@@ -319,6 +320,7 @@ end
         options,
         tmp_recorder,
         plugin_states,
+        eval_options,
         population_for_backsolve,
         num_evals,
     )
@@ -337,6 +339,7 @@ function _next_generation(
     options::AbstractOptions,
     tmp_recorder::RecordType,
     plugin_states::Tuple,
+    eval_options,
     population_for_backsolve,
     num_evals::Float64,
 )::Tuple{
@@ -449,7 +452,7 @@ function _next_generation(
         )
     end
 
-    after_cost, after_loss = eval_cost(dataset, tree, options)
+    after_cost, after_loss = eval_cost(dataset, tree, options; eval_options)
     num_evals += dataset_fraction(dataset)
 
     if isnan(after_cost)
@@ -838,6 +841,7 @@ function crossover_generation(
     curmaxsize::Int,
     options::AbstractOptions;
     recorder::RecordType=RecordType(),
+    eval_options=nothing,
 )::Tuple{P,P,Bool,Float64} where {T,L,D<:Dataset{T,L},N,P<:AbstractPopMember{T,L,N}}
     tree1 = member1.tree
     tree2 = member2.tree
@@ -870,10 +874,10 @@ function crossover_generation(
         num_tries += 1
     end
     after_cost1, after_loss1 = eval_cost(
-        dataset, child_tree1, options; complexity=afterSize1
+        dataset, child_tree1, options; complexity=afterSize1, eval_options
     )
     after_cost2, after_loss2 = eval_cost(
-        dataset, child_tree2, options; complexity=afterSize2
+        dataset, child_tree2, options; complexity=afterSize2, eval_options
     )
     num_evals += 2 * dataset_fraction(dataset)
 

@@ -42,12 +42,13 @@ Engine-owned state for one mutation step. Mutable contents accumulate every
 middleware attempt so evaluation counts, Hall-of-Fame updates, and recording
 stay under engine control.
 """
-struct MutationStep{D,P,O,S,H,A,M,R}
+struct MutationStep{D,P,O,S,E,H,A,M,R}
     dataset::D
     population::P
     curmaxsize::Int
     options::O
     plugin_states::S
+    eval_options::E
     best_seen::H
     attempted_results::A
     attempted_members::M
@@ -63,6 +64,7 @@ function (step::MutationStep)(parent)
         step.options;
         tmp_recorder=step_recorder,
         plugin_states=step.plugin_states,
+        eval_options=step.eval_options,
         population_for_backsolve=step.population,
     )
     attempt_id = isnothing(step.attempted_results) ? 1 : length(step.attempted_results) + 1
@@ -95,6 +97,7 @@ function reg_evol_cycle(
     record::RecordType;
     plugin_states::Tuple,
     best_seen::HallOfFame,
+    eval_options=nothing,
 )::Tuple{P,Float64} where {T<:DATA_TYPE,L<:LOSS_TYPE,P<:Population{T,L}}
     num_evals = 0.0
     n_evol_cycles = ceil(Int, pop.n / options.tournament_selection_n)
@@ -114,6 +117,7 @@ function reg_evol_cycle(
         curmaxsize,
         options,
         plugin_states,
+        eval_options,
         best_seen,
         attempted_results,
         attempted_members,
@@ -210,6 +214,7 @@ function reg_evol_cycle(
                 curmaxsize,
                 options;
                 recorder=crossover_recorder,
+                eval_options,
             )
             num_evals += tmp_num_evals
             if crossover_accepted
