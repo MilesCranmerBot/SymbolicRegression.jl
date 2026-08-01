@@ -181,19 +181,27 @@ function _next_generation_api(state)
     return error("Unsupported `next_generation` signature.")
 end
 
+const NEXT_GENERATION_USES_TRACE = isdefined(SymbolicRegression, :TracingModule)
+
+@inline function _next_generation_trace_kwargs(trace)
+    return NEXT_GENERATION_USES_TRACE ? (; tmp_trace=trace) : (; tmp_recorder=trace)
+end
+
 function _run_next_generation(::Val{:plugin_states}, state)
+    trace_kws = _next_generation_trace_kwargs(state.trace)
     for member in state.members
         next_generation(
             state.dataset,
             member,
             state.curmaxsize,
             state.options;
-            tmp_trace=state.trace,
+            trace_kws...,
             plugin_states=state.plugin_states,
         )
     end
 end
 function _run_next_generation(::Val{:temperature}, state)
+    trace_kws = _next_generation_trace_kwargs(state.trace)
     for member in state.members
         next_generation(
             state.dataset,
@@ -201,12 +209,13 @@ function _run_next_generation(::Val{:temperature}, state)
             state.temperature,
             state.curmaxsize,
             state.options;
-            tmp_trace=state.trace,
+            trace_kws...,
             plugin_states=state.plugin_states,
         )
     end
 end
 function _run_next_generation(::Val{:rss}, state)
+    trace_kws = _next_generation_trace_kwargs(state.trace)
     for member in state.members
         next_generation(
             state.dataset,
@@ -215,7 +224,7 @@ function _run_next_generation(::Val{:rss}, state)
             state.curmaxsize,
             state.rss,
             state.options;
-            tmp_trace=state.trace,
+            trace_kws...,
         )
     end
 end
