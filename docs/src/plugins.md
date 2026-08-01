@@ -5,6 +5,23 @@ A plugin is a small struct that opts into lifecycle hooks: observing mutations,
 biasing selection, injecting initial population members, or tracking statistics
 across generations.
 
+## How the search works
+
+The search maintains multiple **populations** of candidate expressions, evolved
+in parallel. Each population runs on a **worker** (a thread or process);
+a single **head node** coordinates them.
+
+A **cycle** is one round of evolution on a single population. Within a cycle,
+the engine runs many **generations**: each generation picks a random member
+via **tournament selection** (sample a few members, keep the one with the
+lowest cost), mutates it, and decides whether to accept the result. The
+**cost** used in tournament selection combines the raw loss with a complexity
+penalty.
+
+After a cycle finishes, the worker sends its updated population back to the
+head node. The head node merges results, updates the hall of fame, and
+dispatches the next cycle. Plugins can hook into any of these stages.
+
 ## Using a plugin
 
 Pass plugin instances to `Options` via the `plugins` keyword:
