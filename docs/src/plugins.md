@@ -33,63 +33,53 @@ Define a struct that subtypes [`AbstractPlugin`](@ref), then override whichever
 hooks you need. The struct holds immutable configuration; mutable runtime state
 lives in a separate object returned by [`init_plugin_state`](@ref).
 
-Here is a plugin that tracks mutation acceptance rates per complexity level,
-so you can see which expression sizes the search is exploring:
+Here is a plugin that counts how many mutations are accepted vs rejected
+across the entire search, useful for diagnosing whether the search is
+exploring effectively:
 
 ```julia
 using SymbolicRegression
 using SymbolicRegression: AbstractPlugin, MutationEvent, AbstractMutation
-using SymbolicRegression: compute_complexity
 
-struct MutationTrackerPlugin <: AbstractPlugin end
+struct MutationCounterPlugin <: AbstractPlugin end
 
-mutable struct MutationTrackerState
-    accepted::Dict{Int,Int}
-    rejected::Dict{Int,Int}
+mutable struct MutationCounterState
+    accepted::Int
+    rejected::Int
 end
 ```
 
 Create the state object once per output at search start:
 
 ```julia
-function SymbolicRegression.init_plugin_state(::MutationTrackerPlugin, options, dataset)
-    return MutationTrackerState(Dict{Int,Int}(), Dict{Int,Int}())
+function SymbolicRegression.init_plugin_state(::MutationCounterPlugin, options, dataset)
+    return MutationCounterState(0, 0)
 end
 ```
 
-Track each mutation's accept/reject decision, keyed by the parent expression's
-complexity:
+Count each mutation's accept/reject decision:
 
 ```julia
 function SymbolicRegression.on_mutation_end!(
-    state::MutationTrackerState,
-    ::MutationTrackerPlugin,
+    state::MutationCounterState,
+    ::MutationCounterPlugin,
     ::AbstractMutation,
     event::MutationEvent,
     dataset,
     options,
 )
-    complexity = round(Int, event.before_loss)  # simplified; real use would key on member complexity
     if event.accepted
-        state.accepted[complexity] = get(state.accepted, complexity, 0) + 1
+        state.accepted += 1
     else
-        state.rejected[complexity] = get(state.rejected, complexity, 0) + 1
+        state.rejected += 1
     end
     return nothing
 end
 ```
 
 The default `fork_plugin_state` uses `deepcopy` to snapshot state for each
-worker dispatch. If your state is large or contains non-serializable fields,
-override it:
-
-```julia
-function SymbolicRegression.fork_plugin_state(
-    head_state::MutationTrackerState, ::MutationTrackerPlugin, dataset
-)
-    return MutationTrackerState(copy(head_state.accepted), copy(head_state.rejected))
-end
-```
+worker dispatch. For simple state like this the default is fine; override it
+when your state is large or contains non-serializable fields.
 
 Pass it to the search:
 
@@ -100,7 +90,7 @@ y = @. cos(X[:, 1]) + X[:, 2]^2
 model = SRRegressor(
     binary_operators=[+, -, *, /],
     unary_operators=[cos],
-    plugins=(MutationTrackerPlugin(),),
+    plugins=(MutationCounterPlugin(),),
     niterations=10,
 )
 mach = machine(model, X, y)
@@ -175,47 +165,44 @@ raw `Node`, then walk it. Each `Node` has fields `degree` (0 = leaf, 1 = unary,
 `l` (left child), and `r` (right child). See the [Types](types.md) page for the
 full `Node` API.
 
-Here is a plugin that penalizes expressions containing division during
-tournament selection:
+Here is a plugin that penalizes deeply nested expressions during tournament
+selection. The built-in complexity metric counts nodes, but nesting depth
+can matter independently (e.g., deeply nested compositions are harder
+to interpret even at the same node count):
 
 ```julia
 using SymbolicRegression
 using SymbolicRegression: AbstractPlugin, AbstractPopMember, AbstractOptions
 using DynamicExpressions: get_contents
 
-struct NoDivisionPlugin <: AbstractPlugin
+struct DepthPenaltyPlugin <: AbstractPlugin
+    max_depth::Int
     penalty::Float64
 end
-NoDivisionPlugin() = NoDivisionPlugin(10.0)
+DepthPenaltyPlugin(; max_depth=5, penalty=10.0) = DepthPenaltyPlugin(max_depth, penalty)
 
-function has_op(node, op_idx::Int)
-    node.degree == 0 && return false
-    (node.degree == 2 && node.op == op_idx) && return true
-    if node.degree >= 1 && has_op(node.l, op_idx)
-        return true
+function tree_depth(node)
+    node.degree == 0 && return 0
+    d = 1 + tree_depth(node.l)
+    if node.degree == 2
+        d = max(d, 1 + tree_depth(node.r))
     end
-    return node.degree == 2 && has_op(node.r, op_idx)
+    return d
 end
 
 function SymbolicRegression.tournament_cost_multiplier(
-    state, p::NoDivisionPlugin, member::AbstractPopMember, options::AbstractOptions
+    state, p::DepthPenaltyPlugin, member::AbstractPopMember, options::AbstractOptions
 )
-    div_idx = findfirst(op -> op === (/), options.operators.binops)
-    div_idx === nothing && return 1.0
     tree = get_contents(member.tree)
-    return has_op(tree, div_idx) ? p.penalty : 1.0
+    return tree_depth(tree) > p.max_depth ? p.penalty : 1.0
 end
 ```
-
-This multiplies the tournament cost by 10x for any expression using `/`,
-making the search strongly prefer division-free expressions. The plugin
-struct is plain configuration, so it passes straight to `Options`:
 
 ```julia
 model = SRRegressor(
     binary_operators=[+, -, *, /],
-    unary_operators=[cos],
-    plugins=(NoDivisionPlugin(),),
+    unary_operators=[cos, exp],
+    plugins=(DepthPenaltyPlugin(; max_depth=4),),
 )
 ```
 
