@@ -2,7 +2,7 @@ using BenchmarkTools
 using SymbolicRegression, BenchmarkTools, Random
 using SymbolicRegression.MutateModule: next_generation
 using SymbolicRegression.AdaptiveParsimonyModule: RunningSearchStatistics
-using SymbolicRegression: TraceType
+using SymbolicRegression.CoreModule: TraceType
 using SymbolicRegression.PopulationModule: best_of_sample
 using SymbolicRegression.ConstantOptimizationModule: optimize_constants
 using SymbolicRegression.CheckConstraintsModule: check_constraints
