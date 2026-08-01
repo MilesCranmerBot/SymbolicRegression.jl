@@ -115,12 +115,12 @@ you need.
 
 Hooks fall into four categories:
 
-| Category | Name shape | Contract |
-|----------|------------|----------|
-| Observer | `on_X_start!`, `on_X_end!` | Engine fires, plugin reacts. Return value ignored. |
-| Multiplier | `X_multiplier` | Returns a `Real`. Plugins compose multiplicatively. |
-| Conditioner | `condition_X!` | Mutates a passed struct in place. |
-| Factory | `init_X` | Called once per (plugin, output) at startup. |
+| Category    | Name shape                 | Contract                                            |
+| ----------- | -------------------------- | --------------------------------------------------- |
+| Observer    | `on_X_start!`, `on_X_end!` | Engine fires, plugin reacts. Return value ignored.  |
+| Multiplier  | `X_multiplier`             | Returns a `Real`. Plugins compose multiplicatively. |
+| Conditioner | `condition_X!`             | Mutates a passed struct in place.                   |
+| Factory     | `init_X`                   | Called once per (plugin, output) at startup.        |
 
 ### Initialization and teardown
 
