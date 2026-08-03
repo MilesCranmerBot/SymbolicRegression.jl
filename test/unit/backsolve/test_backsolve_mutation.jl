@@ -304,7 +304,7 @@
             backsolve_rewrite_random_node(int_tree, int_dataset, int_options, rng)
         )
 
-        template_dataset = Dataset(reshape(Float64[1.0, 2.0], 1, 2), Float64[1.0, 2.0])
+        template_dataset = Dataset(reshape(Float32[1.0, 2.0], 1, 2), Float32[1.0, 2.0])
 
         template_spec = @template_spec(expressions=(f,)) do x1
             f(x1)
@@ -313,7 +313,7 @@
             binary_operators=(*,), unary_operators=(), expression_spec=template_spec
         )
         template_expr = parse_expression(
-            (; f="x1"); expression_spec=template_spec, operators=template_options.operators
+            (; f="#1"); expression_spec=template_spec, operators=template_options.operators
         )
 
         @test_throws(
