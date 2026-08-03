@@ -57,7 +57,7 @@ end
 
     @test Options().crossover_probability == 0.20
     @test Options(; defaults=v"1.0.0").crossover_probability == 0.0259
-    @test Options(; defaults=v"2.0.0-alpha").adaptive_parsimony_scaling == 1040.0
+    @test Options(; defaults=v"2.0.0-alpha").adaptive_parsimony_scaling == 20.0
 end
 
 @testitem "Test backsolve options" begin

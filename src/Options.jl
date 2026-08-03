@@ -1197,7 +1197,7 @@ function default_options(@nospecialize(version::Union{VersionNumber,Nothing} = n
         # Working with Complexities
         parsimony=0.0,
         warmup_maxsize_by=0.0,
-        adaptive_parsimony_scaling=1040.0,
+        adaptive_parsimony_scaling=20.0,
         # Mutations
         mutation_weights=MutationWeights(;
             mutate_constant=0.0346,
