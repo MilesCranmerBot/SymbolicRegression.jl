@@ -95,8 +95,8 @@ function DE.set_scalar_constants!(ex::AbstractComposableExpression, constants, r
     return DE.set_scalar_constants!(DE.get_contents(ex), constants, refs)
 end
 
-function Base.copy(ex::AbstractComposableExpression)
-    return ComposableExpression(copy(ex.tree), copy(ex.metadata))
+function Base.copy(ex::ComposableExpression)
+    return ComposableExpression(copy(DE.get_contents(ex)), copy(DE.get_metadata(ex)))
 end
 
 function Base.convert(::Type{E}, ex::AbstractComposableExpression) where {E<:Expression}
@@ -116,23 +116,50 @@ end
 function DE.count_scalar_constants(ex::AbstractComposableExpression)
     return DE.count_scalar_constants(convert(Expression, ex))
 end
-function CO.count_constants_for_optimization(ex::AbstractComposableExpression)
-    return CO.count_constants_for_optimization(convert(Expression, ex))
+function CO.get_optimizable_parameters(ex::ComposableExpression, _options)
+    return DE.get_scalar_constants(ex)
+end
+function CO.set_optimizable_parameters!(ex::ComposableExpression, x, refs)
+    return DE.set_scalar_constants!(ex, x, refs)
+end
+function CO.extract_optimizable_gradient(grad, ex::ComposableExpression, _refs)
+    return DE.extract_gradient(grad, ex)
 end
 
-struct PreallocatedComposableExpression{N}
+struct PreallocatedComposableExpression{N,E}
     tree::N
+    eval_options::E
 end
+
+_reuse_or_copy_eval_options(::Nothing, ::Nothing) = nothing
+_reuse_or_copy_eval_options(::EvalOptions, ::Nothing) = nothing
+_reuse_or_copy_eval_options(::Nothing, src::EvalOptions) = copy(src)
+function _reuse_or_copy_eval_options(dest::E, src::E) where {E<:EvalOptions}
+    if isnothing(src.buffer) ||
+        (!isnothing(dest.buffer) && axes(dest.buffer.array) == axes(src.buffer.array))
+        return dest
+    end
+    return copy(src)
+end
+_reuse_or_copy_eval_options(::EvalOptions, src::EvalOptions) = copy(src)
+
 function DE.allocate_container(
     prototype::ComposableExpression, n::Union{Nothing,Integer}=nothing
 )
+    eval_options = DE.get_metadata(prototype).eval_options
     return PreallocatedComposableExpression(
-        DE.allocate_container(get_contents(prototype), n)
+        DE.allocate_container(get_contents(prototype), n),
+        isnothing(eval_options) ? nothing : copy(eval_options),
     )
 end
 function DE.copy_into!(dest::PreallocatedComposableExpression, src::ComposableExpression)
     new_tree = DE.copy_into!(dest.tree, get_contents(src))
-    return DE.with_contents(src, new_tree)
+    metadata = DE.get_metadata(src)
+    eval_options = _reuse_or_copy_eval_options(dest.eval_options, metadata.eval_options)
+    new_metadata = Metadata((;
+        operators=metadata.operators, variable_names=metadata.variable_names, eval_options
+    ))
+    return ComposableExpression(new_tree, new_metadata)
 end
 
 @implements(

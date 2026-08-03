@@ -373,18 +373,9 @@ end
 
 function Base.copy(e::TemplateExpression)
     ts = get_contents(e)
-    meta = get_metadata(e)
-    meta_inner = DE.ExpressionModule.unpack_metadata(meta)
     copy_ts = NamedTuple{keys(ts)}(map(copy, values(ts)))
-    keys_except_structure = filter(!=(:structure), keys(meta_inner))
-    copy_metadata = (;
-        meta_inner.structure,
-        # Note: this `_copy` is just `copy` but with handling for `nothing` and `NamedTuple`
-        NamedTuple{keys_except_structure}(
-            map(_copy, values(meta_inner[keys_except_structure]))
-        )...,
-    )
-    return DE.constructorof(typeof(e))(copy_ts, Metadata(copy_metadata))
+    copy_parameters = _copy(get_metadata(e).parameters::NamedTuple)
+    return with_metadata(with_contents(e, copy_ts); parameters=copy_parameters)
 end
 function DE.get_contents(e::TemplateExpression)
     return e.trees
@@ -443,46 +434,33 @@ function DE.set_scalar_constants!(e::TemplateExpression, constants, refs)
     return e
 end
 
-_parameter_data(x::ParamVector) = x._data
-_parameter_data(x) = x
-
-function CO.get_constants_for_optimization(e::TemplateExpression{T}) where {T}
-    inner_params_and_refs = map(CO.get_constants_for_optimization, values(get_contents(e)))
-    inner_chunks = first.(inner_params_and_refs)
-    parameter_chunks = if has_params(e)
-        map(_parameter_data, values(get_metadata(e).parameters))
-    else
-        ()
-    end
-    flat = if isempty(inner_chunks) && isempty(parameter_chunks)
-        T[]
-    else
-        vcat(inner_chunks..., parameter_chunks...)
-    end
-    refs = (
-        inner=map(pr -> (; n=length(first(pr)), ref=last(pr)), inner_params_and_refs),
-        parameter_keys=has_params(e) ? collect(keys(get_metadata(e).parameters)) : Symbol[],
-    )
-    return flat, refs
+struct TemplateOptimizableRefs{R}
+    scalar_refs::R
+    length::Int
 end
-function CO.set_constants_for_optimization!(e::TemplateExpression, constants, refs)
-    cursor = Ref(1)
-    foreach(values(get_contents(e)), refs.inner) do tree, r
-        let n = r.n, i = cursor[]
-            CO.set_constants_for_optimization!(tree, constants[i:(i + n - 1)], r.ref)
-            cursor[] = i + n
-        end
-    end
-    if has_params(e)
-        parameters = get_metadata(e).parameters
-        for k in refs.parameter_keys
-            let n = length(parameters[k]), i = cursor[]
-                parameters[k]._data[:] = constants[i:(i + n - 1)]
-                cursor[] = i + n
-            end
-        end
-    end
-    return e
+
+function CO.get_optimizable_parameters(e::TemplateExpression, options)
+    combiner = get_metadata(e).structure.combine
+    return CO.get_optimizable_parameters(combiner, e, options)
+end
+function CO.get_optimizable_parameters(_context, e::TemplateExpression, _options)
+    parameters, scalar_refs = DE.get_scalar_constants(e)
+    return parameters, TemplateOptimizableRefs(scalar_refs, length(parameters))
+end
+function CO.set_optimizable_parameters!(
+    e::TemplateExpression, parameters, refs::TemplateOptimizableRefs
+)
+    length(parameters) == refs.length || throw(
+        DimensionMismatch(
+            "received $(length(parameters)) optimizable parameters but expected $(refs.length)",
+        ),
+    )
+    return DE.set_scalar_constants!(e, parameters, refs.scalar_refs)
+end
+function CO.extract_optimizable_gradient(
+    grad, e::TemplateExpression, _refs::TemplateOptimizableRefs
+)
+    return DE.extract_gradient(grad, e)
 end
 Base.@kwdef struct PreallocatedTemplateExpression{A,B}
     trees::A
@@ -605,8 +583,11 @@ function EB.extra_init_params(
     else
         # COV_EXCL_START
         if prototype === nothing
-            NamedTuple{keys(num_parameters)}(
-                map(n -> ParamVector(randn(T, (n,))), values(num_parameters))
+            _initialize_template_parameters(
+                default_rng(),
+                T,
+                num_parameters,
+                options.expression_options.parameter_initializer,
             )
         else
             _copy(get_metadata(prototype).parameters::NamedTuple)
@@ -616,6 +597,49 @@ function EB.extra_init_params(
     # We also need to include the operators here to be consistent with `create_expression`.
     return (; options.operators, options.expression_options..., parameters)
 end
+
+function _initialize_template_parameters(
+    rng::AbstractRNG, ::Type{T}, num_parameters::NamedTuple, parameter_initializer::Nothing
+) where {T}
+    return NamedTuple{keys(num_parameters)}(
+        map(n -> ParamVector(randn(rng, T, (n,))), values(num_parameters))
+    )
+end
+function _initialize_template_parameters(
+    rng::AbstractRNG, ::Type{T}, num_parameters::NamedTuple, parameter_initializer
+) where {T}
+    initialized = parameter_initializer(rng, T, num_parameters)
+    initialized isa NamedTuple || throw(
+        ArgumentError(
+            "`parameter_initializer` must return a `NamedTuple`, got $(typeof(initialized))",
+        ),
+    )
+
+    expected_keys = keys(num_parameters)
+    initialized_keys = keys(initialized)
+    issetequal(initialized_keys, expected_keys) || throw(
+        ArgumentError(
+            "`parameter_initializer` returned keys $(initialized_keys), expected $(expected_keys)",
+        ),
+    )
+
+    parameters = map(expected_keys, values(num_parameters)) do key, expected_length
+        parameter = initialized[key]
+        parameter isa AbstractVector || throw(
+            ArgumentError(
+                "`parameter_initializer` must return an `AbstractVector` for parameter `$(key)`, got $(typeof(parameter))",
+            ),
+        )
+        length(parameter) == expected_length || throw(
+            DimensionMismatch(
+                "`parameter_initializer` returned $(length(parameter)) values for parameter `$(key)`, expected $(expected_length)",
+            ),
+        )
+        return ParamVector(Vector{T}(parameter))
+    end
+    return NamedTuple{expected_keys}(parameters)
+end
+
 function EB.sort_params(params::NamedTuple, ::Type{<:TemplateExpression})
     return (; params.structure, params.operators, params.variable_names, params.parameters)
 end
@@ -871,6 +895,39 @@ function MF.get_contents_for_mutation(ex::TemplateExpression, rng::AbstractRNG)
     return raw_contents[key_to_mutate], key_to_mutate
 end
 
+function _crossover_template_inners(
+    ex1::E, ex2::E, rng::AbstractRNG
+) where {E<:AbstractComposableExpression}
+    return MF.crossover_trees(copy(ex1), copy(ex2), rng)
+end
+
+function _template_crossover_child(
+    ex::TemplateExpression, crossed_inner::AbstractComposableExpression, context::Symbol
+)
+    raw_contents = get_contents(ex)
+    raw_contents_keys = keys(raw_contents)
+    new_contents = NamedTuple{raw_contents_keys}(
+        ntuple(length(raw_contents_keys)) do i
+            key = raw_contents_keys[i]
+            return key == context ? crossed_inner : copy(raw_contents[key])
+        end,
+    )
+    new_parameters = _copy(get_metadata(ex).parameters::NamedTuple)
+    return with_metadata(with_contents(ex, new_contents); parameters=new_parameters)
+end
+
+function MF.crossover_trees(
+    ex1::E, ex2::E, rng::AbstractRNG=default_rng()
+) where {E<:TemplateExpression}
+    ex1 === ex2 && error("Attempted to crossover the same expression!")
+    inner1, context1 = MF.get_contents_for_mutation(ex1, rng)
+    inner2, context2 = MF.get_contents_for_mutation(ex2, rng)
+    crossed1, crossed2 = _crossover_template_inners(inner1, inner2, rng)
+    child1 = _template_crossover_child(ex1, crossed1, context1)
+    child2 = _template_crossover_child(ex2, crossed2, context2)
+    return child1, child2
+end
+
 """See `get_contents_for_mutation(::TemplateExpression, ::AbstractRNG)`."""
 function MF.with_contents_for_mutation(
     ex::TemplateExpression, new_inner_contents, context::Symbol
@@ -971,18 +1028,21 @@ end
 
 # TODO: Look at other ParametricExpression behavior
 
-for f in (:(DE.count_scalar_constants), :(CO.count_constants_for_optimization))
-    @eval function $f(ex::TemplateExpression)
-        return (
-            sum($f, values(get_contents(ex))) +
-            (has_params(ex) ? sum($f, values(get_metadata(ex).parameters)) : 0)
+function DE.count_scalar_constants(ex::TemplateExpression)
+    return (
+        sum(DE.count_scalar_constants, values(get_contents(ex))) + (
+            if has_params(ex)
+                sum(DE.count_scalar_constants, values(get_metadata(ex).parameters))
+            else
+                0
+            end
         )
-    end
-    @eval function $f(p::ParamVector)
-        # TODO: This is not general enough; we should be using `get_scalar_constants`
-        # on the parameters themselves.
-        return length(p._data)
-    end
+    )
+end
+function DE.count_scalar_constants(p::ParamVector)
+    # TODO: This is not general enough; we should be using `get_scalar_constants`
+    # on the parameters themselves.
+    return length(p._data)
 end
 
 function CC.check_constraints(
@@ -1038,16 +1098,34 @@ end
     TemplateExpressionSpec <: AbstractExpressionSpec
 
 (Experimental) Specification for template expressions with pre-defined structure.
+
+# Fields
+- `structure`: The `TemplateStructure` defining how inner expressions and parameters
+    are combined.
+- `inner_expression_type`: The expression type used for each inner expression. Custom
+    types must implement the DynamicExpressions expression interface, including
+    `Base.copy` with independent copies of any mutable candidate-local metadata.
+- `inner_expression_options`: Additional keyword arguments passed to inner expressions.
+- `parameter_initializer`: **Experimental** optional function called as
+    `parameter_initializer(rng, T, num_parameters)` when creating a new candidate.
+    It must return a `NamedTuple` with the same keys and vector lengths as
+    `num_parameters`. By default, template parameters are initialized with `randn`.
 """
-struct TemplateExpressionSpec{ST<:TemplateStructure,IET,IEO<:NamedTuple} <:
+struct TemplateExpressionSpec{ST<:TemplateStructure,IET,IEO<:NamedTuple,PI} <:
        AbstractExpressionSpec
     structure::ST
     inner_expression_type::Type{IET}
     inner_expression_options::IEO
-    function TemplateExpressionSpec{ST,IET,IEO}(
-        structure, inner_expression_type, inner_expression_options
-    ) where {ST<:TemplateStructure,IET,IEO<:NamedTuple}
-        return new{ST,IET,IEO}(structure, inner_expression_type, inner_expression_options)
+    parameter_initializer::PI
+    function TemplateExpressionSpec{ST,IET,IEO,PI}(
+        structure, inner_expression_type, inner_expression_options, parameter_initializer
+    ) where {ST<:TemplateStructure,IET,IEO<:NamedTuple,PI}
+        return new{ST,IET,IEO,PI}(
+            structure,
+            inner_expression_type,
+            inner_expression_options,
+            parameter_initializer,
+        )
     end
 end
 # Positional form. `::Type{IET}` with a positional default binds IET in the
@@ -1057,18 +1135,22 @@ function TemplateExpressionSpec(
     structure::TemplateStructure,
     (::Type{IET})=ComposableExpression,
     inner_expression_options::NamedTuple=NamedTuple(),
+    parameter_initializer=nothing,
 ) where {IET}
-    return TemplateExpressionSpec{typeof(structure),IET,typeof(inner_expression_options)}(
-        structure, IET, inner_expression_options
+    return TemplateExpressionSpec{
+        typeof(structure),IET,typeof(inner_expression_options),typeof(parameter_initializer)
+    }(
+        structure, IET, inner_expression_options, parameter_initializer
     )
 end
 @unstable function TemplateExpressionSpec(;
     structure::TemplateStructure,
     inner_expression_type::Type=ComposableExpression,
     inner_expression_options::NamedTuple=NamedTuple(),
+    parameter_initializer=nothing,
 )
     return TemplateExpressionSpec(
-        structure, inner_expression_type, inner_expression_options
+        structure, inner_expression_type, inner_expression_options, parameter_initializer
     )
 end
 
@@ -1077,12 +1159,22 @@ ES.get_expression_type(::TemplateExpressionSpec) = TemplateExpression
 # Explicit NamedTuple type pins `inner_expression_type` as `Type{IET}`
 # (a `(; ...)` shorthand widens it to `Type`, killing inference).
 function ES.get_expression_options(
-    spec::TemplateExpressionSpec{ST,IET,IEO}
-) where {ST,IET,IEO}
+    spec::TemplateExpressionSpec{ST,IET,IEO,PI}
+) where {ST,IET,IEO,PI}
     return NamedTuple{
-        (:structure, :inner_expression_type, :inner_expression_options),
-        Tuple{ST,Type{IET},IEO},
-    }((spec.structure, spec.inner_expression_type, spec.inner_expression_options))
+        (
+            :structure,
+            :inner_expression_type,
+            :inner_expression_options,
+            :parameter_initializer,
+        ),
+        Tuple{ST,Type{IET},IEO,PI},
+    }((
+        spec.structure,
+        spec.inner_expression_type,
+        spec.inner_expression_options,
+        spec.parameter_initializer,
+    ),)
 end
 ES.get_node_type(::TemplateExpressionSpec) = Node
 # COV_EXCL_STOP
