@@ -52,12 +52,9 @@ pass `expression_type` to the `Options` constructor, as well as any
 `expression_options` you need (as a `NamedTuple`).
 
 If needed, you may need to overload `SymbolicRegression.ExpressionBuilder.extra_init_params` in
-case your expression needs additional parameters. See the method for `ParametricExpression`
-as an example.
+case your expression needs additional parameters. See `src/TemplateExpression.jl` for an example.
 
-You can look at the files `src/ParametricExpression.jl` and `src/TemplateExpression.jl`
-for more examples of custom expression types, though note that `ParametricExpression` itself
-is defined in DynamicExpressions.jl, while that file just overloads some methods for
+You can also look at `src/TemplateExpression.jl` for a custom expression type used by
 SymbolicRegression.jl.
 
 ## Other Customizations

@@ -361,8 +361,8 @@ const OPTION_DESCRIPTIONS = """- `defaults`: What set of defaults to use for `Op
     - `:linear`: Uses direct differences between losses. This mode handles any loss values (including negative)
         and is useful for custom loss functions, especially those based on likelihoods.
 - `expression_spec::AbstractExpressionSpec`: A specification of what types of expressions to use in the
-    search. For example, `ExpressionSpec()` (default). You can also see `TemplateExpressionSpec` and
-    `ParametricExpressionSpec` for specialized cases.
+    search. For example, `ExpressionSpec()` (default). See `TemplateExpressionSpec` for structured
+    expressions and learnable parameters.
 - `populations`: How many populations of equations to use.
 - `population_size`: How many equations in each population.
 - `ncycles_per_iteration`: How many generations to consider per iteration.
