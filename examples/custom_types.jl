@@ -224,6 +224,7 @@ We also need to manually define the `loss_type`, since it's not inferrable from
 =#
 binary_operators = (concat, interleave)
 unary_operators = (head, tail, reverse)
+test_loss_threshold = 8.0  #src
 hparams = (;
     batching=true,
     batch_size=32,
@@ -231,7 +232,7 @@ hparams = (;
     parsimony=0.1,
     adaptive_parsimony_scaling=20.0,
     mutation_weights=MutationWeights(; mutate_constant=1.0),
-    early_stop_condition=(l, c) -> l < 1.0 && c <= 15,  #src
+    early_stop_condition=(l, _) -> l <= test_loss_threshold,  #src
 )
 model = SRRegressor(;
     binary_operators,
@@ -260,5 +261,5 @@ fit!(mach)
 
 ŷ = report(mach).equations[end](MLJBase.matrix(X; transpose=true))
 mean_loss = sum(map(edit_distance, y, ŷ)) / length(y)
-@test mean_loss <= 8.0
+@test mean_loss <= test_loss_threshold
 #! format: on
