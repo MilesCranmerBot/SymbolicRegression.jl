@@ -64,7 +64,7 @@ active alongside yours.
 X = 2randn(100, 5)
 y = @. cos(X[:, 1]) + X[:, 2]^2
 
-model = SRRegressor(
+model = SRRegressor(;
     binary_operators=[+, -, *, /],
     unary_operators=[cos],
     plugins=(MutationCounterPlugin(),),
