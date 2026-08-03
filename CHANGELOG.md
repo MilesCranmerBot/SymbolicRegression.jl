@@ -1,11 +1,5 @@
 # Changelog
 
-## Unreleased
-
-### BREAKING CHANGES
-
-- remove `ParametricExpression`, `ParametricNode`, and `ParametricExpressionSpec` from the public API; use `TemplateExpressionSpec` for searches with learnable parameters
-
 ## [2.0.0-alpha.11](https://github.com/astroautomata/SymbolicRegression.jl/compare/v2.0.0-alpha.10...v2.0.0-alpha.11) (2026-05-17)
 
 ### Features
