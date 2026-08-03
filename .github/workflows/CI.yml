@@ -122,14 +122,14 @@ jobs:
           - ext/mlj/core
           - ext/mlj/mti
           - ext/mlj/templates
-          - examples/readme
-          - examples/parameterized_function
-          - examples/custom_types
           - ext/mlj/parametric_search
           - ext/symbolicutils
           - ext/json3_recorder
           - ext/dynamicquantities_units
           - ext/loopvectorization
+          - examples/readme
+          - examples/parameterized_function
+          - examples/custom_types
         exclude:
           - julia-version: "1"
             group: ad/mooncake
