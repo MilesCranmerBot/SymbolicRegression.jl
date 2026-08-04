@@ -50,10 +50,7 @@
     )
 
     composed_structure = TemplateStructure{(:f, :g)}(
-        ((; f, g), (x1, x2)) -> begin
-            h = f + g
-            h(x1)
-        end
+        ((; f, g), (x1, x2)) -> f(x1) + g(x1)
     )
     composed_expression = TemplateExpression(
         (; f, g); structure=composed_structure, operators, variable_names
