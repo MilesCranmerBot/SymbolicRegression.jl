@@ -150,6 +150,9 @@ jobs:
         uses: julia-actions/cache@v3
         with:
           cache-name: julia-cache;workflow=${{ github.workflow }};job=${{ github.job }};group=integration-${{ steps.sanitize_integration_group.outputs.group }};julia=${{ matrix.julia-version }};project=${{ hashFiles(format('test/integration/{0}/Project.toml', matrix.group)) }}
+          # LoopVectorization codegen is CPU-sensitive; cached compiled code
+          # from a different runner CPU can be invalid.
+          cache-compiled: ${{ matrix.group != 'ext/loopvectorization' }}
       - name: "Run integration test"
         env:
           TEST_GROUP: integration/${{ matrix.group }}
