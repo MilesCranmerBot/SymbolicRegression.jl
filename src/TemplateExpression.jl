@@ -778,9 +778,7 @@ function _with_call_time_buffer(contents::NamedTuple, eval_options::EvalOptions)
     return map(Base.Fix2(_with_call_time_buffer, eval_options), contents)
 end
 _with_call_time_buffer(ex, ::EvalOptions) = ex
-function _with_call_time_buffer(
-    ex::AbstractComposableExpression, eval_options::EvalOptions
-)
+function _with_call_time_buffer(ex::AbstractComposableExpression, eval_options::EvalOptions)
     stored = get_eval_options(ex)
     stored.bumper isa Val{true} && return ex
     merged = EvalOptions(

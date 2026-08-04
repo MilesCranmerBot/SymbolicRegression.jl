@@ -17,9 +17,7 @@
 
     function check_buffered(expression, expected)
         unbuffered, unbuffered_complete = eval_tree_array(expression, X, operators)
-        eval_options = EvalOptions(;
-            buffer=ArrayBuffer(Vector{Vector{Float64}}(), Ref(0))
-        )
+        eval_options = EvalOptions(; buffer=ArrayBuffer(Vector{Vector{Float64}}(), Ref(0)))
         buffered, buffered_complete = eval_tree_array(
             expression, X, operators; eval_options
         )
@@ -45,23 +43,15 @@
     derivative_expression = TemplateExpression(
         (; f); structure=derivative_structure, operators, variable_names
     )
-    check_buffered(
-        derivative_expression, @. X[1, :]^2 + 1.0 + 2.0 * X[1, :]
-    )
+    check_buffered(derivative_expression, @. X[1, :]^2 + 1.0 + 2.0 * X[1, :])
 
-    composed_structure = TemplateStructure{(:f, :g)}(
-        ((; f, g), (x1, x2)) -> f(x1) + g(x1)
-    )
+    composed_structure = TemplateStructure{(:f, :g)}(((; f, g), (x1, x2)) -> f(x1) + g(x1))
     composed_expression = TemplateExpression(
         (; f, g); structure=composed_structure, operators, variable_names
     )
-    check_buffered(
-        composed_expression, @. X[1, :]^2 + 1.0 + 2.0 * X[1, :] - 0.5
-    )
+    check_buffered(composed_expression, @. X[1, :]^2 + 1.0 + 2.0 * X[1, :] - 0.5)
 
-    repeated_structure = TemplateStructure{(:f,)}(
-        ((; f), (x1, x2)) -> f(x1) + f(x2)
-    )
+    repeated_structure = TemplateStructure{(:f,)}(((; f), (x1, x2)) -> f(x1) + f(x2))
     repeated_expression = TemplateExpression(
         (; f); structure=repeated_structure, operators, variable_names
     )
@@ -69,17 +59,14 @@
         repeated_expression, @. X[1, :]^2 + X[2, :]^2 + 2.0
     )
 
-    nested_structure = TemplateStructure{(:f, :g)}(
-        ((; f, g), (x1, x2)) -> f(g(x1))
-    )
+    nested_structure = TemplateStructure{(:f, :g)}(((; f, g), (x1, x2)) -> f(g(x1)))
     nested_expression = TemplateExpression(
         (; f, g); structure=nested_structure, operators, variable_names
     )
     check_buffered(nested_expression, @. (2.0 * X[1, :] - 0.5)^2 + 1.0)
 
     options = Options(;
-        operators,
-        expression_spec=TemplateExpressionSpec(; structure=repeated_structure),
+        operators, expression_spec=TemplateExpressionSpec(; structure=repeated_structure)
     )
     dataset = Dataset(X, zeros(size(X, 2)))
     repeated_eval_options.buffer.index[] = 1000
@@ -93,9 +80,7 @@
     @test isfinite(loss)
     @test repeated_eval_options.buffer.index[] < 1000
 
-    buffered_metadata = EvalOptions(;
-        buffer=ArrayBuffer(Vector{Vector{Float64}}(), Ref(0))
-    )
+    buffered_metadata = EvalOptions(; buffer=ArrayBuffer(Vector{Vector{Float64}}(), Ref(0)))
     @test_throws ArgumentError ComposableExpression(
         Node{Float64}(; feature=1); operators, eval_options=buffered_metadata
     )
