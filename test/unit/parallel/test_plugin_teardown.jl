@@ -55,6 +55,7 @@
         binary_operators=[+, *],
         use_frequency=false,
         use_frequency_in_tournament=false,
+        annealing=false,
         save_to_file=false,
         plugins=(TeardownProbePlugin(),),
     )

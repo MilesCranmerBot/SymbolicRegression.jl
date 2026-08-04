@@ -321,7 +321,12 @@ function test_module_on_workers(procs, options::AbstractOptions, verbosity)
 end
 
 function test_entire_pipeline(
-    procs, dataset::Dataset{T}, options::AbstractOptions, verbosity
+    procs,
+    dataset::Dataset{T},
+    options::AbstractOptions,
+    verbosity,
+    head_plugin_states::Tuple,
+    worker_plugin_states::Tuple,
 ) where {T<:DATA_TYPE}
     futures = []
     verbosity > 0 && @info "Testing entire pipeline on workers..."
@@ -335,6 +340,7 @@ function test_entire_pipeline(
                     nlength=3,
                     options=options,
                     nfeatures=max_features(dataset, options),
+                    plugin_states=head_plugin_states,
                 )
                 tmp_pop = s_r_cycle(
                     dataset,
@@ -344,6 +350,8 @@ function test_entire_pipeline(
                     verbosity=verbosity,
                     options=options,
                     record=RecordType(),
+                    # TODO: Use isolated states so this smoke test does not emit synthetic lifecycle events to shared plugin resources.
+                    plugin_states=worker_plugin_states,
                 )[1]
                 tmp_pop = optimize_and_simplify_population(
                     dataset, tmp_pop, options, options.maxsize, RecordType()
@@ -371,6 +379,8 @@ function configure_workers(;
     verbosity,
     example_dataset::Dataset,
     runtests::Bool,
+    test_head_plugin_states::Tuple,
+    test_worker_plugin_states::Tuple,
 )
     (procs, we_created_procs) = if procs === nothing
         withenv("JULIA_WORKER_TIMEOUT" => string(worker_timeout)) do
@@ -388,7 +398,14 @@ function configure_workers(;
 
     if runtests
         test_module_on_workers(procs, options, verbosity)
-        test_entire_pipeline(procs, example_dataset, options, verbosity)
+        test_entire_pipeline(
+            procs,
+            example_dataset,
+            options,
+            verbosity,
+            test_head_plugin_states,
+            test_worker_plugin_states,
+        )
     end
 
     return (procs, we_created_procs)

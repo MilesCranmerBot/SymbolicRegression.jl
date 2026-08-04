@@ -36,10 +36,14 @@ using ..OperatorsModule:
     safe_acos,
     safe_acosh,
     safe_atanh
-using ..MutationWeightsModule: AbstractMutationWeights, MutationWeights, mutations
+using ..MutationWeightsModule: MutationWeightsModule, MutationWeights, _mutation_weights
+using ..MutationsModule: MutationsModule
 import ..OptionsStructModule: Options
-using ..OptionsStructModule: ComplexityMapping, BacksolveOptions, operator_specialization
-using ..PluginModule: default_adaptive_parsimony_plugin, _merge_with_default_plugins
+using ..OptionsStructModule: ComplexityMapping, operator_specialization
+using ..PluginModule:
+    default_adaptive_parsimony_plugin,
+    default_simulated_annealing_plugin,
+    _merge_with_default_plugins
 using ..UtilsModule: @save_kwargs, @ignore
 using ..ExpressionSpecModule:
     AbstractExpressionSpec,
@@ -223,8 +227,8 @@ inverse_opmap(@nospecialize(op)) = get(INVERSE_OP_MAP, op, op)
 
 recommend_loss_function_expression(expression_type) = false
 
-create_mutation_weights(w::AbstractMutationWeights) = w
-create_mutation_weights(w::NamedTuple) = MutationWeights(; w...)
+create_mutation_weights(w::MutationWeights) = w
+create_mutation_weights(w::NamedTuple) = _mutation_weights(; w...)
 
 function default_popmember_type end
 
@@ -384,7 +388,7 @@ const OPTION_DESCRIPTIONS = """- `defaults`: What set of defaults to use for `Op
     and returns an integer.
 - `alpha`: The probability of accepting an equation mutation
     during regularized evolution is given by exp(-delta_loss/(alpha * T)),
-    where T goes from 1 to 0. Thus, alpha=infinite is the same as no annealing.
+    where T goes from 1 to 0. Set `annealing=false` to disable annealing.
 - `maxsize`: Maximum size of equations during the search.
 - `maxdepth`: Maximum depth of equations during the search, by default
     this is set equal to the maxsize.
@@ -452,9 +456,12 @@ const OPTION_DESCRIPTIONS = """- `defaults`: What set of defaults to use for `Op
     multiply or divide by (1+perturbation_factor)^(rand()+1).
 - `probability_negate_constant`: Probability of negating a constant in the equation
     when mutating it.
-- `mutation_weights`: Relative probabilities of the mutations. The struct
-    `MutationWeights` (or any `AbstractMutationWeights`) should be passed to these options.
-    See its documentation on `MutationWeights` for the different weights.
+- `mutation_weights`: Deprecated built-in mutation weights, converted to
+    `default_mutations`.
+- `mutations`: Explicit weighted mutations. An entry replaces a default mutation
+    of the same type; new mutation types are added.
+- `default_mutations`: Default weighted mutations considered after `mutations`.
+    Pass `()` to disable every automatic default.
 - `crossover_probability`: Probability of performing crossover.
 - `annealing`: Whether to use simulated annealing.
 - `warmup_maxsize_by`: Whether to slowly increase the max size from 5 up to
@@ -547,10 +554,9 @@ $(OPTION_DESCRIPTIONS)
         operator_enum_constructor::Union{Nothing,Type{<:AbstractOperatorEnum},Function} =
             nothing
     ),
-    @nospecialize(
-        mutation_weights::Union{AbstractMutationWeights,AbstractVector,NamedTuple,Nothing} =
-            nothing
-    ),
+    @nospecialize(mutation_weights::Union{MutationWeights,NamedTuple,Nothing} = nothing),
+    @nospecialize(default_mutations::Union{AbstractVector,Tuple,Nothing} = nothing),
+    @nospecialize(mutations::Union{AbstractVector,Tuple,Nothing} = nothing),
     @nospecialize(crossover_probability::Union{Real,Nothing} = nothing),
     @nospecialize(annealing::Union{Bool,Nothing} = nothing),
     @nospecialize(alpha::Union{Nothing,Real} = nothing),
@@ -617,8 +623,6 @@ $(OPTION_DESCRIPTIONS)
     perturbation_factor::Union{Nothing,Real}=nothing,
     probability_negate_constant::Union{Real,Nothing}=nothing,
     skip_mutation_failures::Bool=true,
-    ## Backsolve rewrite mutation:
-    backsolve::Union{BacksolveOptions,Nothing}=nothing,
     ## 6. Tournament Selection
     ## 7. Constant Optimization:
     optimizer_algorithm::Union{AbstractString,Optim.AbstractOptimizer}=Optim.BFGS(;
@@ -723,11 +727,12 @@ $(OPTION_DESCRIPTIONS)
         if k == :mutationWeights
             if typeof(kws[k]) <: AbstractVector
                 _mutation_weights = kws[k]
-                if length(_mutation_weights) < length(mutations)
+                n_fields = length(fieldnames(MutationWeights))
+                if length(_mutation_weights) < n_fields
                     # Pad with zeros:
                     _mutation_weights = vcat(
                         _mutation_weights,
-                        zeros(length(mutations) - length(_mutation_weights))
+                        zeros(n_fields - length(_mutation_weights))
                     )
                 end
                 mutation_weights = MutationWeights(_mutation_weights...)
@@ -741,6 +746,7 @@ $(OPTION_DESCRIPTIONS)
             "Unknown deprecated keyword argument: $k. Please update `Options(;)` to transfer this key.",
         )
     end
+    mutation_weights_were_provided = mutation_weights !== nothing
     if npop !== nothing
         Base.depwarn("`npop` is deprecated. Use `population_size` instead.", :Options)
         population_size = npop
@@ -1017,11 +1023,46 @@ $(OPTION_DESCRIPTIONS)
     end
 
     set_mutation_weights = create_mutation_weights(mutation_weights)
-    backsolve = something(backsolve, BacksolveOptions())
+    if mutation_weights_were_provided && default_mutations !== nothing
+        throw(
+            ArgumentError(
+                "`mutation_weights` and `default_mutations` cannot be used together."
+            ),
+        )
+    end
+    _default_mutations = if default_mutations === nothing
+        base = MutationWeightsModule._mutations_from_weights(set_mutation_weights)
+        for i in eachindex(base)
+            if base[i].first isa MutationsModule.ConstantMutation
+                base[i] =
+                    MutationsModule.ConstantMutation(;
+                        perturbation_factor=Float64(perturbation_factor),
+                        probability_negate=Float64(probability_negate_constant),
+                    ) => base[i].second
+            end
+        end
+        base
+    else
+        Pair{MutationsModule.AbstractMutation,Float64}[
+            p.first => Float64(p.second) for p in default_mutations
+        ]
+    end
+    _explicit_mutations = Pair{MutationsModule.AbstractMutation,Float64}[
+        p.first => Float64(p.second) for p in something(mutations, ())
+    ]
+    _remaining_defaults = filter(
+        default ->
+            !any(explicit -> explicit.first isa typeof(default.first), _explicit_mutations),
+        _default_mutations,
+    )
+    _resolved_mutations = vcat(_explicit_mutations, _remaining_defaults)
 
     user_plugin_tuple = Tuple(plugins)
     default_plugin_tuple = if default_plugins === nothing
-        (default_adaptive_parsimony_plugin(; use_frequency, use_frequency_in_tournament),)
+        (
+            default_simulated_annealing_plugin(; annealing, alpha),
+            default_adaptive_parsimony_plugin(; use_frequency, use_frequency_in_tournament),
+        )
     else
         Tuple(default_plugins)
     end
@@ -1053,7 +1094,6 @@ $(OPTION_DESCRIPTIONS)
         node_type,
         expression_type,
         typeof(expression_options),
-        typeof(set_mutation_weights),
         typeof(plugin_tuple),
         popmember_type,
         turbo,
@@ -1061,6 +1101,7 @@ $(OPTION_DESCRIPTIONS)
         deprecated_return_state::Union{Bool,Nothing},
         typeof(_autodiff_backend),
         print_precision,
+        use_recorder,
     }(
         operators,
         op_constraints,
@@ -1071,7 +1112,6 @@ $(OPTION_DESCRIPTIONS)
         parsimony,
         dimensional_constraint_penalty,
         dimensionless_constants_only,
-        alpha,
         maxsize,
         maxdepth,
         Val(turbo),
@@ -1083,10 +1123,9 @@ $(OPTION_DESCRIPTIONS)
         _output_directory,
         populations,
         perturbation_factor,
-        annealing,
         batching,
         batch_size,
-        set_mutation_weights,
+        _resolved_mutations,
         crossover_probability,
         warmup_maxsize_by,
         use_frequency,
@@ -1128,10 +1167,9 @@ $(OPTION_DESCRIPTIONS)
         skip_mutation_failures,
         deterministic,
         define_helper_functions,
-        use_recorder,
+        Val(use_recorder),
         popmember_type,
         plugin_tuple,
-        backsolve,
     )
 
     return options
@@ -1153,7 +1191,7 @@ function default_options(@nospecialize(version::Union{VersionNumber,Nothing} = n
             warmup_maxsize_by=0.0,
             adaptive_parsimony_scaling=20.0,
             # Mutations
-            mutation_weights=MutationWeights(;
+            mutation_weights=_mutation_weights(;
                 mutate_constant=0.048,
                 mutate_operator=0.47,
                 swap_operands=0.1,
@@ -1199,7 +1237,7 @@ function default_options(@nospecialize(version::Union{VersionNumber,Nothing} = n
         warmup_maxsize_by=0.0,
         adaptive_parsimony_scaling=20.0,
         # Mutations
-        mutation_weights=MutationWeights(;
+        mutation_weights=_mutation_weights(;
             mutate_constant=0.0346,
             mutate_operator=0.293,
             swap_operands=0.198,

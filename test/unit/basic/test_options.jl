@@ -62,10 +62,59 @@ end
 
 @testitem "Test backsolve options" begin
     using SymbolicRegression
+    using SymbolicRegression.BacksolveModule: configured_backsolve
 
-    @test Options().backsolve == BacksolveOptions()
-    @test Options(; backsolve=nothing).backsolve == BacksolveOptions()
-    @test Options(; backsolve=BacksolveOptions(; lambda=0.2)).backsolve.lambda == 0.2
+    # Backsolve configuration lives on BacksolveMutation.
+    default_backsolve = first(
+        p.first for p in Options().mutations if p.first isa BacksolveMutation
+    )
+    @test default_backsolve == BacksolveMutation()
+
+    custom = Options(;
+        default_mutations=(), mutations=[BacksolveMutation(; lambda=0.2) => 1.0]
+    )
+    @test length(custom.mutations) == 1
+    @test custom.mutations[1].first.lambda == 0.2
+
+    with_override = Options(; mutations=(BacksolveMutation(; lambda=0.3) => 1.0,))
+    @test length(with_override.mutations) == length(default_mutations())
+    @test first(with_override.mutations) == (BacksolveMutation(; lambda=0.3) => 1.0)
+    @test count(p -> p.first isa BacksolveMutation, with_override.mutations) == 1
+    @test configured_backsolve(with_override).lambda == 0.3
+    @test_throws ArgumentError configured_backsolve(Options(; default_mutations=()))
+
+    @test isempty(Options(; default_mutations=()).mutations)
+    @test default_mutations() == SymbolicRegression.default_mutations()
+
+    @test_throws ArgumentError Options(;
+        mutation_weights=MutationWeights(), default_mutations=()
+    )
+end
+
+@testitem "Mutation collections mirror plugin override semantics" begin
+    using SymbolicRegression
+
+    struct ProbeMutation <: AbstractMutation
+        value::Int
+    end
+
+    disabled = Options(; mutations=[ConstantMutation() => 0.0])
+    @test first(disabled.mutations) == (ConstantMutation() => 0.0)
+    @test count(p -> p.first isa ConstantMutation, disabled.mutations) == 1
+    @test length(disabled.mutations) == length(default_mutations())
+
+    added = Options(; mutations=[ProbeMutation(1) => 0.5])
+    @test first(added.mutations) == (ProbeMutation(1) => 0.5)
+    @test length(added.mutations) == length(default_mutations()) + 1
+
+    no_defaults = Options(; default_mutations=(), mutations=[ProbeMutation(2) => 1.0])
+    @test no_defaults.mutations == [ProbeMutation(2) => 1.0]
+
+    custom_defaults = Options(;
+        mutations=[ProbeMutation(3) => 0.25],
+        default_mutations=[ProbeMutation(4) => 0.75, ConstantMutation() => 1.0],
+    )
+    @test custom_defaults.mutations == [ProbeMutation(3) => 0.25, ConstantMutation() => 1.0]
 end
 
 @testitem "Test operators parameter conflicts" begin

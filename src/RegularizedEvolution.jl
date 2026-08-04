@@ -1,54 +1,171 @@
 module RegularizedEvolutionModule
 
 using DynamicExpressions: string_tree
-using ..CoreModule: AbstractOptions, Dataset, RecordType, DATA_TYPE, LOSS_TYPE
+using ..CoreModule:
+    AbstractOptions,
+    Dataset,
+    RecordType,
+    DATA_TYPE,
+    LOSS_TYPE,
+    MutationStepResult,
+    wrap_mutation_step
 using ..PopulationModule: Population, best_of_sample
+using ..HallOfFameModule: HallOfFame, update_hall_of_fame!, _update_hall_of_fame_unchecked!
+using ..ComplexityModule: compute_complexity
 using ..MutateModule: next_generation, crossover_generation
 using ..RecorderModule: @recorder
-using ..UtilsModule: argmin_fast
+using ..UtilsModule: argmin_fast, strictmap
+
+"""
+One precomposed mutation-middleware layer.
+"""
+struct MutationStepLayer{W,F}
+    wrapper::W
+    next_step::F
+end
+@inline function (layer::MutationStepLayer)(parent)
+    return layer.wrapper(parent, layer.next_step)
+end
+
+build_mutation_step(::Tuple{}, base_step) = base_step
+function build_mutation_step(wrappers::Tuple, base_step::F) where {F}
+    inner = build_mutation_step(Base.tail(wrappers), base_step)
+    return _add_mutation_step_layer(first(wrappers), inner)
+end
+_add_mutation_step_layer(::Nothing, inner) = inner
+function _add_mutation_step_layer(wrapper, inner)  # COV_EXCL_LINE
+    return MutationStepLayer(wrapper, inner)
+end
+
+"""
+Engine-owned state for one mutation step. Mutable contents accumulate every
+middleware attempt so evaluation counts, Hall-of-Fame updates, and recording
+stay under engine control.
+"""
+struct MutationStep{D,P,O,S,H,A,M,R}
+    dataset::D
+    population::P
+    curmaxsize::Int
+    options::O
+    plugin_states::S
+    best_seen::H
+    attempted_results::A
+    attempted_members::M
+    recorded_steps::R
+end
+
+function (step::MutationStep)(parent)
+    step_recorder = RecordType()
+    member, accepted, num_evals = next_generation(
+        step.dataset,
+        parent,
+        step.curmaxsize,
+        step.options;
+        tmp_recorder=step_recorder,
+        plugin_states=step.plugin_states,
+        population_for_backsolve=step.population,
+    )
+    attempt_id = isnothing(step.attempted_results) ? 1 : length(step.attempted_results) + 1
+    result = MutationStepResult(member, accepted, attempt_id, num_evals)
+    !isnothing(step.attempted_results) && push!(step.attempted_results, result)
+    !isnothing(step.attempted_members) && push!(step.attempted_members, copy(member))
+    if !isnothing(step.recorded_steps)
+        push!(step.recorded_steps, (copy(parent), copy(member), step_recorder))
+    end
+    accepted &&
+        !isnothing(step.attempted_members) &&
+        update_hall_of_fame!(step.best_seen, member, step.options)
+    return result
+end
+
+function reset!(step::MutationStep)
+    !isnothing(step.attempted_results) && empty!(step.attempted_results)
+    !isnothing(step.attempted_members) && empty!(step.attempted_members)
+    !isnothing(step.recorded_steps) && empty!(step.recorded_steps)
+    return nothing
+end
 
 # Pass through the population several times, replacing the oldest
 # with the fittest of a small subsample
 function reg_evol_cycle(
     dataset::Dataset{T,L},
     pop::P,
-    temperature,
     curmaxsize::Int,
     options::AbstractOptions,
     record::RecordType;
-    plugin_states::Tuple=(),
+    plugin_states::Tuple,
+    best_seen::HallOfFame,
 )::Tuple{P,Float64} where {T<:DATA_TYPE,L<:LOSS_TYPE,P<:Population{T,L}}
     num_evals = 0.0
     n_evol_cycles = ceil(Int, pop.n / options.tournament_selection_n)
+    mutation_wrappers = strictmap(wrap_mutation_step, plugin_states, options.plugins)
+    recorded_steps = if options.use_recorder isa Val{true}
+        Tuple{eltype(pop.members),eltype(pop.members),RecordType}[]
+    else
+        nothing
+    end
+    has_mutation_wrappers = any(!isnothing, mutation_wrappers)
+    attempted_results =
+        has_mutation_wrappers ? MutationStepResult{eltype(pop.members)}[] : nothing
+    attempted_members = has_mutation_wrappers ? eltype(pop.members)[] : nothing
+    base_step = MutationStep(
+        dataset,
+        pop,
+        curmaxsize,
+        options,
+        plugin_states,
+        best_seen,
+        attempted_results,
+        attempted_members,
+        recorded_steps,
+    )
+    wrapped_step = build_mutation_step(mutation_wrappers, base_step)
 
     for i in 1:n_evol_cycles
         if rand() > options.crossover_probability
             allstar = best_of_sample(pop, options; plugin_states)
-            mutation_recorder = RecordType()
-            baby, mutation_accepted, tmp_num_evals = next_generation(
-                dataset,
-                allstar,
-                temperature,
-                curmaxsize,
-                options;
-                tmp_recorder=mutation_recorder,
-                plugin_states,
-                population_for_backsolve=pop,
-            )
-            num_evals += tmp_num_evals
+            reset!(base_step)
+            result = wrapped_step(allstar)
+            selected_attempt_idx = result.attempt_id
+            selected_result = if isnothing(base_step.attempted_results)
+                num_evals += result.num_evals
+                result
+            else
+                checkbounds(Bool, base_step.attempted_results, selected_attempt_idx) ||
+                    throw(
+                        ArgumentError(
+                            "Mutation middleware must return a result from `next_step`."
+                        ),
+                    )
+                num_evals += sum(attempt -> attempt.num_evals, base_step.attempted_results)
+                base_step.attempted_results[selected_attempt_idx]
+            end
+            baby = if isnothing(base_step.attempted_members)
+                selected_result.member
+            else
+                base_step.attempted_members[selected_attempt_idx]
+            end
+            mutation_accepted = selected_result.accepted
 
-            if !mutation_accepted && options.skip_mutation_failures
-                # Skip this mutation rather than replacing oldest member with unchanged member
-                continue
+            should_replace = mutation_accepted || !options.skip_mutation_failures
+            oldest = if should_replace
+                argmin_fast([pop.members[member].birth for member in 1:(pop.n)])
+            else
+                0
             end
 
-            oldest = argmin_fast([pop.members[member].birth for member in 1:(pop.n)])
-
             @recorder begin
+                steps = something(recorded_steps)
+
                 if !haskey(record, "mutations")
                     record["mutations"] = RecordType()
                 end
-                for member in [allstar, baby, pop.members[oldest]]
+                members_to_record =
+                    should_replace ? [pop.members[oldest]] : eltype(pop.members)[]
+                for (parent, child, _) in steps
+                    push!(members_to_record, parent, child)
+                end
+                for member in members_to_record
                     if !haskey(record["mutations"], "$(member.ref)")
                         record["mutations"]["$(member.ref)"] = RecordType(
                             "events" => Vector{RecordType}(),
@@ -59,21 +176,26 @@ function reg_evol_cycle(
                         )
                     end
                 end
-                mutate_event = RecordType(
-                    "type" => "mutate",
-                    "time" => time(),
-                    "child" => baby.ref,
-                    "mutation" => mutation_recorder,
-                )
-                death_event = RecordType("type" => "death", "time" => time())
-
-                # Put in random key rather than vector; otherwise there are collisions!
-                push!(record["mutations"]["$(allstar.ref)"]["events"], mutate_event)
-                push!(
-                    record["mutations"]["$(pop.members[oldest].ref)"]["events"], death_event
-                )
+                for (attempt_idx, (parent, child, step_recorder)) in enumerate(steps)
+                    mutate_event = RecordType(
+                        "type" => "mutate",
+                        "time" => time(),
+                        "child" => child.ref,
+                        "selected" => attempt_idx == selected_attempt_idx,
+                        "mutation" => step_recorder,
+                    )
+                    push!(record["mutations"]["$(parent.ref)"]["events"], mutate_event)
+                end
+                if should_replace
+                    death_event = RecordType("type" => "death", "time" => time())
+                    push!(
+                        record["mutations"]["$(pop.members[oldest].ref)"]["events"],
+                        death_event,
+                    )
+                end
             end
 
+            should_replace || continue
             pop.members[oldest] = baby
 
         else # Crossover
@@ -90,6 +212,14 @@ function reg_evol_cycle(
                 recorder=crossover_recorder,
             )
             num_evals += tmp_num_evals
+            if crossover_accepted
+                _update_hall_of_fame_unchecked!(
+                    best_seen, baby1, compute_complexity(baby1, options)
+                )
+                _update_hall_of_fame_unchecked!(
+                    best_seen, baby2, compute_complexity(baby2, options)
+                )
+            end
 
             if !crossover_accepted && options.skip_mutation_failures
                 continue

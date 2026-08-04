@@ -20,7 +20,7 @@ using ..CoreModule:
     Dataset,
     SubDataset,
     DATA_TYPE,
-    AbstractMutationWeights,
+    ConstantMutation,
     AbstractExpressionSpec,
     get_indices,
     ExpressionSpecModule as ES
@@ -101,7 +101,7 @@ end
 
 function MM.condition_mutate_constant!(
     ::Type{<:ParametricExpression},
-    weights::AbstractMutationWeights,
+    weights::AbstractVector,
     member::AbstractPopMember,
     options::AbstractOptions,
     curmaxsize::Int,
@@ -166,25 +166,32 @@ function MF.crossover_trees(
     return ex1, ex2
 end
 
-function CO.count_constants_for_optimization(ex::ParametricExpression)
-    return CO.count_scalar_constants(get_tree(ex)) + length(get_metadata(ex).parameters)
+function CO.get_optimizable_parameters(ex::ParametricExpression, _options)
+    return DE.get_scalar_constants(ex)
+end
+function CO.set_optimizable_parameters!(ex::ParametricExpression, x, refs)
+    return DE.set_scalar_constants!(ex, x, refs)
+end
+function CO.extract_optimizable_gradient(grad, ex::ParametricExpression, _refs)
+    return DE.extract_gradient(grad, ex)
 end
 
 function MF.mutate_constant(
     ex::ParametricExpression{T},
     temperature,
     options::AbstractOptions,
+    m::ConstantMutation=ConstantMutation(),
     rng::AbstractRNG=default_rng(),
 ) where {T<:DATA_TYPE}
     if rand(rng, Bool)
         # Normal mutation of inner constant
         tree = get_contents(ex)
-        return with_contents(ex, MF.mutate_constant(tree, temperature, options, rng))
+        return with_contents(ex, MF.mutate_constant(tree, temperature, options, m, rng))
     else
         # Mutate parameters
         parameter_index = rand(rng, 1:(options.expression_options.max_parameters))
         # We mutate all the parameters at once
-        factor = MF.mutate_factor(T, temperature, options, rng)
+        factor = MF.mutate_factor(T, temperature, m, rng)
         get_metadata(ex).parameters[parameter_index, :] .*= factor
         return ex
     end

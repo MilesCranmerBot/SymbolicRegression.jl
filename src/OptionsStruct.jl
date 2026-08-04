@@ -6,28 +6,7 @@ using DynamicExpressions:
     AbstractOperatorEnum, AbstractExpressionNode, AbstractExpression, OperatorEnum
 using LossFunctions: SupervisedLoss
 
-import ..MutationWeightsModule: AbstractMutationWeights
-
-"""
-    BacksolveOptions(;kws...)
-
-Options for the `backsolve` mutation sparse-expression fit.
-
-!!! warning
-    This option controls an experimental feature. The `backsolve`
-    mutation and `BacksolveOptions` will change in minor version increments.
-
-# Arguments
-
-- `max_library_size::Int`: Maximum number of candidate library terms. Default: `500`.
-- `lambda::Float64`: STLSQ sparsity threshold. Default: `0.01`.
-- `max_iter::Int`: Maximum STLSQ iterations. Default: `10`.
-"""
-Base.@kwdef struct BacksolveOptions
-    max_library_size::Int = 500
-    lambda::Float64 = 0.01
-    max_iter::Int = 10
-end
+using ..MutationsModule: AbstractMutation
 
 """
 This struct defines how complexity is calculated.
@@ -203,7 +182,6 @@ struct Options{
     N<:AbstractExpressionNode,
     E<:AbstractExpression,
     EO<:NamedTuple,
-    MW<:AbstractMutationWeights,
     PT<:Tuple,
     PM,
     _turbo,
@@ -211,6 +189,7 @@ struct Options{
     _return_state,
     AD,
     print_precision,
+    _use_recorder,
 } <: AbstractOptions
     operators::OP
     op_constraints::OP_CONSTRAINTS
@@ -221,7 +200,6 @@ struct Options{
     parsimony::Float64
     dimensional_constraint_penalty::Union{Float64,Nothing}
     dimensionless_constants_only::Bool
-    alpha::Float64
     maxsize::Int
     maxdepth::Int
     turbo::Val{_turbo}
@@ -233,10 +211,9 @@ struct Options{
     output_directory::Union{String,Nothing}
     populations::Int
     perturbation_factor::Float64
-    annealing::Bool
     batching::Bool
     batch_size::Int
-    mutation_weights::MW
+    mutations::Vector{Pair{AbstractMutation,Float64}}
     crossover_probability::Float64
     warmup_maxsize_by::Float64
     use_frequency::Bool
@@ -278,10 +255,9 @@ struct Options{
     skip_mutation_failures::Bool
     deterministic::Bool
     define_helper_functions::Bool
-    use_recorder::Bool
+    use_recorder::Val{_use_recorder}
     popmember_type::Type{PM}
     plugins::PT
-    backsolve::BacksolveOptions
 end
 
 function Base.print(io::IO, @nospecialize(options::Options))
@@ -293,13 +269,8 @@ function Base.print(io::IO, @nospecialize(options::Options))
         *
         join(
             [
-                if fieldname in (
-                    :optimizer_algorithm,
-                    :optimizer_options,
-                    :mutation_weights,
-                    :plugins,
-                    :backsolve,
-                )
+                if fieldname in
+                    (:optimizer_algorithm, :optimizer_options, :plugins, :backsolve)
                     "$(fieldname)=..."
                 else
                     "$(fieldname)=$(getfield(options, fieldname))"

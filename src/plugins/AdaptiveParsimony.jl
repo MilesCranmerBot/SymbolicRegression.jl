@@ -1,12 +1,13 @@
 module AdaptiveParsimonyModule
 
 using DispatchDoctor: @stable
-using ..CoreModule: AbstractPlugin, AbstractOptions
+using ..CoreModule: AbstractPlugin, AbstractOptions, MutationAcceptanceContext
 using ..ComplexityModule: compute_complexity
 using ..PopMemberModule: AbstractPopMember
 import ..CoreModule:
     init_plugin_state,
     fork_plugin_state,
+    refresh_worker_plugin_state,
     tournament_cost_multiplier,
     mutation_acceptance_multiplier,
     on_generation_end!,
@@ -153,6 +154,15 @@ function fork_plugin_state(
     return AdaptiveParsimonyState(snapshot)
 end
 
+function refresh_worker_plugin_state(
+    worker_state::AdaptiveParsimonyState,
+    latest_head_state::AdaptiveParsimonyState,
+    plugin::AdaptiveParsimonyPlugin,
+    dataset,
+)
+    return fork_plugin_state(latest_head_state, plugin, dataset)
+end
+
 function tournament_cost_multiplier(
     s::AdaptiveParsimonyState,
     p::AdaptiveParsimonyPlugin,
@@ -172,13 +182,12 @@ end
 function mutation_acceptance_multiplier(
     s::AdaptiveParsimonyState,
     p::AdaptiveParsimonyPlugin,
-    parent_member,
-    new_tree,
+    ctx::MutationAcceptanceContext,
     options::AbstractOptions,
 )
     p.mutation_acceptance || return 1.0
-    old_size = compute_complexity(parent_member, options)
-    new_size = compute_complexity(new_tree, options)
+    old_size = compute_complexity(ctx.parent_member, options)
+    new_size = compute_complexity(ctx.new_tree, options)
     old_frequency = if (0 < old_size <= options.maxsize)
         Float64(s.rss.normalized_frequencies[old_size])
     else

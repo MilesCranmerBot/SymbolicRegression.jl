@@ -7,7 +7,6 @@ using SymbolicRegression:
     ExpressionInterface,
     Dataset,
     update_baseline_loss!,
-    AbstractMutationWeights,
     AbstractOptions,
     mutate!,
     condition_mutation_weights!,

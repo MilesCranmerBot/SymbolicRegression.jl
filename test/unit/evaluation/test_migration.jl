@@ -11,10 +11,11 @@
     y = X[2, :] .* 3.2 .+ X[3, :] .+ 2.0;
 
     options = Options();
-    population1 = Population(
-        X, y; population_size=100, options=options, nfeatures=5, nlength=10
-    )
     dataset = Dataset(X, y)
+    plugin_states = SymbolicRegression.init_plugin_states(options, dataset)
+    population1 = Population(
+        X, y; population_size=100, options=options, nfeatures=5, nlength=10, plugin_states
+    )
 
     tree = Node(1, Node(; val=1.0), Node(; feature=2) * 3.2)
 
