@@ -50,6 +50,9 @@ end
         if field == :crossover_probability
             @test v1_value == 0.0259
             @test v2_value == 0.20
+        elseif field == :adaptive_parsimony_scaling
+            @test v1_value == 1040.0
+            @test v2_value == 20.0
         else
             @test isequal(v1_value, v2_value)
         end

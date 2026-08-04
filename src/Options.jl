@@ -1235,7 +1235,7 @@ function default_options(@nospecialize(version::Union{VersionNumber,Nothing} = n
         # Working with Complexities
         parsimony=0.0,
         warmup_maxsize_by=0.0,
-        adaptive_parsimony_scaling=20.0,
+        adaptive_parsimony_scaling=1040.0,
         # Mutations
         mutation_weights=_mutation_weights(;
             mutate_constant=0.0346,
@@ -1274,7 +1274,8 @@ function default_options(@nospecialize(version::Union{VersionNumber,Nothing} = n
     )
 
     if isnothing(version) || version >= v"2.0.0-"
-        defaults = (; defaults..., crossover_probability=0.20)
+        defaults =
+            (; defaults..., adaptive_parsimony_scaling=20.0, crossover_probability=0.20)
     end
 
     return defaults
