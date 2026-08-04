@@ -1291,8 +1291,8 @@ function default_options(@nospecialize(version::Union{VersionNumber,Nothing} = n
         batch_size=50,
     )
 
-    if version isa VersionNumber && version >= v"2.0.0-"
-        defaults = (; defaults..., adaptive_parsimony_scaling=20.0)
+    if isnothing(version) || version >= v"2.0.0-"
+        defaults = (; defaults..., crossover_probability=0.20)
     end
 
     return defaults
