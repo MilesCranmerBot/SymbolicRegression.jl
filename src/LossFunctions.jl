@@ -8,6 +8,7 @@ using DynamicExpressions:
     EvalOptions,
     get_tree,
     eval_tree_array
+using DynamicExpressions.EvaluateModule: reset_index!
 using LossFunctions: LossFunctions
 using LossFunctions: SupervisedLoss
 using ..CoreModule:
@@ -114,6 +115,7 @@ function _eval_loss(
     regularization::Bool,
     eval_options,
 )::L where {T<:DATA_TYPE,L<:LOSS_TYPE}
+    eval_options === nothing || reset_index!(eval_options.buffer)
     (prediction, completion) = eval_tree_dispatch(tree, dataset, options, eval_options)
     if !completion || isnothing(prediction)
         return L(Inf)
