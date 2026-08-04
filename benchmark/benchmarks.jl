@@ -138,7 +138,9 @@ function _setup_next_generation()
     )
     options = Options(;
         defaults=v"1.0.0",
-        unary_operators=[sin, cos], binary_operators=[+, -, *, /], mutation_weights
+        unary_operators=[sin, cos],
+        binary_operators=[+, -, *, /],
+        mutation_weights,
     )
     plugin_states = _plugin_states(options, dataset)
     recorder = RecordType()
