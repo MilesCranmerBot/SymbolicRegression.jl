@@ -133,18 +133,12 @@ function CO.extract_optimizable_gradient(grad, ex::ComposableExpression, _refs)
     return DE.extract_gradient(grad, ex)
 end
 
-struct PreallocatedComposableExpression{N}
-    tree::N
-end
-
 function DE.allocate_container(
     prototype::ComposableExpression, n::Union{Nothing,Integer}=nothing
 )
-    return PreallocatedComposableExpression(
-        DE.allocate_container(get_contents(prototype), n)
-    )
+    return (; tree=DE.allocate_container(get_contents(prototype), n))
 end
-function DE.copy_into!(dest::PreallocatedComposableExpression, src::ComposableExpression)
+function DE.copy_into!(dest::NamedTuple, src::ComposableExpression)
     new_tree = DE.copy_into!(dest.tree, get_contents(src))
     return with_contents(src, new_tree)
 end
