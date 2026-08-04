@@ -376,9 +376,6 @@ function DE.EvaluationHelpersModule._grad_evaluator(
     )
 end
 
-# Allows special handling of class columns in MLJInterface.jl
-handles_class_column(::Type{<:AbstractExpression}) = false
-
 # These functions allow you to declare functions that must be
 # passed to worker nodes explicitly. See TemplateExpressions.jl for
 # an example. This is used inside Configure.jl.
