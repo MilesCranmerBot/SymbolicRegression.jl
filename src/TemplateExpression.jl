@@ -1026,8 +1026,6 @@ function MF.mutate_constant(
     end
 end
 
-# TODO: Look at other ParametricExpression behavior
-
 function DE.count_scalar_constants(ex::TemplateExpression)
     return (
         sum(DE.count_scalar_constants, values(get_contents(ex))) + (
