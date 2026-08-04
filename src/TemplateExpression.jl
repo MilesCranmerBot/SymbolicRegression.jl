@@ -175,6 +175,59 @@ struct ArgumentRecorder{F} <: Function
 end
 (f::ArgumentRecorder)(args...) = f.f(args...)
 
+_resolve_argument(x::ArgumentRecorder, args::Tuple) = x(args...)
+_resolve_argument(x, ::Tuple) = x
+function _compose_argument_recorders(op, operands...)
+    return ArgumentRecorder() do args...
+        resolved = map(Base.Fix2(_resolve_argument, args), operands)
+        op(resolved...)
+    end
+end
+
+#! format: off
+for op in (
+    :sin, :cos, :tan, :sinh, :cosh, :tanh, :asin, :acos,
+    :asinh, :acosh, :atanh, :sec, :csc, :cot, :asec, :acsc, :acot, :sech, :csch,
+    :coth, :asech, :acsch, :acoth, :sinc, :cosc, :cosd, :cotd, :cscd, :secd,
+    :sinpi, :cospi, :sind, :tand, :acosd, :acotd, :acscd, :asecd, :asind,
+    :log, :log2, :log10, :log1p, :exp, :exp2, :exp10, :expm1, :frexp, :exponent,
+    :float, :abs, :real, :imag, :conj, :unsigned,
+    :nextfloat, :prevfloat, :transpose, :significand,
+    :modf, :rem, :floor, :ceil, :round, :trunc,
+    :inv, :sqrt, :cbrt, :abs2, :angle, :factorial,
+    :(!), :-, :+, :sign, :identity,
+)
+    @eval Base.$(op)(f::ArgumentRecorder) = _compose_argument_recorders(Base.$(op), f)
+end
+for op in (
+    :*, :/, :+, :-, :^, :÷, :mod, :log,
+    :atan, :atand, :copysign, :flipsign,
+    :&, :|, :⊻, ://, :\, :rem,
+    :(>), :(<), :(>=), :(<=), :max, :min,
+)
+    @eval begin
+        Base.$(op)(f::ArgumentRecorder, x::Union{ArgumentRecorder,Number}) =
+            _compose_argument_recorders(Base.$(op), f, x)
+        Base.$(op)(x::Number, f::ArgumentRecorder) =
+            _compose_argument_recorders(Base.$(op), x, f)
+    end
+end
+for op in (:*, :+, :clamp, :max, :min, :fma, :muladd)
+    @eval begin
+        Base.$(op)(
+            f::ArgumentRecorder,
+            x::Union{ArgumentRecorder,Number},
+            y::Union{ArgumentRecorder,Number},
+        ) = _compose_argument_recorders(Base.$(op), f, x, y)
+        Base.$(op)(
+            x::Number, f::ArgumentRecorder, y::Union{ArgumentRecorder,Number}
+        ) = _compose_argument_recorders(Base.$(op), x, f, y)
+        Base.$(op)(x::Number, y::Number, f::ArgumentRecorder) =
+            _compose_argument_recorders(Base.$(op), x, y, f)
+    end
+end
+#! format: on
+
 # We pass through the derivative operators, since
 # we just want to record the number of arguments.
 DynamicDiff.D(f::ArgumentRecorder, ::Integer) = f
