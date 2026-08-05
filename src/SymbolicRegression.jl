@@ -998,12 +998,13 @@ function _warmup_search!(
         PopType = eltype(eltype(state.last_pops))
         PM = popmember_type(PopType)
         HallType = HallOfFame{T,L,N,PM}
+        TraceStateType = typeof(state.trace_prototype)
 
         (in_pop, _, _, _, worker_plugin_states) = extract_from_worker(
             last_pop,
             PopType,
             HallType,
-            typeof(state.trace_prototype),
+            TraceStateType,
             eltype(eltype(state.worker_plugin_states)),
         )
         updated_pop = @sr_spawner(
@@ -1021,7 +1022,7 @@ function _warmup_search!(
                 )::DefaultWorkerOutputType{
                     Population{T,L,N},
                     HallOfFame{T,L,N},
-                    typeof(state.trace_prototype),
+                    TraceStateType,
                     typeof(worker_plugin_states),
                 }
             end,

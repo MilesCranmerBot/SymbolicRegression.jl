@@ -44,7 +44,7 @@ def load_pysr_graph(jsonl_path, progress=True):
                 parent_id = member_data.get("parent")
                 if parent_id is not None:
                     parent_id = int(parent_id)
-                    if not G.has_edge(parent_id, member_id):
+                    if parent_id in G and not G.has_edge(parent_id, member_id):
                         G.add_edge(parent_id, member_id, type="parent")
                         edge_counts["parent"] += 1
 
