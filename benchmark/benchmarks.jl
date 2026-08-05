@@ -142,7 +142,7 @@ function _setup_next_generation()
         mutation_weights,
     )
     plugin_states = _plugin_states(options, dataset)
-    trace = Dict{String,Any}()
+    trace = isdefined(SymbolicRegression, :TracingModule) ? nothing : Dict{String,Any}()
     temperature = 1.0
     curmaxsize = 20
     rss = RunningSearchStatistics(; options)

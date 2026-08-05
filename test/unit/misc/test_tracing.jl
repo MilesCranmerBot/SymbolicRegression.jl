@@ -6,7 +6,10 @@
 
     options = Options(; binary_operators=(+, *), default_plugins=(), use_tracing=true)
     mutations = TraceType()
-    trace = TraceType("mutations" => mutations)
+    old_member = TraceType(
+        "tree" => "x1", "cost" => 2.0, "loss" => 2.0, "parent" => 0, "ref" => 1
+    )
+    trace = TraceType("members" => [old_member], "mutations" => mutations)
     expression = Expression(Node{Float64}(; feature=1); operators=options.operators)
     member = PopMember(expression, 1.0, 1.0; deterministic=true)
     member.ref = 2
@@ -18,8 +21,27 @@
 
     @test haskey(mutations, "2")
     @test haskey(mutations, "1")
-    events = mutations["1"]["events"]
+    old_entry = mutations["1"]
+    @test all(
+        old_entry[key] == old_member[key] for key in ("tree", "cost", "loss", "parent")
+    )
+    events = old_entry["events"]
     @test [e["type"] for e in events] == ["tuning", "death"]
+end
+
+@testitem "Tracing worker pipeline smoke test" begin
+    using Distributed: myid
+    using SymbolicRegression
+    using SymbolicRegression: Dataset, Options
+    using Test
+
+    dataset = Dataset(randn(1, 20), randn(20))
+    options = Options(;
+        binary_operators=(+, *), default_plugins=(), use_tracing=true, population_size=20
+    )
+    @test isnothing(
+        SymbolicRegression.test_entire_pipeline([myid()], dataset, options, 0, (), ())
+    )
 end
 
 @testitem "Disabled tracing is allocation-free" begin

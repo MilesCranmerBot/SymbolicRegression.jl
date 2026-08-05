@@ -354,7 +354,7 @@ function test_entire_pipeline(
                     plugin_states=worker_plugin_states,
                 )[1]
                 tmp_pop = optimize_and_simplify_population(
-                    dataset, tmp_pop, options, options.maxsize, new_trace(options)
+                    dataset, tmp_pop, options, options.maxsize, nothing
                 )
             end
         )
