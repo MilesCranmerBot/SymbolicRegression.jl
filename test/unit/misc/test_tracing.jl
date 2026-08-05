@@ -1,13 +1,14 @@
 @testitem "trace_optimization! seeds missing old ref" begin
     using SymbolicRegression
-    using SymbolicRegression: Options, TraceType, PopMember
+    using SymbolicRegression: Options, TraceType, PopMember, Expression
     using SymbolicRegression.TracingModule: trace_optimization!
     using Test
 
     options = Options(; binary_operators=(+, *), default_plugins=(), use_tracing=true)
     mutations = TraceType()
     trace = TraceType("mutations" => mutations)
-    member = PopMember(Node{Float64}(; feature=1), 1.0, 1.0)
+    expression = Expression(Node{Float64}(; feature=1); operators=options.operators)
+    member = PopMember(expression, 1.0, 1.0; deterministic=true)
     member.ref = 2
     member.parent = 1
 
