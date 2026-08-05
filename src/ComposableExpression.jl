@@ -66,6 +66,13 @@ end
     variable_names::Union{AbstractVector{<:AbstractString},Nothing}=nothing,
     eval_options::Union{Nothing,EvalOptions}=nothing,
 ) where {T}
+    if eval_options !== nothing && eval_options.buffer !== nothing
+        throw(
+            ArgumentError(
+                "ComposableExpression metadata cannot contain an evaluation buffer."
+            ),
+        )
+    end
     d = (; operators, variable_names, eval_options)
     return ComposableExpression(tree, Metadata(d))
 end
@@ -126,40 +133,14 @@ function CO.extract_optimizable_gradient(grad, ex::ComposableExpression, _refs)
     return DE.extract_gradient(grad, ex)
 end
 
-struct PreallocatedComposableExpression{N,E}
-    tree::N
-    eval_options::E
-end
-
-_reuse_or_copy_eval_options(::Nothing, ::Nothing) = nothing
-_reuse_or_copy_eval_options(::EvalOptions, ::Nothing) = nothing
-_reuse_or_copy_eval_options(::Nothing, src::EvalOptions) = copy(src)
-function _reuse_or_copy_eval_options(dest::E, src::E) where {E<:EvalOptions}
-    if isnothing(src.buffer) ||
-        (!isnothing(dest.buffer) && axes(dest.buffer.array) == axes(src.buffer.array))
-        return dest
-    end
-    return copy(src)
-end
-_reuse_or_copy_eval_options(::EvalOptions, src::EvalOptions) = copy(src)
-
 function DE.allocate_container(
     prototype::ComposableExpression, n::Union{Nothing,Integer}=nothing
 )
-    eval_options = DE.get_metadata(prototype).eval_options
-    return PreallocatedComposableExpression(
-        DE.allocate_container(get_contents(prototype), n),
-        isnothing(eval_options) ? nothing : copy(eval_options),
-    )
+    return (; tree=DE.allocate_container(get_contents(prototype), n))
 end
-function DE.copy_into!(dest::PreallocatedComposableExpression, src::ComposableExpression)
+function DE.copy_into!(dest::NamedTuple, src::ComposableExpression)
     new_tree = DE.copy_into!(dest.tree, get_contents(src))
-    metadata = DE.get_metadata(src)
-    eval_options = _reuse_or_copy_eval_options(dest.eval_options, metadata.eval_options)
-    new_metadata = Metadata((;
-        operators=metadata.operators, variable_names=metadata.variable_names, eval_options
-    ))
-    return ComposableExpression(new_tree, new_metadata)
+    return with_contents(src, new_tree)
 end
 
 @implements(

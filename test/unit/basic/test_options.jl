@@ -27,6 +27,39 @@
     @test_throws AssertionError Options(; loss_scale=:cubic)
 end
 
+@testitem "Test versioned default profile selection" begin
+    using SymbolicRegression
+    using SymbolicRegression.CoreModule.OptionsModule: default_options
+
+    v1_defaults = default_options(v"1.0.0")
+    v2_defaults = default_options(v"2.0.0-alpha")
+    current_defaults = default_options()
+
+    @test keys(v1_defaults) == keys(v2_defaults) == keys(current_defaults)
+    for field in keys(v1_defaults)
+        v1_value = getproperty(v1_defaults, field)
+        v2_value = getproperty(v2_defaults, field)
+        current_value = getproperty(current_defaults, field)
+        if field == :mutation_weights
+            v1_value = convert(Vector, v1_value)
+            v2_value = convert(Vector, v2_value)
+            current_value = convert(Vector, current_value)
+        end
+
+        @test isequal(current_value, v2_value)
+        if field == :crossover_probability
+            @test v1_value == 0.0259
+            @test v2_value == 0.20
+        else
+            @test isequal(v1_value, v2_value)
+        end
+    end
+
+    @test Options().crossover_probability == 0.20
+    @test Options(; defaults=v"1.0.0").crossover_probability == 0.0259
+    @test Options(; defaults=v"2.0.0-alpha").adaptive_parsimony_scaling == 1040.0
+end
+
 @testitem "Test backsolve options" begin
     using SymbolicRegression
     using SymbolicRegression.BacksolveModule: configured_backsolve

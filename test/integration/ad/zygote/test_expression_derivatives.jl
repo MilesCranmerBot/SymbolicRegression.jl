@@ -56,7 +56,7 @@ end
     ex = @parse_expression(
         x * x - cos(2.5 * y), operators = options.operators, variable_names = [:x, :y]
     )
-    ctx = EvaluatorContext(dataset, options)
+    ctx = EvaluatorContext(dataset, options, nothing)
     f = Evaluator(ex, last(get_scalar_constants(ex)), ctx)
     fg! = GradEvaluator(f, options.autodiff_backend)
 
@@ -66,35 +66,4 @@ end
     G = zero(x)
     fg!(nothing, G, x)
     @test G[] != 0
-end
-
-@testitem "Test derivatives of parametric expression during optimization" begin
-    using SymbolicRegression
-    using SymbolicRegression.ConstantOptimizationModule: specialized_options
-    using DynamicExpressions
-    using Zygote: Zygote
-    using Random: MersenneTwister
-    using DifferentiationInterface: AutoZygote
-
-    # Import our AutoDiff helpers
-    include(joinpath(@__DIR__, "..", "autodiff_helpers.jl"))
-
-    rng = MersenneTwister(0)
-
-    # Set up test data using our helper
-    _, dataset, init_params, _, true_val, true_d_params, true_d_constants = setup_parametric_test(
-        rng
-    )
-
-    # Create options and expression
-    options = Options(;
-        unary_operators=[cos], binary_operators=[+, *, -], autodiff_backend=:Zygote
-    )
-
-    ex = create_parametric_expression(init_params, options.operators)
-
-    # Test with Zygote
-    test_autodiff_backend(
-        ex, dataset, true_val, true_d_constants, true_d_params, options, AutoZygote()
-    )
 end

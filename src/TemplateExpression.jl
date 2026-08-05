@@ -54,7 +54,7 @@ using ..LossFunctionsModule: LossFunctionsModule as LF
 using ..MutateModule: MutateModule as MM
 using ..PopMemberModule: PopMember, AbstractPopMember
 using ..ComposableExpressionModule:
-    AbstractComposableExpression, ComposableExpression, ValidVector
+    AbstractComposableExpression, ComposableExpression, ValidVector, get_eval_options
 
 struct ParamVector{T} <: AbstractVector{T}
     _data::Vector{T}
@@ -772,6 +772,24 @@ function _match_input_eltype(
     end
 end
 
+_with_call_time_buffer(contents, ::Nothing) = contents
+function _with_call_time_buffer(contents::NamedTuple, eval_options::EvalOptions)
+    eval_options.buffer === nothing && return contents
+    return map(Base.Fix2(_with_call_time_buffer, eval_options), contents)
+end
+function _with_call_time_buffer(ex::AbstractComposableExpression, eval_options::EvalOptions)
+    stored = get_eval_options(ex)
+    stored.bumper isa Val{true} && return ex
+    merged = EvalOptions(
+        stored.turbo,
+        stored.bumper,
+        stored.early_exit,
+        eval_options.buffer,
+        stored.use_fused,
+    )
+    return with_metadata(ex; eval_options=merged)
+end
+
 @stable(
     default_mode = "disable",
     default_union_limit = 2,
@@ -780,6 +798,7 @@ end
             tree::TemplateExpression,
             cX::AbstractMatrix,
             operators::Union{AbstractOperatorEnum,Nothing}=nothing;
+            eval_options=nothing,
             kws...,
         )
             raw_contents = get_contents(tree)
@@ -794,7 +813,7 @@ end
             end
             result = combine(
                 tree,
-                raw_contents,
+                _with_call_time_buffer(raw_contents, eval_options),
                 extra_args...,
                 map(x -> ValidVector(copy(x), true), eachrow(cX)),
             )
@@ -1025,8 +1044,6 @@ function MF.mutate_constant(
         return ex
     end
 end
-
-# TODO: Look at other ParametricExpression behavior
 
 function DE.count_scalar_constants(ex::TemplateExpression)
     return (

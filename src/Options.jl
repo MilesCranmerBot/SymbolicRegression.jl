@@ -363,8 +363,8 @@ const OPTION_DESCRIPTIONS = """- `defaults`: What set of defaults to use for `Op
     - `:linear`: Uses direct differences between losses. This mode handles any loss values (including negative)
         and is useful for custom loss functions, especially those based on likelihoods.
 - `expression_spec::AbstractExpressionSpec`: A specification of what types of expressions to use in the
-    search. For example, `ExpressionSpec()` (default). You can also see `TemplateExpressionSpec` and
-    `ParametricExpressionSpec` for specialized cases.
+    search. For example, `ExpressionSpec()` (default). See `TemplateExpressionSpec` for structured
+    expressions and learnable parameters.
 - `populations`: How many populations of equations to use.
 - `population_size`: How many equations in each population.
 - `ncycles_per_iteration`: How many generations to consider per iteration.
@@ -458,10 +458,28 @@ const OPTION_DESCRIPTIONS = """- `defaults`: What set of defaults to use for `Op
     multiply or divide by (1+perturbation_factor)^(rand()+1).
 - `probability_negate_constant`: Probability of negating a constant in the equation
     when mutating it.
-- `mutation_weights`: Deprecated built-in mutation weights, converted to
-    `default_mutations`.
-- `mutations`: Explicit weighted mutations. An entry replaces a default mutation
-    of the same type; new mutation types are added.
+- `mutations`: Override or extend the default mutation weights, as a vector of
+    `MutationType() => weight` pairs. All of the defaults listed below are active
+    unless you change them. An entry here replaces the default weight for that
+    mutation type; new (custom) mutation types are added alongside the defaults.
+    For example, `mutations=[OptimizeMutation() => 0.1, ConstantMutation() => 0.5]`
+    keeps all defaults but enables constant optimization and increases the constant
+    perturbation rate. The defaults are:
+    - `ConstantMutation() => 0.0353`: Perturb a random constant.
+    - `OperatorMutation() => 3.63`: Swap an operator for another of the same arity.
+    - `FeatureMutation() => 0.1`: Replace a variable with a different one.
+    - `SwapOperandsMutation() => 0.00608`: Swap the arguments of a binary operator.
+    - `RotateTreeMutation() => 1.42`: Rotate a subtree (swap parent/child).
+    - `AddNodeMutation() => 0.0771`: Grow the tree by adding a node.
+    - `InsertNodeMutation() => 2.44`: Insert an operator above an existing node.
+    - `DeleteNodeMutation() => 0.369`: Remove a node, replacing it with a child.
+    - `SimplifyMutation() => 0.00148`: Algebraic simplification.
+    - `RandomizeMutation() => 0.00695`: Replace a subtree with a random one.
+    - `DoNothingMutation() => 0.431`: No-op (allows crossover to dominate).
+    - `OptimizeMutation() => 0.0`: Optimize constants via gradient descent (off by default).
+    - `BacksolveMutation() => 0.0`: Solve for a constant analytically (off by default).
+    - `FormConnectionMutation() => 0.5`: Form a shared subtree connection.
+    - `BreakConnectionMutation() => 0.1`: Break a shared subtree connection.
 - `default_mutations`: Default weighted mutations considered after `mutations`.
     Pass `()` to disable every automatic default.
 - `crossover_probability`: Probability of performing crossover.
@@ -1277,8 +1295,8 @@ function default_options(@nospecialize(version::Union{VersionNumber,Nothing} = n
         batch_size=50,
     )
 
-    if version isa VersionNumber && version >= v"2.0.0-"
-        defaults = (; defaults..., adaptive_parsimony_scaling=20.0)
+    if isnothing(version) || version >= v"2.0.0-"
+        defaults = (; defaults..., crossover_probability=0.20)
     end
 
     return defaults

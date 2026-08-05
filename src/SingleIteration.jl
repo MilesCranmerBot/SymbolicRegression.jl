@@ -15,7 +15,7 @@ using ..PopMemberModule: generate_reference
 using ..PopulationModule: Population, finalize_costs
 using ..HallOfFameModule: HallOfFame, _update_hall_of_fame_unchecked!
 using ..RegularizedEvolutionModule: reg_evol_cycle
-using ..LossFunctionsModule: eval_cost
+using ..LossFunctionsModule: create_eval_options, eval_cost
 using ..ConstantOptimizationModule: optimize_constants
 using ..TracingModule: trace_optimization!
 
@@ -37,6 +37,7 @@ function s_r_cycle(
     num_evals = 0.0
 
     batched_dataset = options.batching ? batch(dataset, options.batch_size) : dataset
+    eval_options = create_eval_options(batched_dataset, options, curmaxsize)
 
     for cycle_idx in 1:ncycles
         strictmap(options.plugins, plugin_states) do plugin, pstate
@@ -50,6 +51,7 @@ function s_r_cycle(
             trace;
             plugin_states,
             best_seen=best_examples_seen,
+            eval_options,
         )
         num_evals += tmp_num_evals
         _update_hall_of_fame_unchecked!(best_examples_seen, pop.members, options)

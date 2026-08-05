@@ -24,6 +24,7 @@ function create_search_benchmark()
         extra_kws = merge(extra_kws, (define_helper_functions=false,))
     end
     option_kws = (;
+        defaults=v"1.0.0",
         binary_operators=(+, -, /, *),
         unary_operators=(exp, abs),
         maxsize=30,
@@ -135,7 +136,10 @@ function _setup_next_generation()
         break_connection=0.0,
     )
     options = Options(;
-        unary_operators=[sin, cos], binary_operators=[+, -, *, /], mutation_weights
+        defaults=v"1.0.0",
+        unary_operators=[sin, cos],
+        binary_operators=[+, -, *, /],
+        mutation_weights,
     )
     plugin_states = _plugin_states(options, dataset)
     trace = Dict{String,Any}()
@@ -232,7 +236,9 @@ end
 function create_utils_benchmark()
     suite = BenchmarkGroup()
 
-    options = Options(; unary_operators=[sin, cos], binary_operators=[+, -, *, /])
+    options = Options(;
+        defaults=v"1.0.0", unary_operators=[sin, cos], binary_operators=[+, -, *, /]
+    )
     best_of_sample_api = _best_of_sample_api(_setup_best_of_sample(options))
     suite["best_of_sample"] = @benchmarkable(
         _run_best_of_sample($best_of_sample_api, state),
@@ -269,6 +275,7 @@ function create_utils_benchmark()
     suite["compute_complexity_x10"] = let s = BenchmarkGroup()
         for T in (Float64, Int, nothing)
             options = Options(;
+                defaults=v"1.0.0",
                 unary_operators=[sin, cos],
                 binary_operators=[+, -, *, /],
                 complexity_of_constants=T === nothing ? T : T(1),
@@ -323,6 +330,7 @@ function create_utils_benchmark()
 
     ntrees = 10
     options = Options(;
+        defaults=v"1.0.0",
         unary_operators=[sin, cos],
         binary_operators=[+, -, *, /],
         maxsize=30,

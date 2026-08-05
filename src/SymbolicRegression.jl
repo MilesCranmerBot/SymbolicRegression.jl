@@ -30,11 +30,8 @@ export Population,
     SimulatedAnnealingPlugin,
     Node,
     GraphNode,
-    ParametricNode,
     Expression,
     ExpressionSpec,
-    ParametricExpression,
-    ParametricExpressionSpec,
     TemplateExpression,
     TemplateStructure,
     TemplateExpressionSpec,
@@ -122,9 +119,7 @@ using ProgressMeter: finish!
 using DynamicExpressions:
     Node,
     GraphNode,
-    ParametricNode,
     Expression,
-    ParametricExpression,
     NodeSampler,
     AbstractExpression,
     AbstractExpressionNode,
@@ -263,7 +258,6 @@ using DispatchDoctor: @stable, @unstable
     include("ComposableExpression.jl")
     include("TemplateExpression.jl")
     include("TemplateExpressionMacro.jl")
-    include("ParametricExpression.jl")
     include("plugins/AdaptiveParsimony.jl")
     include("plugins/AdaptiveMutationWeights.jl")
     include("plugins/MutationBurst.jl")
@@ -438,7 +432,6 @@ using .ComposableExpressionModule:
     ValidVectorMixError,
     ValidVectorAccessError
 using .ExpressionBuilderModule: embed_metadata, strip_metadata
-using .ParametricExpressionModule: ParametricExpressionSpec
 using .TemplateExpressionMacroModule: @template_spec
 using .AdaptiveParsimonyModule: AdaptiveParsimonyPlugin
 using .AdaptiveMutationWeightsModule: AdaptiveMutationWeightsPlugin
