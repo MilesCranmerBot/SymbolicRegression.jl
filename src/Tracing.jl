@@ -128,7 +128,10 @@ end
         "mutation" => TraceType("type" => mutation_type),
     )
     death_event = TraceType("type" => "death", "time" => time())
-    push!(mutations[string(old_ref)]["events"], tuning_event, death_event)
+    old_entry = get!(mutations, string(old_ref)) do
+        TraceType("events" => Vector{TraceType}())
+    end
+    push!(old_entry["events"], tuning_event, death_event)
     return nothing
 end
 

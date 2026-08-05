@@ -1,3 +1,26 @@
+@testitem "trace_optimization! seeds missing old ref" begin
+    using SymbolicRegression
+    using SymbolicRegression: Options, TraceType, PopMember
+    using SymbolicRegression.TracingModule: trace_optimization!
+    using Test
+
+    options = Options(; binary_operators=(+, *), default_plugins=(), use_tracing=true)
+    mutations = TraceType()
+    trace = TraceType("mutations" => mutations)
+    member = PopMember(Node{Float64}(; feature=1), 1.0, 1.0)
+    member.ref = 2
+    member.parent = 1
+
+    # Survivor from a previous iteration that was not recorded in this
+    # iteration's `mutations` must not raise KeyError.
+    trace_optimization!(trace, member, 1, 2, false, options)
+
+    @test haskey(mutations, "2")
+    @test haskey(mutations, "1")
+    events = mutations["1"]["events"]
+    @test [e["type"] for e in events] == ["tuning", "death"]
+end
+
 @testitem "Disabled tracing is allocation-free" begin
     using SymbolicRegression: Options, TraceType
     using SymbolicRegression.TracingModule:
