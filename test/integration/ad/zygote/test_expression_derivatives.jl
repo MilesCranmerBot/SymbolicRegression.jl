@@ -56,7 +56,7 @@ end
     ex = @parse_expression(
         x * x - cos(2.5 * y), operators = options.operators, variable_names = [:x, :y]
     )
-    ctx = EvaluatorContext(dataset, options)
+    ctx = EvaluatorContext(dataset, options, nothing)
     f = Evaluator(ex, last(get_scalar_constants(ex)), ctx)
     fg! = GradEvaluator(f, options.autodiff_backend)
 

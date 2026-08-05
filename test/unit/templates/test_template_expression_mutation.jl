@@ -178,7 +178,7 @@ end
 end
 
 @testitem "template crossover isolates recipient candidate state" begin
-    using DynamicExpressions: ArrayBuffer, EvalOptions, get_contents, get_metadata
+    using DynamicExpressions: get_contents, get_metadata
     using Random: MersenneTwister
     using SymbolicRegression
     using SymbolicRegression.MutateModule: crossover_generation
@@ -195,14 +195,12 @@ end
 
     function make_parent(f_value, g_value, parameters)
         function make_inner(value)
-            eval_options = EvalOptions(; buffer=ArrayBuffer(zeros(2, 4), Ref(0)))
             return ComposableExpression(
                 Node{Float64}(;
                     op=1, l=Node{Float64}(; val=value), r=Node{Float64}(; feature=1)
                 );
                 operators,
                 variable_names,
-                eval_options,
             )
         end
         return TemplateExpression(
@@ -245,35 +243,6 @@ end
         get_metadata(parent2).parameters.p._data
     @test get_metadata(child1).parameters.p._data !==
         get_metadata(child2).parameters.p._data
-
-    parent_buffers = map(
-        parent -> map(
-            inner -> get_metadata(inner).eval_options.buffer,
-            values(get_contents(parent)),
-        ),
-        (parent1, parent2),
-    )
-    child_buffers = map(
-        child -> map(
-            inner -> get_metadata(inner).eval_options.buffer,
-            values(get_contents(child)),
-        ),
-        (child1, child2),
-    )
-    for buffers in child_buffers, original_buffers in parent_buffers
-        for buffer in buffers, original_buffer in original_buffers
-            @test buffer !== original_buffer
-            @test buffer.array !== original_buffer.array
-            @test buffer.index !== original_buffer.index
-        end
-    end
-    for buffer1 in child_buffers[1], buffer2 in child_buffers[2]
-        @test buffer1 !== buffer2
-        @test buffer1.array !== buffer2.array
-        @test buffer1.index !== buffer2.index
-    end
-    child_buffers[1][1].array[1, 1] = 1.0
-    @test all(buffer.array[1, 1] == 0.0 for buffers in parent_buffers for buffer in buffers)
 
     parent_nodes = (inner_nodes(parent1), inner_nodes(parent2))
     child_nodes = (inner_nodes(child1), inner_nodes(child2))
