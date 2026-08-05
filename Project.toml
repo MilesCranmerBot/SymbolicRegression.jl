@@ -33,4 +33,4 @@ UUIDs = "1"
 julia = "1.11 - 1.12"
 
 [sources]
-SymbolicRegression = { url = "https://github.com/astroautomata/SymbolicRegression.jl.git", rev = "ae9db343baa04c4679c42b36ed62769283f00d6d" }
+SymbolicRegression = { url = "https://github.com/MilesCranmerBot/SymbolicRegression.jl.git", rev = "83e6e3744cb27fade2afb17394a3559973a0458f" }

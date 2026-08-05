@@ -57,14 +57,13 @@ function mutate!(
 end
 
 function init_plugin_state(plugin::LaSRPlugin, options, dataset)
-    config = plugin.llm_options
-    variable_names = if isnothing(config.variable_names)
+    variable_names = if isnothing(plugin.variable_names)
         Dict(index => name for (index, name) in enumerate(dataset.variable_names))
     else
-        copy(config.variable_names)
+        copy(plugin.variable_names)
     end
     return LaSRPluginState(
-        copy(config.idea_database), config.lasr_logger, variable_names, 0, Any[]
+        copy(plugin.idea_database), plugin.lasr_logger, variable_names, 0, Any[]
     )
 end
 
@@ -105,7 +104,7 @@ function on_generation_end!(
     ropt,
     returned_pop,
 )
-    config = plugin.llm_options
+    config = plugin
     config.use_llm && config.use_concept_evolution || return nothing
 
     state.generations += 1
@@ -144,9 +143,9 @@ function propose_crossover(
     curmaxsize,
     options,
 ) where {T,E<:AbstractExpression{T}}
-    config = plugin.llm_options
+    config = plugin
     config.use_llm || return nothing
-    rand() < plugin.llm_crossover_probability || return nothing
+    rand() < plugin.crossover_probability || return nothing
 
     context = lasr_context(options, state)
     child1 = combine_operators(simplify_tree!(copy(parent1), options.operators), options.operators)

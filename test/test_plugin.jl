@@ -11,14 +11,13 @@ end
 
 @testset "LaSRPlugin mutation defaults and mocked search" begin
     calls = Ref(0)
-    llm_options = LLMOptions(;
+    llm_options = LLMOptions(; verbose=false, llm_generate=mock_llm(calls, "[\"x1 + 1\"]"))
+    plugin = LaSRPlugin(;
+        llm_options,
         variable_names=Dict(1 => "x1"),
         prompts_dir=joinpath(pkgdir(LibraryAugmentedSymbolicRegression), "prompts") * "/",
-        verbose=false,
-        llm_generate=mock_llm(calls, "[\"x1 + 1\"]"),
-    )
-    plugin = LaSRPlugin(;
-        llm_options, llm_mutate_weight=1.0, llm_randomize_weight=2.0
+        mutate_weight=1.0,
+        randomize_weight=2.0,
     )
     options = Options(;
         binary_operators=[+],
@@ -63,13 +62,14 @@ end
 @testset "LaSRPlugin mocked concept lifecycle" begin
     calls = Ref(0)
     llm_options = LLMOptions(;
+        verbose=false, llm_generate=mock_llm(calls, "[\"additive relationship\"]")
+    )
+    plugin = LaSRPlugin(;
+        llm_options,
         use_concept_evolution=true,
         num_concept_crossover=1,
         prompts_dir=joinpath(pkgdir(LibraryAugmentedSymbolicRegression), "prompts") * "/",
-        verbose=false,
-        llm_generate=mock_llm(calls, "[\"additive relationship\"]"),
     )
-    plugin = LaSRPlugin(; llm_options)
     options = Options(;
         binary_operators=[+],
         plugins=(plugin,),
@@ -92,12 +92,14 @@ end
 @testset "LaSRPlugin mocked crossover" begin
     calls = Ref(0)
     llm_options = LLMOptions(;
+        verbose=false, llm_generate=mock_llm(calls, "[\"x1 + 1\", \"x1 * x1\"]")
+    )
+    plugin = LaSRPlugin(;
+        llm_options,
         variable_names=Dict(1 => "x1"),
         prompts_dir=joinpath(pkgdir(LibraryAugmentedSymbolicRegression), "prompts") * "/",
-        verbose=false,
-        llm_generate=mock_llm(calls, "[\"x1 + 1\", \"x1 * x1\"]"),
+        crossover_probability=1.0,
     )
-    plugin = LaSRPlugin(; llm_options, llm_crossover_probability=1.0)
     options = Options(;
         binary_operators=[+, *],
         plugins=(plugin,),

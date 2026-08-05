@@ -36,12 +36,11 @@ function set_llm_mutation_weights(
 end
 
 function plugin_mutations(plugin::LaSRPlugin)
-    plugin.llm_options.use_llm || return ()
+    plugin.use_llm || return ()
     pairs = Pair{SymbolicRegression.AbstractMutation,Float64}[]
-    plugin.llm_mutate_weight > 0 &&
-        push!(pairs, LLMMutateMutation() => plugin.llm_mutate_weight)
-    plugin.llm_randomize_weight > 0 &&
-        push!(pairs, LLMRandomizeMutation() => plugin.llm_randomize_weight)
+    plugin.mutate_weight > 0 && push!(pairs, LLMMutateMutation() => plugin.mutate_weight)
+    plugin.randomize_weight > 0 &&
+        push!(pairs, LLMRandomizeMutation() => plugin.randomize_weight)
     return pairs
 end
 
@@ -56,7 +55,7 @@ end
 
 function lasr_context(options::SymbolicRegression.Options, state=nothing)
     plugin = lasr_plugin(options)
-    return LaSRContext(options, plugin.llm_options, state)
+    return LaSRContext(options, plugin, state)
 end
 
 function lasr_state(options::SymbolicRegression.Options, plugin_states::Tuple)
@@ -149,33 +148,31 @@ function LaSROptions(;
     prompt_path =
         something(prompts_dir, joinpath(pkgdir(parentmodule(@__MODULE__)), "prompts")) * "/"
     llm_options = LLMOptions(;
-        use_llm,
-        use_concepts,
-        use_concept_evolution,
-        mutation_weights=weights,
-        llm_operation_weights=probabilities,
-        num_pareto_context=Int(num_pareto_context),
-        num_generated_equations=Int(num_generated_equations),
-        num_generated_concepts=Int(num_generated_concepts),
-        num_concept_crossover=Int(num_concept_crossover),
-        max_concepts=Int(max_concepts),
-        is_parametric,
-        llm_context=something(llm_context, ""),
-        variable_names,
-        prompts_dir=prompt_path,
-        idea_database=AbstractString[something(idea_database, AbstractString[])...],
         api_key,
         model=something(model, LLAMAFILE_MODEL),
         api_kwargs=something(api_kwargs, Dict("max_tokens" => 1000)),
         http_kwargs=something(http_kwargs, Dict("retries" => 3, "readtimeout" => 3600)),
-        verbose,
         llm_generate,
+        verbose,
     )
     plugin = LaSRPlugin(;
         llm_options,
-        llm_mutate_weight=weights.llm_mutate,
-        llm_randomize_weight=weights.llm_randomize,
-        llm_crossover_probability=use_llm ? probabilities.llm_crossover : 0.0,
+        use_llm,
+        use_concepts,
+        use_concept_evolution,
+        num_pareto_context,
+        num_generated_equations,
+        num_generated_concepts,
+        num_concept_crossover,
+        max_concepts,
+        is_parametric,
+        context=something(llm_context, ""),
+        variable_names,
+        prompts_dir=prompt_path,
+        idea_database=AbstractString[something(idea_database, AbstractString[])...],
+        mutate_weight=weights.llm_mutate,
+        randomize_weight=weights.llm_randomize,
+        crossover_probability=use_llm ? probabilities.llm_crossover : 0.0,
     )
     resolved_mutations = isnothing(mutations) ? _mutation_pairs(weights) : mutations
     resolved_defaults = isnothing(default_mutations) ? () : default_mutations

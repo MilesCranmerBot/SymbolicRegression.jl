@@ -17,9 +17,6 @@ the ordinary SR `Options` constructor:
 using LibraryAugmentedSymbolicRegression
 
 llm = LLMOptions(;
-    use_concepts=true,
-    use_concept_evolution=true,
-    llm_context="The response depends on an angle and an offset.",
     model="my-model",
     api_key="...",
     api_kwargs=Dict(
@@ -30,9 +27,12 @@ llm = LLMOptions(;
 
 plugin = LaSRPlugin(;
     llm_options=llm,
-    llm_mutate_weight=0.01,
-    llm_randomize_weight=0.001,
-    llm_crossover_probability=0.01,
+    use_concepts=true,
+    use_concept_evolution=true,
+    context="The response depends on an angle and an offset.",
+    mutate_weight=0.01,
+    randomize_weight=0.001,
+    crossover_probability=0.01,
 )
 
 options = Options(;
@@ -47,10 +47,10 @@ hall_of_fame = equation_search(X, y; options, niterations=40)
 ```
 
 The mutation weights are unnormalized, exactly like other entries in
-`Options.mutations`. `llm_crossover_probability` is conditional on SR first
+`Options.mutations`. `crossover_probability` is conditional on SR first
 selecting crossover via `crossover_probability`.
 
-LaSR ships its prompt templates in `prompts/`; `LLMOptions()` uses that package
+LaSR ships its prompt templates in `prompts/`; `LaSRPlugin()` uses that package
 directory by default. Set `prompts_dir` to use domain-specific templates.
 
 ## MLJ
@@ -64,7 +64,7 @@ using LibraryAugmentedSymbolicRegression
 
 plugin = LaSRPlugin(;
     llm_options=LLMOptions(; model="my-model", api_key="..."),
-    llm_mutate_weight=0.01,
+    mutate_weight=0.01,
 )
 model = LaSRRegressor(;
     plugin,
@@ -77,16 +77,21 @@ fit!(mach)
 
 ## Configuration
 
-`LLMOptions` controls prompt and inference policy:
+`LaSRPlugin` controls search and prompt policy:
 
 - `use_llm`, `use_concepts`, and `use_concept_evolution` enable the LLM and
   concept-library features.
 - `num_pareto_context`, `num_generated_equations`,
   `num_generated_concepts`, `num_concept_crossover`, and `max_concepts`
   control prompt context and output counts.
-- `llm_context`, `variable_names`, `prompts_dir`, and `idea_database` provide
+- `context`, `variable_names`, `prompts_dir`, and `idea_database` provide
   domain context. If `variable_names` is omitted, LaSR uses the SR dataset's
   names.
+- `mutate_weight`, `randomize_weight`, and `crossover_probability` set how
+  often the LLM mutations and crossover run.
+
+`LLMOptions` only carries settings for the language model itself:
+
 - `api_key`, `model`, `api_kwargs`, and `http_kwargs` are forwarded to
   PromptingTools' OpenAI-compatible schema.
 - `llm_generate` is the generation function. Its default is

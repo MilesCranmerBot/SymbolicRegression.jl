@@ -16,20 +16,20 @@ y = y .+ randn(100) .* 1e-3
 logger = SRLogger(TBLogger("logs/lasr_runs"); log_interval=1)
 p = 0.0001
 llm_options = LLMOptions(;
-    use_llm=true,
-    use_concepts=true,
-    use_concept_evolution=true,
-    llm_context="We believe the relationship between the theta and offset parameter is a function of the cosine of the theta variable and the square of the offset.",
-    variable_names=Dict("x1" => "theta", "x2" => "offset"),
     model="meta-llama/Meta-Llama-3.1-8B-Instruct",
     api_kwargs=Dict("url" => "http://localhost:11440/v1"),
     verbose=true, # Set to true to see LLM generation logs.
 )
 plugin = LaSRPlugin(;
     llm_options,
-    llm_mutate_weight=p,
-    llm_randomize_weight=p,
-    llm_crossover_probability=p,
+    use_llm=true,
+    use_concepts=true,
+    use_concept_evolution=true,
+    context="We believe the relationship between the theta and offset parameter is a function of the cosine of the theta variable and the square of the offset.",
+    variable_names=Dict("x1" => "theta", "x2" => "offset"),
+    mutate_weight=p,
+    randomize_weight=p,
+    crossover_probability=p,
 )
 options = Options(;
     binary_operators=[+, -, *, /, ^],

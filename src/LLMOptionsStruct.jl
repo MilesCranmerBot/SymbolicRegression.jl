@@ -13,62 +13,98 @@ Base.@kwdef mutable struct LLMOperationWeights
     llm_randomize::Float64 = 0.0
 end
 
+"""
+    LLMOptions(; kws...)
+
+Options for the language model itself: which model to call, and how. All
+LaSR search/prompt behavior is configured directly on [`LaSRPlugin`](@ref).
+"""
 Base.@kwdef mutable struct LLMOptions
-    use_llm::Bool = true
-    use_concepts::Bool = false
-    use_concept_evolution::Bool = false
-    mutation_weights::LaSRMutationWeights = LaSRMutationWeights()
-    llm_operation_weights::LLMOperationWeights = LLMOperationWeights()
-    num_pareto_context::Int = 5
-    num_generated_equations::Int = 5
-    num_generated_concepts::Int = 5
-    num_concept_crossover::Int = 2
-    max_concepts::Int = 30
-    is_parametric::Bool = false
-    llm_context::String = ""
-    variable_names::Union{Dict,Nothing} = nothing
-    prompts_dir::String = DEFAULT_PROMPTS_DIR
-    idea_database::Vector{AbstractString} = AbstractString[]
     api_key::Union{String,Nothing} = nothing
     model::Union{String,Nothing} = nothing
     api_kwargs::Dict = Dict("max_tokens" => 1000)
     http_kwargs::Dict = Dict("retries" => 3, "readtimeout" => 3600)
-    lasr_logger::Union{LaSRLogger,Nothing} = nothing
-    verbose::Bool = true
     llm_generate::Function = aigenerate
+    verbose::Bool = true
 end
 
 struct LLMMutateMutation <: AbstractMutation end
 struct LLMRandomizeMutation <: AbstractMutation end
 
 """
-    LaSRPlugin(; llm_options=LLMOptions(), llm_mutate_weight, llm_randomize_weight,
-                 llm_crossover_probability)
+    LaSRPlugin(; kws...)
 
 Library-augmented symbolic regression plugin. Pass it through
-`Options(; plugins=(LaSRPlugin(...),), ...)`. The two mutation weights are
-unnormalized, like all entries in `Options.mutations`; crossover is a
-probability conditional on SR selecting crossover.
+`Options(; plugins=(LaSRPlugin(...),), ...)`. LLM client settings
+(`model`, `api_key`, ...) live in [`LLMOptions`](@ref); everything else is
+set directly on the plugin. The mutation weights are unnormalized, like all
+entries in `Options.mutations`; `crossover_probability` is conditional on
+SR selecting crossover.
 """
 struct LaSRPlugin <: AbstractPlugin
     llm_options::LLMOptions
-    llm_mutate_weight::Float64
-    llm_randomize_weight::Float64
-    llm_crossover_probability::Float64
+    use_llm::Bool
+    use_concepts::Bool
+    use_concept_evolution::Bool
+    num_pareto_context::Int
+    num_generated_equations::Int
+    num_generated_concepts::Int
+    num_concept_crossover::Int
+    max_concepts::Int
+    is_parametric::Bool
+    context::String
+    variable_names::Union{Dict,Nothing}
+    prompts_dir::String
+    idea_database::Vector{AbstractString}
+    lasr_logger::Union{LaSRLogger,Nothing}
+    mutate_weight::Float64
+    randomize_weight::Float64
+    crossover_probability::Float64
     function LaSRPlugin(;
         llm_options::LLMOptions=LLMOptions(),
-        llm_mutate_weight::Real=llm_options.mutation_weights.llm_mutate,
-        llm_randomize_weight::Real=llm_options.mutation_weights.llm_randomize,
-        llm_crossover_probability::Real=llm_options.llm_operation_weights.llm_crossover,
+        use_llm::Bool=true,
+        use_concepts::Bool=false,
+        use_concept_evolution::Bool=false,
+        num_pareto_context::Integer=5,
+        num_generated_equations::Integer=5,
+        num_generated_concepts::Integer=5,
+        num_concept_crossover::Integer=2,
+        max_concepts::Integer=30,
+        is_parametric::Bool=false,
+        context::AbstractString="",
+        variable_names::Union{Dict,Nothing}=nothing,
+        prompts_dir::AbstractString=DEFAULT_PROMPTS_DIR,
+        idea_database::Vector{<:AbstractString}=AbstractString[],
+        lasr_logger::Union{LaSRLogger,Nothing}=nothing,
+        mutate_weight::Real=0.0,
+        randomize_weight::Real=0.0,
+        crossover_probability::Real=0.0,
     )
-        mutate_weight = Float64(llm_mutate_weight)
-        randomize_weight = Float64(llm_randomize_weight)
-        crossover_probability = Float64(llm_crossover_probability)
-        mutate_weight >= 0 || throw(ArgumentError("`llm_mutate_weight` must be nonnegative."))
-        randomize_weight >= 0 || throw(ArgumentError("`llm_randomize_weight` must be nonnegative."))
+        mutate_weight >= 0 || throw(ArgumentError("`mutate_weight` must be nonnegative."))
+        randomize_weight >= 0 ||
+            throw(ArgumentError("`randomize_weight` must be nonnegative."))
         0 <= crossover_probability <= 1 ||
-            throw(ArgumentError("`llm_crossover_probability` must be between 0 and 1."))
-        return new(llm_options, mutate_weight, randomize_weight, crossover_probability)
+            throw(ArgumentError("`crossover_probability` must be between 0 and 1."))
+        return new(
+            llm_options,
+            use_llm,
+            use_concepts,
+            use_concept_evolution,
+            Int(num_pareto_context),
+            Int(num_generated_equations),
+            Int(num_generated_concepts),
+            Int(num_concept_crossover),
+            Int(max_concepts),
+            is_parametric,
+            String(context),
+            variable_names,
+            String(prompts_dir),
+            AbstractString[idea_database...],
+            lasr_logger,
+            Float64(mutate_weight),
+            Float64(randomize_weight),
+            Float64(crossover_probability),
+        )
     end
 end
 
@@ -82,14 +118,15 @@ end
 
 struct LaSRContext{O<:Options,S} <: AbstractOptions
     sr_options::O
-    llm_options::LLMOptions
+    plugin::LaSRPlugin
     state::S
 end
 
-const LLM_OPTIONS_KEYS = fieldnames(LLMOptions)
+const _LLM_OPTIONS_KEYS = fieldnames(LLMOptions)
+const _PLUGIN_KEYS = fieldnames(LaSRPlugin)
 
 function Base.getproperty(context::LaSRContext, key::Symbol)
-    if key in (:sr_options, :llm_options, :state)
+    if key in (:sr_options, :plugin, :state)
         return getfield(context, key)
     elseif key === :idea_database && !isnothing(getfield(context, :state))
         return getfield(context, :state).idea_database
@@ -97,8 +134,11 @@ function Base.getproperty(context::LaSRContext, key::Symbol)
         return getfield(context, :state).lasr_logger
     elseif key === :variable_names && !isnothing(getfield(context, :state))
         return getfield(context, :state).variable_names
-    elseif key in LLM_OPTIONS_KEYS
-        return getproperty(getfield(context, :llm_options), key)
+    elseif key in _LLM_OPTIONS_KEYS
+        return getproperty(getfield(context, :plugin).llm_options, key)
+    elseif key in _PLUGIN_KEYS && !hasproperty(getfield(context, :sr_options), key)
+        # `hasproperty` guard: never shadow SR options (e.g. `crossover_probability`)
+        return getproperty(getfield(context, :plugin), key)
     else
         return getproperty(getfield(context, :sr_options), key)
     end

@@ -91,8 +91,8 @@ function _gen_llm_random_tree(
         )
     end
 
-    if options.llm_context != ""
-        pushfirst!(assumptions, options.llm_context)
+    if options.context != ""
+        pushfirst!(assumptions, options.context)
     end
 
     if !options.use_concepts
@@ -460,8 +460,8 @@ function llm_mutate_tree(
     if !options.use_concepts
         assumptions = []
     end
-    if options.llm_context != ""
-        pushfirst!(assumptions, options.llm_context)
+    if options.context != ""
+        pushfirst!(assumptions, options.context)
     end
 
     conversation = [
@@ -592,8 +592,8 @@ function llm_crossover_trees(
         assumptions = []
     end
 
-    if options.llm_context != ""
-        pushfirst!(assumptions, options.llm_context)
+    if options.context != ""
+        pushfirst!(assumptions, options.context)
     end
 
     conversation = [
