@@ -11,7 +11,8 @@ using ..CoreModule:
 using ..PopulationModule: Population, best_of_sample
 using ..HallOfFameModule: HallOfFame, update_hall_of_fame!, _update_hall_of_fame_unchecked!
 using ..ComplexityModule: compute_complexity
-using ..MutateModule: next_generation, crossover_generation
+using ..MutateModule: next_generation
+using ..CrossoverModule: crossover_generation
 using ..TracingModule:
     new_trace,
     new_step_trace,
@@ -183,6 +184,7 @@ function reg_evol_cycle(
                 curmaxsize,
                 options;
                 trace=crossover_trace,
+                plugin_states,
                 eval_options,
             )
             num_evals += tmp_num_evals

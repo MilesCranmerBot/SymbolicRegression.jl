@@ -181,7 +181,7 @@ end
     using DynamicExpressions: get_contents, get_metadata
     using Random: MersenneTwister
     using SymbolicRegression
-    using SymbolicRegression.MutateModule: crossover_generation
+    using SymbolicRegression.CrossoverModule: crossover_generation
     using SymbolicRegression.MutationFunctionsModule: crossover_trees
 
     structure = TemplateStructure{(:f, :g),(:p,)}(

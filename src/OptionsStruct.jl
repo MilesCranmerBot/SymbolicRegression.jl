@@ -7,6 +7,7 @@ using DynamicExpressions:
 using LossFunctions: SupervisedLoss
 
 using ..MutationsModule: AbstractMutation
+using ..CrossoversModule: AbstractCrossover
 
 """
 This struct defines how complexity is calculated.
@@ -214,6 +215,7 @@ struct Options{
     batching::Bool
     batch_size::Int
     mutations::Vector{Pair{AbstractMutation,Float64}}
+    crossovers::Vector{Pair{AbstractCrossover,Float64}}
     crossover_probability::Float64
     warmup_maxsize_by::Float64
     use_frequency::Bool
