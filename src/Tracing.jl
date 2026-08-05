@@ -25,8 +25,8 @@ end
 
 @inline reset_traced_steps!(steps) = isnothing(steps) ? nothing : empty!(steps)
 
-@inline function trace_mutation_type!(trace::MaybeTrace, type::Symbol)
-    !isnothing(trace) && (trace["type"] = string(type))
+@inline function trace_mutation_type!(trace::MaybeTrace, type::String)
+    !isnothing(trace) && (trace["type"] = type)
     return nothing
 end
 

@@ -75,7 +75,7 @@ end
     disabled_steps = Any[]
     @test trace_mutation_step!(disabled_steps, nothing, nothing, nothing) === nothing
     @test isempty(disabled_steps)
-    @test trace_mutation_type!(nothing, :optimize) === nothing
+    @test trace_mutation_type!(nothing, "optimize") === nothing
     @test trace_mutation_result!(nothing, "reject", "acceptance") === nothing
     @test trace_identity_mutation!(nothing) === nothing
     @test initialize_trace!(nothing, options, "unused.jsonl") === nothing
@@ -95,7 +95,7 @@ end
     @test @allocated(new_traced_steps(nothing, Int)) == 0
     @test @allocated(reset_traced_steps!(nothing)) == 0
     @test @allocated(trace_mutation_step!(nothing, nothing, nothing, nothing)) == 0
-    @test @allocated(trace_mutation_type!(nothing, :optimize)) == 0
+    @test @allocated(trace_mutation_type!(nothing, "optimize")) == 0
     @test @allocated(trace_mutation_result!(nothing, "reject", "acceptance")) == 0
     @test @allocated(trace_identity_mutation!(nothing)) == 0
     @test @allocated(initialize_trace!(nothing, options, "unused.jsonl")) == 0
@@ -117,7 +117,7 @@ end
     )
     trace = new_trace(enabled_options)
     @test trace isa TraceType
-    trace_mutation_type!(trace, :mutate_constant)
+    trace_mutation_type!(trace, "mutate_constant")
     trace_mutation_result!(trace, "accept", "pass")
     @test trace ==
         TraceType("type" => "mutate_constant", "result" => "accept", "reason" => "pass")

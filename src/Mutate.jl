@@ -580,7 +580,7 @@ function mutate!(
 ) where {N<:AbstractExpression,P<:AbstractPopMember}
     scale = isnothing(context) ? 1.0 : context.scale
     new_tree = mutate_constant(new_tree, scale, options, m)
-    trace_mutation_type!(trace, :mutate_constant)
+    trace_mutation_type!(trace, "mutate_constant")
     return MutationResult{N,P}(; tree=new_tree)
 end
 
@@ -593,7 +593,7 @@ function mutate!(
     kws...,
 ) where {N<:AbstractExpression,P<:AbstractPopMember}
     new_tree = mutate_operator(new_tree, options)
-    trace_mutation_type!(trace, :mutate_operator)
+    trace_mutation_type!(trace, "mutate_operator")
     return MutationResult{N,P}(; tree=new_tree)
 end
 
@@ -607,7 +607,7 @@ function mutate!(
     kws...,
 ) where {N<:AbstractExpression,P<:AbstractPopMember}
     new_tree = mutate_feature(new_tree, nfeatures)
-    trace_mutation_type!(trace, :mutate_feature)
+    trace_mutation_type!(trace, "mutate_feature")
     return MutationResult{N,P}(; tree=new_tree)
 end
 
@@ -620,7 +620,7 @@ function mutate!(
     kws...,
 ) where {N<:AbstractExpression,P<:AbstractPopMember}
     new_tree = swap_operands(new_tree)
-    trace_mutation_type!(trace, :swap_operands)
+    trace_mutation_type!(trace, "swap_operands")
     return MutationResult{N,P}(; tree=new_tree)
 end
 
@@ -635,10 +635,10 @@ function mutate!(
 ) where {N<:AbstractExpression,P<:AbstractPopMember}
     if rand() < 0.5
         new_tree = append_random_op(new_tree, options, nfeatures)
-        trace_mutation_type!(trace, :var"add_node:append")
+        trace_mutation_type!(trace, "add_node:append")
     else
         new_tree = prepend_random_op(new_tree, options, nfeatures)
-        trace_mutation_type!(trace, :var"add_node:prepend")
+        trace_mutation_type!(trace, "add_node:prepend")
     end
     return MutationResult{N,P}(; tree=new_tree)
 end
@@ -653,7 +653,7 @@ function mutate!(
     kws...,
 ) where {N<:AbstractExpression,P<:AbstractPopMember}
     new_tree = insert_random_op(new_tree, options, nfeatures)
-    trace_mutation_type!(trace, :insert_node)
+    trace_mutation_type!(trace, "insert_node")
     return MutationResult{N,P}(; tree=new_tree)
 end
 
@@ -666,7 +666,7 @@ function mutate!(
     kws...,
 ) where {N<:AbstractExpression,P<:AbstractPopMember}
     new_tree = delete_random_op!(new_tree)
-    trace_mutation_type!(trace, :delete_node)
+    trace_mutation_type!(trace, "delete_node")
     return MutationResult{N,P}(; tree=new_tree)
 end
 
@@ -679,7 +679,7 @@ function mutate!(
     kws...,
 ) where {N<:AbstractExpression,P<:AbstractPopMember}
     new_tree = form_random_connection!(new_tree)
-    trace_mutation_type!(trace, :form_connection)
+    trace_mutation_type!(trace, "form_connection")
     return MutationResult{N,P}(; tree=new_tree)
 end
 
@@ -692,7 +692,7 @@ function mutate!(
     kws...,
 ) where {N<:AbstractExpression,P<:AbstractPopMember}
     new_tree = break_random_connection!(new_tree)
-    trace_mutation_type!(trace, :break_connection)
+    trace_mutation_type!(trace, "break_connection")
     return MutationResult{N,P}(; tree=new_tree)
 end
 
@@ -705,7 +705,7 @@ function mutate!(
     kws...,
 ) where {N<:AbstractExpression,P<:AbstractPopMember}
     new_tree = randomly_rotate_tree!(new_tree)
-    trace_mutation_type!(trace, :rotate_tree)
+    trace_mutation_type!(trace, "rotate_tree")
     return MutationResult{N,P}(; tree=new_tree)
 end
 
@@ -726,7 +726,7 @@ function mutate!(
         backsolve_options=m,
         population_for_backsolve=population_for_backsolve,
     )
-    trace_mutation_type!(trace, :backsolve)
+    trace_mutation_type!(trace, "backsolve")
     return MutationResult{N,P}(; tree=new_tree)
 end
 
@@ -753,7 +753,7 @@ function mutate!(
         options,
         simplified_complexity,
     )
-    trace_mutation_type!(trace, :simplify)
+    trace_mutation_type!(trace, "simplify")
     new_member = create_child(
         parent_member,
         new_tree,
@@ -777,7 +777,7 @@ function mutate!(
     kws...,
 ) where {T,N<:AbstractExpression{T},P<:AbstractPopMember}
     new_tree = randomize_tree(new_tree, curmaxsize, options, nfeatures)
-    trace_mutation_type!(trace, :randomize)
+    trace_mutation_type!(trace, "randomize")
     return MutationResult{N,P}(; tree=new_tree)
 end
 
@@ -791,7 +791,7 @@ function mutate!(
     kws...,
 ) where {N<:AbstractExpression,P<:AbstractPopMember}
     cur_member, new_num_evals = optimize_constants(dataset, parent_member, options)
-    trace_mutation_type!(trace, :optimize)
+    trace_mutation_type!(trace, "optimize")
     return MutationResult{N,P}(;
         member=cur_member, num_evals=new_num_evals, return_immediately=true
     )
