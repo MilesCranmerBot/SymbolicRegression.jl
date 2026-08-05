@@ -6,6 +6,13 @@ end
 
 if startswith(TEST_GROUP, "integration/")
     integration_name = replace(TEST_GROUP, "integration/" => "")
+    example_path = if integration_name == "examples/readme"
+        joinpath(@__DIR__, "..", "example.jl")
+    elseif integration_name == "examples/parameterized_function"
+        joinpath(@__DIR__, "..", "examples", "parameterized_function.jl")
+    elseif integration_name == "examples/custom_types"
+        joinpath(@__DIR__, "..", "examples", "custom_types.jl")
+    end
     integration_dir = joinpath(@__DIR__, "integration", integration_name)
 
     if !isdir(integration_dir)
@@ -17,15 +24,13 @@ if startswith(TEST_GROUP, "integration/")
     Pkg.develop(; path=joinpath(@__DIR__, ".."))
     Pkg.instantiate()
 
-    if startswith(integration_name, "ext/mlj") && integration_name == "ext/mlj/templates"
-        include(joinpath(@__DIR__, "..", "example.jl"))
-        include(joinpath(@__DIR__, "..", "examples", "parameterized_function.jl"))
-        include(joinpath(@__DIR__, "..", "examples", "custom_types.jl"))
+    if example_path === nothing
+        @run_package_tests(
+            filter = ti -> startswith(ti.filename, integration_dir), verbose = true
+        )
+    else
+        include(example_path)
     end
-
-    @run_package_tests(
-        filter = ti -> startswith(ti.filename, integration_dir), verbose = true
-    )
 else
     @testset "SymbolicRegression.jl" begin
         test_dir = joinpath(@__DIR__, TEST_GROUP)

@@ -26,19 +26,14 @@ using DynamicQuantities:
     dimension
 using LossFunctions: SupervisedLoss
 using ..InterfaceDynamicQuantitiesModule: get_dimensions_type
-using ..InterfaceDynamicExpressionsModule: InterfaceDynamicExpressionsModule as IDE
 using ..CoreModule:
     AbstractOptions,
     Options,
     Dataset,
-    AbstractMutationWeights,
     MutationWeights,
     LOSS_TYPE,
     ComplexityMapping,
-    BacksolveOptions,
     AbstractExpressionSpec,
-    ExpressionSpec,
-    get_expression_type,
     check_warm_start_compatibility
 using ..CoreModule.OptionsModule: DEFAULT_OPTIONS, OPTION_DESCRIPTIONS
 using ..PopMemberModule: default_popmember_type
@@ -180,7 +175,6 @@ Base.@kwdef struct SRFitResult{
     variable_names::Vector{String}
     y_variable_names::Union{Vector{String},Nothing}
     y_is_table::Bool
-    has_class::Bool
     X_units::XD
     y_units::YD
     types::TYPES
@@ -239,38 +233,11 @@ function MMI.update(
     if !isnothing(old_fitresult)
         check_warm_start_compatibility(old_fitresult.options, options)
     end
-    return _update(m, verbosity, old_fitresult, old_cache, X, y, w, options, nothing)
+    return _update(m, verbosity, old_fitresult, old_cache, X, y, w, options)
 end
 function _update(
-    m,
-    verbosity,
-    old_fitresult::Union{SRFitResult,Nothing},
-    old_cache,
-    X,
-    y,
-    w,
-    options,
-    class,
+    m, verbosity, old_fitresult::Union{SRFitResult,Nothing}, old_cache, X, y, w, options
 )
-    if (
-        IDE.handles_class_column(m) &&
-        isnothing(class) &&
-        MMI.istable(X) &&
-        :class in MMI.schema(X).names
-    )
-        names_without_class = filter(!=(:class), MMI.schema(X).names)
-        new_X = MMI.selectcols(X, collect(names_without_class))
-        new_class = MMI.selectcols(X, :class)
-        return _update(
-            m, verbosity, old_fitresult, old_cache, new_X, y, w, options, new_class
-        )
-    end
-    if !isnothing(old_fitresult)
-        @assert(
-            old_fitresult.has_class == !isnothing(class),
-            "If the first fit used class, the second fit must also use class."
-        )
-    end
     # To speed up iterative fits, we cache the types:
     types = if isnothing(old_fitresult)
         SRFitResultTypes()
@@ -317,7 +284,6 @@ function _update(
         X_units=X_units_clean,
         y_units=y_units_clean,
         verbosity=verbosity,
-        extra=isnothing(class) ? (;) : (; class),
         logger=m.logger,
         guesses=m.guesses,
         # Help out with inference:
@@ -333,7 +299,6 @@ function _update(
         variable_names=variable_names,
         y_variable_names=y_variable_names,
         y_is_table=MMI.istable(y),
-        has_class=(!isnothing(class)),
         X_units=X_units_clean,
         y_units=y_units_clean,
         types=SRFitResultTypes(;
@@ -413,14 +378,6 @@ function validate_units(X_units, old_X_units)
         "Units of new data do not match units of fitted regressor."
     )
     return nothing
-end
-
-function IDE.handles_class_column(m::AbstractSymbolicRegressor)
-    expression_type = @something(
-        m.expression_type,
-        get_expression_type(@something(m.expression_spec, ExpressionSpec()))
-    )
-    return IDE.handles_class_column(expression_type)
 end
 
 # TODO: Test whether this conversion poses any issues in data normalization...
@@ -509,18 +466,13 @@ end
 function eval_tree_mlj(
     tree::AbstractExpression,
     X_t,
-    class,
     m::AbstractSymbolicRegressor,
     ::Type{T},
     fitresult,
     i,
     prototype,
 ) where {T}
-    out, completed = if isnothing(class)
-        eval_tree_array(tree, X_t, fitresult.options)
-    else
-        eval_tree_array(tree, X_t, class, fitresult.options)
-    end
+    out, completed = eval_tree_array(tree, X_t, fitresult.options)
     if completed
         return wrap_units(out, fitresult.y_units, i)
     else
@@ -529,34 +481,17 @@ function eval_tree_mlj(
 end
 
 function MMI.predict(
-    m::M, fitresult, Xnew; idx=nothing, class=nothing
+    m::M, fitresult, Xnew; idx=nothing
 ) where {M<:AbstractSymbolicRegressor}
-    return _predict(m, fitresult, Xnew, idx, class)
+    return _predict(m, fitresult, Xnew, idx)
 end
-function _predict(m::M, fitresult, Xnew, idx, class) where {M<:AbstractSymbolicRegressor}
+function _predict(m::M, fitresult, Xnew, idx) where {M<:AbstractSymbolicRegressor}
     if Xnew isa NamedTuple && (haskey(Xnew, :idx) || haskey(Xnew, :data))
         @assert(
             haskey(Xnew, :idx) && haskey(Xnew, :data) && length(keys(Xnew)) == 2,
             "If specifying an equation index during prediction, you must use a named tuple with keys `idx` and `data`."
         )
-        return _predict(m, fitresult, Xnew.data, Xnew.idx, class)
-    end
-    if (
-        IDE.handles_class_column(m) &&
-        isnothing(class) &&
-        MMI.istable(Xnew) &&
-        :class in MMI.schema(Xnew).names
-    )
-        names_without_class = filter(!=(:class), MMI.schema(Xnew).names)
-        Xnew2 = MMI.selectcols(Xnew, collect(names_without_class))
-        class = MMI.selectcols(Xnew, :class)
-        return _predict(m, fitresult, Xnew2, idx, class)
-    end
-
-    if fitresult.has_class
-        @assert(
-            !isnothing(class), "Classes must be specified if the model was fit with class."
-        )
+        return _predict(m, fitresult, Xnew.data, Xnew.idx)
     end
 
     params = full_report(m, fitresult; v_with_strings=Val(false))
@@ -577,12 +512,12 @@ function _predict(m::M, fitresult, Xnew, idx, class) where {M<:AbstractSymbolicR
 
     if M <: AbstractSingletargetSRRegressor
         return eval_tree_mlj(
-            params.equations[_idx], Xnew_t, class, m, T, fitresult, nothing, prototype
+            params.equations[_idx], Xnew_t, m, T, fitresult, nothing, prototype
         )
     elseif M <: AbstractMultitargetSRRegressor
         outs = [
             eval_tree_mlj(
-                params.equations[i][_idx[i]], Xnew_t, class, m, T, fitresult, i, prototype
+                params.equations[i][_idx[i]], Xnew_t, m, T, fitresult, i, prototype
             ) for i in eachindex(_idx, params.equations)
         ]
         out_matrix = reduce(hcat, outs)

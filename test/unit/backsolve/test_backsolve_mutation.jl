@@ -7,56 +7,10 @@
     using DynamicExpressions: Node, OperatorEnum, count_nodes, Expression, get_child
     using StableRNGs: StableRNG
 
-    import SymbolicRegression: sample_mutation
-
-    mutable struct BacksolveOnlyWeights <: SymbolicRegression.AbstractMutationWeights
-        counter::Base.RefValue{Int}
-        mutate_constant::Float64
-        mutate_operator::Float64
-        mutate_feature::Float64
-        swap_operands::Float64
-        rotate_tree::Float64
-        add_node::Float64
-        insert_node::Float64
-        delete_node::Float64
-        simplify::Float64
-        randomize::Float64
-        do_nothing::Float64
-        optimize::Float64
-        backsolve::Float64
-        form_connection::Float64
-        break_connection::Float64
-    end
-
-    function BacksolveOnlyWeights(counter::Base.RefValue{Int})
-        return BacksolveOnlyWeights(
-            counter,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            1.0,
-            0.0,
-            0.0,
-        )
-    end
-
-    Base.copy(weights::BacksolveOnlyWeights) = weights
-
-    function sample_mutation(weights::BacksolveOnlyWeights)
-        weights.counter[] += 1
-        return :backsolve
-    end
-
     rng = StableRNG(0)
+    options_with_backsolve(; kws...) = Options(;
+        default_mutations=(), mutations=(BacksolveMutation() => 1.0,), kws...
+    )
 
     @testset "InverseFunctions - Unary operators" begin
         inverse_pairs = (
@@ -199,7 +153,9 @@
         y = Float64[2.0, 3.0, 4.0]
         dataset = Dataset(X, y)
 
-        options = Options(; binary_operators=[+, *, -, /], unary_operators=[sin, cos])
+        options = options_with_backsolve(;
+            binary_operators=[+, *, -, /], unary_operators=[sin, cos]
+        )
 
         x_node = Node(Float64; feature=1)
         sin_node = Node(1, x_node)
@@ -218,7 +174,7 @@
         y = Float64[1.0]
         dataset = Dataset(X, y)
 
-        options = Options(; binary_operators=[+], unary_operators=[sin])
+        options = options_with_backsolve(; binary_operators=[+], unary_operators=[sin])
 
         tree = Node(Float64; val=1.0)
         mutated_tree = backsolve_rewrite_random_node(tree, dataset, options, rng)
@@ -232,7 +188,7 @@
         dataset = Dataset(X, y)
 
         operators = OperatorEnum(; binary_operators=[+, *], unary_operators=[sin])
-        options = Options(; binary_operators=[+, *], unary_operators=[sin])
+        options = options_with_backsolve(; binary_operators=[+, *], unary_operators=[sin])
 
         x_node = Node(Float64; feature=1)
         tree = Node(1, x_node)
@@ -247,7 +203,7 @@
         y = ComplexF64[2 + 2im, 3 - im, 4 + 0im]
         dataset = Dataset(X, y)
 
-        options = Options(; binary_operators=(+,), unary_operators=())
+        options = options_with_backsolve(; binary_operators=(+,), unary_operators=())
 
         tree = Node(1, Node(ComplexF64; feature=1), Node(ComplexF64; val=1 + 0im))
         mutated_tree = backsolve_rewrite_random_node(tree, dataset, options, rng)
@@ -293,7 +249,7 @@
             backsolve_rewrite_random_node(
                 ternary_tree,
                 Dataset(X3, y3),
-                Options(; binary_operators=(+, *), unary_operators=(sin,)),
+                options_with_backsolve(; binary_operators=(+, *), unary_operators=(sin,)),
                 rng,
             )
         )
@@ -332,7 +288,7 @@
 
         string_tree = Node{String}(; val="x")
         string_dataset = Dataset(reshape(["x"], 1, 1), ["x"], Float64)
-        string_options = Options(; binary_operators=(+,), unary_operators=())
+        string_options = options_with_backsolve(; binary_operators=(+,), unary_operators=())
 
         @test_throws(
             "backsolve_rewrite_random_node only supports floating-point scalar types",
@@ -341,29 +297,29 @@
 
         int_tree = Node(Int; val=1)
         int_dataset = Dataset(reshape(Int[1], 1, 1), Int[1], Float64)
-        int_options = Options(; binary_operators=(+,), unary_operators=())
+        int_options = options_with_backsolve(; binary_operators=(+,), unary_operators=())
 
         @test_throws(
             "backsolve_rewrite_random_node only supports floating-point scalar types",
             backsolve_rewrite_random_node(int_tree, int_dataset, int_options, rng)
         )
 
-        template_dataset = Dataset(reshape(Float64[1.0, 2.0], 1, 2), Float64[1.0, 2.0])
+        template_dataset = Dataset(reshape(Float32[1.0, 2.0], 1, 2), Float32[1.0, 2.0])
 
-        parametric_options = Options(; binary_operators=(*,), unary_operators=())
-        parametric_expr = parse_expression(
-            :(x1 * p1);
-            expression_type=ParametricExpression,
-            operators=parametric_options.operators,
-            variable_names=["x1"],
-            parameters=ones(1, 1),
-            parameter_names=["p1"],
+        template_spec = @template_spec(expressions=(f,)) do x1
+            f(x1)
+        end
+        template_options = options_with_backsolve(;
+            binary_operators=(*,), unary_operators=(), expression_spec=template_spec
+        )
+        template_expr = parse_expression(
+            (; f="#1"); expression_spec=template_spec, operators=template_options.operators
         )
 
         @test_throws(
             "expression wrapper types must opt in explicitly",
             backsolve_rewrite_random_node(
-                parametric_expr, template_dataset, parametric_options, rng
+                template_expr, template_dataset, template_options, rng
             )
         )
     end
@@ -387,8 +343,7 @@
         result = mutate!(
             ex,
             member,
-            Val(:backsolve),
-            options.mutation_weights,
+            BacksolveMutation(),
             options;
             recorder=Dict{String,Any}(),
             dataset=dataset,
@@ -399,14 +354,14 @@
     end
 
     @testset "Integration - backsolve in equation_search" begin
-        counter = Ref(0)
         X = reshape(Float64[1.0, 2.0, 3.0, 4.0], 1, 4)
         y = 2 .* vec(X) .+ 1
 
         options = Options(;
             binary_operators=(+, *, -),
             unary_operators=(sin,),
-            mutation_weights=BacksolveOnlyWeights(counter),
+            default_mutations=(),
+            mutations=(BacksolveMutation() => 1.0,),
             population_size=20,
             populations=1,
             ncycles_per_iteration=20,
@@ -421,7 +376,6 @@
             X, y; niterations=1, options, parallelism=:serial, guesses=["x1 + 1.0"]
         )
 
-        @test counter[] > 0
         @test !isempty(hall_of_fame.members)
         @test any(member -> isfinite(member.loss), hall_of_fame.members)
     end

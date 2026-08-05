@@ -27,12 +27,94 @@
     @test_throws AssertionError Options(; loss_scale=:cubic)
 end
 
+@testitem "Test versioned default profile selection" begin
+    using SymbolicRegression
+    using SymbolicRegression.CoreModule.OptionsModule: default_options
+
+    v1_defaults = default_options(v"1.0.0")
+    v2_defaults = default_options(v"2.0.0-alpha")
+    current_defaults = default_options()
+
+    @test keys(v1_defaults) == keys(v2_defaults) == keys(current_defaults)
+    for field in keys(v1_defaults)
+        v1_value = getproperty(v1_defaults, field)
+        v2_value = getproperty(v2_defaults, field)
+        current_value = getproperty(current_defaults, field)
+        if field == :mutation_weights
+            v1_value = convert(Vector, v1_value)
+            v2_value = convert(Vector, v2_value)
+            current_value = convert(Vector, current_value)
+        end
+
+        @test isequal(current_value, v2_value)
+        if field == :crossover_probability
+            @test v1_value == 0.0259
+            @test v2_value == 0.20
+        else
+            @test isequal(v1_value, v2_value)
+        end
+    end
+
+    @test Options().crossover_probability == 0.20
+    @test Options(; defaults=v"1.0.0").crossover_probability == 0.0259
+    @test Options(; defaults=v"2.0.0-alpha").adaptive_parsimony_scaling == 1040.0
+end
+
 @testitem "Test backsolve options" begin
     using SymbolicRegression
+    using SymbolicRegression.BacksolveModule: configured_backsolve
 
-    @test Options().backsolve == BacksolveOptions()
-    @test Options(; backsolve=nothing).backsolve == BacksolveOptions()
-    @test Options(; backsolve=BacksolveOptions(; lambda=0.2)).backsolve.lambda == 0.2
+    # Backsolve configuration lives on BacksolveMutation.
+    default_backsolve = first(
+        p.first for p in Options().mutations if p.first isa BacksolveMutation
+    )
+    @test default_backsolve == BacksolveMutation()
+
+    custom = Options(;
+        default_mutations=(), mutations=[BacksolveMutation(; lambda=0.2) => 1.0]
+    )
+    @test length(custom.mutations) == 1
+    @test custom.mutations[1].first.lambda == 0.2
+
+    with_override = Options(; mutations=(BacksolveMutation(; lambda=0.3) => 1.0,))
+    @test length(with_override.mutations) == length(default_mutations())
+    @test first(with_override.mutations) == (BacksolveMutation(; lambda=0.3) => 1.0)
+    @test count(p -> p.first isa BacksolveMutation, with_override.mutations) == 1
+    @test configured_backsolve(with_override).lambda == 0.3
+    @test_throws ArgumentError configured_backsolve(Options(; default_mutations=()))
+
+    @test isempty(Options(; default_mutations=()).mutations)
+    @test default_mutations() == SymbolicRegression.default_mutations()
+
+    @test_throws ArgumentError Options(;
+        mutation_weights=MutationWeights(), default_mutations=()
+    )
+end
+
+@testitem "Mutation collections mirror plugin override semantics" begin
+    using SymbolicRegression
+
+    struct ProbeMutation <: AbstractMutation
+        value::Int
+    end
+
+    disabled = Options(; mutations=[ConstantMutation() => 0.0])
+    @test first(disabled.mutations) == (ConstantMutation() => 0.0)
+    @test count(p -> p.first isa ConstantMutation, disabled.mutations) == 1
+    @test length(disabled.mutations) == length(default_mutations())
+
+    added = Options(; mutations=[ProbeMutation(1) => 0.5])
+    @test first(added.mutations) == (ProbeMutation(1) => 0.5)
+    @test length(added.mutations) == length(default_mutations()) + 1
+
+    no_defaults = Options(; default_mutations=(), mutations=[ProbeMutation(2) => 1.0])
+    @test no_defaults.mutations == [ProbeMutation(2) => 1.0]
+
+    custom_defaults = Options(;
+        mutations=[ProbeMutation(3) => 0.25],
+        default_mutations=[ProbeMutation(4) => 0.75, ConstantMutation() => 1.0],
+    )
+    @test custom_defaults.mutations == [ProbeMutation(3) => 0.25, ConstantMutation() => 1.0]
 end
 
 @testitem "Test operators parameter conflicts" begin

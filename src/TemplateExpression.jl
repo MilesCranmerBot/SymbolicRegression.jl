@@ -37,7 +37,7 @@ using ..CoreModule:
     Options,
     Dataset,
     CoreModule as CM,
-    AbstractMutationWeights,
+    ConstantMutation,
     has_units,
     DATA_TYPE,
     AbstractExpressionSpec,
@@ -53,7 +53,8 @@ using ..ComplexityModule: ComplexityModule
 using ..LossFunctionsModule: LossFunctionsModule as LF
 using ..MutateModule: MutateModule as MM
 using ..PopMemberModule: PopMember, AbstractPopMember
-using ..ComposableExpressionModule: ComposableExpression, ValidVector
+using ..ComposableExpressionModule:
+    AbstractComposableExpression, ComposableExpression, ValidVector, get_eval_options
 
 struct ParamVector{T} <: AbstractVector{T}
     _data::Vector{T}
@@ -294,7 +295,7 @@ struct TemplateExpression{
     T,
     F<:TemplateStructure,
     N<:AbstractExpressionNode{T},
-    E<:ComposableExpression{T,N},
+    E<:AbstractComposableExpression{T,N},
     TS<:NamedTuple{<:Any,<:NTuple{<:Any,E}},
     D<:@NamedTuple{
         structure::F, operators::O, variable_names::V, parameters::P
@@ -372,18 +373,9 @@ end
 
 function Base.copy(e::TemplateExpression)
     ts = get_contents(e)
-    meta = get_metadata(e)
-    meta_inner = DE.ExpressionModule.unpack_metadata(meta)
     copy_ts = NamedTuple{keys(ts)}(map(copy, values(ts)))
-    keys_except_structure = filter(!=(:structure), keys(meta_inner))
-    copy_metadata = (;
-        meta_inner.structure,
-        # Note: this `_copy` is just `copy` but with handling for `nothing` and `NamedTuple`
-        NamedTuple{keys_except_structure}(
-            map(_copy, values(meta_inner[keys_except_structure]))
-        )...,
-    )
-    return DE.constructorof(typeof(e))(copy_ts, Metadata(copy_metadata))
+    copy_parameters = _copy(get_metadata(e).parameters::NamedTuple)
+    return with_metadata(with_contents(e, copy_ts); parameters=copy_parameters)
 end
 function DE.get_contents(e::TemplateExpression)
     return e.trees
@@ -442,6 +434,34 @@ function DE.set_scalar_constants!(e::TemplateExpression, constants, refs)
     return e
 end
 
+struct TemplateOptimizableRefs{R}
+    scalar_refs::R
+    length::Int
+end
+
+function CO.get_optimizable_parameters(e::TemplateExpression, options)
+    combiner = get_metadata(e).structure.combine
+    return CO.get_optimizable_parameters(combiner, e, options)
+end
+function CO.get_optimizable_parameters(_context, e::TemplateExpression, _options)
+    parameters, scalar_refs = DE.get_scalar_constants(e)
+    return parameters, TemplateOptimizableRefs(scalar_refs, length(parameters))
+end
+function CO.set_optimizable_parameters!(
+    e::TemplateExpression, parameters, refs::TemplateOptimizableRefs
+)
+    length(parameters) == refs.length || throw(
+        DimensionMismatch(
+            "received $(length(parameters)) optimizable parameters but expected $(refs.length)",
+        ),
+    )
+    return DE.set_scalar_constants!(e, parameters, refs.scalar_refs)
+end
+function CO.extract_optimizable_gradient(
+    grad, e::TemplateExpression, _refs::TemplateOptimizableRefs
+)
+    return DE.extract_gradient(grad, e)
+end
 Base.@kwdef struct PreallocatedTemplateExpression{A,B}
     trees::A
     parameters::B
@@ -497,6 +517,29 @@ function DE.get_tree(ex::TemplateExpression{<:Any,<:Any,<:Any,E}) where {E}
     )
 end
 
+# `::Type{IET}` keeps IET as a static parameter inside the closure; a runtime
+# `Type` capture widens to `DataType` (see `Core._typeof_captured_variable`).
+@inline function _build_inner_template_expressions(
+    ::Type{IET},
+    t,
+    operators,
+    variable_names,
+    eval_options,
+    inner_expression_options::NamedTuple,
+    ::Val{N},
+) where {IET,N}
+    return ntuple(
+        _ -> DE.constructorof(IET)(
+            copy(t);
+            operators,
+            variable_names,
+            eval_options,
+            inner_expression_options...,
+        ),
+        Val(N),
+    )
+end
+
 function EB.create_expression(
     t::AbstractExpressionNode{T},
     options::AbstractOptions,
@@ -506,13 +549,19 @@ function EB.create_expression(
     (::Val{embed})=Val(false),
 ) where {T,L,embed,E<:TemplateExpression}
     function_keys = get_function_keys(options.expression_options.structure)
+    inner_expression_type = options.expression_options.inner_expression_type
+    inner_expression_options = options.expression_options.inner_expression_options
 
-    # NOTE: We need to copy over the operators so we can call the structure function
     operators = options.operators
     variable_names = embed ? dataset.variable_names : nothing
     eval_options = EvalOptions(; turbo=options.turbo, bumper=options.bumper)
-    inner_expressions = ntuple(
-        _ -> ComposableExpression(copy(t); operators, variable_names, eval_options),
+    inner_expressions = _build_inner_template_expressions(
+        inner_expression_type,
+        t,
+        operators,
+        variable_names,
+        eval_options,
+        inner_expression_options,
         Val(length(function_keys)),
     )
     # TODO: Generalize to other inner expression types
@@ -534,8 +583,11 @@ function EB.extra_init_params(
     else
         # COV_EXCL_START
         if prototype === nothing
-            NamedTuple{keys(num_parameters)}(
-                map(n -> ParamVector(randn(T, (n,))), values(num_parameters))
+            _initialize_template_parameters(
+                default_rng(),
+                T,
+                num_parameters,
+                options.expression_options.parameter_initializer,
             )
         else
             _copy(get_metadata(prototype).parameters::NamedTuple)
@@ -545,6 +597,49 @@ function EB.extra_init_params(
     # We also need to include the operators here to be consistent with `create_expression`.
     return (; options.operators, options.expression_options..., parameters)
 end
+
+function _initialize_template_parameters(
+    rng::AbstractRNG, ::Type{T}, num_parameters::NamedTuple, parameter_initializer::Nothing
+) where {T}
+    return NamedTuple{keys(num_parameters)}(
+        map(n -> ParamVector(randn(rng, T, (n,))), values(num_parameters))
+    )
+end
+function _initialize_template_parameters(
+    rng::AbstractRNG, ::Type{T}, num_parameters::NamedTuple, parameter_initializer
+) where {T}
+    initialized = parameter_initializer(rng, T, num_parameters)
+    initialized isa NamedTuple || throw(
+        ArgumentError(
+            "`parameter_initializer` must return a `NamedTuple`, got $(typeof(initialized))",
+        ),
+    )
+
+    expected_keys = keys(num_parameters)
+    initialized_keys = keys(initialized)
+    issetequal(initialized_keys, expected_keys) || throw(
+        ArgumentError(
+            "`parameter_initializer` returned keys $(initialized_keys), expected $(expected_keys)",
+        ),
+    )
+
+    parameters = map(expected_keys, values(num_parameters)) do key, expected_length
+        parameter = initialized[key]
+        parameter isa AbstractVector || throw(
+            ArgumentError(
+                "`parameter_initializer` must return an `AbstractVector` for parameter `$(key)`, got $(typeof(parameter))",
+            ),
+        )
+        length(parameter) == expected_length || throw(
+            DimensionMismatch(
+                "`parameter_initializer` returned $(length(parameter)) values for parameter `$(key)`, expected $(expected_length)",
+            ),
+        )
+        return ParamVector(Vector{T}(parameter))
+    end
+    return NamedTuple{expected_keys}(parameters)
+end
+
 function EB.sort_params(params::NamedTuple, ::Type{<:TemplateExpression})
     return (; params.structure, params.operators, params.variable_names, params.parameters)
 end
@@ -677,6 +772,24 @@ function _match_input_eltype(
     end
 end
 
+_with_call_time_buffer(contents, ::Nothing) = contents
+function _with_call_time_buffer(contents::NamedTuple, eval_options::EvalOptions)
+    eval_options.buffer === nothing && return contents
+    return map(Base.Fix2(_with_call_time_buffer, eval_options), contents)
+end
+function _with_call_time_buffer(ex::AbstractComposableExpression, eval_options::EvalOptions)
+    stored = get_eval_options(ex)
+    stored.bumper isa Val{true} && return ex
+    merged = EvalOptions(
+        stored.turbo,
+        stored.bumper,
+        stored.early_exit,
+        eval_options.buffer,
+        stored.use_fused,
+    )
+    return with_metadata(ex; eval_options=merged)
+end
+
 @stable(
     default_mode = "disable",
     default_union_limit = 2,
@@ -685,6 +798,7 @@ end
             tree::TemplateExpression,
             cX::AbstractMatrix,
             operators::Union{AbstractOperatorEnum,Nothing}=nothing;
+            eval_options=nothing,
             kws...,
         )
             raw_contents = get_contents(tree)
@@ -699,7 +813,7 @@ end
             end
             result = combine(
                 tree,
-                raw_contents,
+                _with_call_time_buffer(raw_contents, eval_options),
                 extra_args...,
                 map(x -> ValidVector(copy(x), true), eachrow(cX)),
             )
@@ -740,34 +854,32 @@ function DA.violates_dimensional_constraints(
     return false
 end
 function MM.condition_mutation_weights!(
-    @nospecialize(weights::AbstractMutationWeights),
+    weights::AbstractVector,
     @nospecialize(member::P),
     @nospecialize(options::AbstractOptions),
     curmaxsize::Int,
     nfeatures::Int,
 ) where {T,L,N<:TemplateExpression,P<:AbstractPopMember{T,L,N}}
     if !preserve_sharing(typeof(member.tree))
-        weights.form_connection = 0.0
-        weights.break_connection = 0.0
+        MM._set_weight!(weights, MM.FormConnectionMutation, 0.0)
+        MM._set_weight!(weights, MM.BreakConnectionMutation, 0.0)
     end
 
     MM.condition_mutate_constant!(typeof(member.tree), weights, member, options, curmaxsize)
 
-    # Disable feature mutation if only one feature available
     if nfeatures <= 1
-        weights.mutate_feature = 0.0
+        MM._set_weight!(weights, MM.FeatureMutation, 0.0)
     end
 
     complexity = ComplexityModule.compute_complexity(member, options)
 
     if complexity >= curmaxsize
-        # If equation is too big, don't add new operators
-        weights.add_node = 0.0
-        weights.insert_node = 0.0
+        MM._set_weight!(weights, MM.AddNodeMutation, 0.0)
+        MM._set_weight!(weights, MM.InsertNodeMutation, 0.0)
     end
 
     if !options.should_simplify
-        weights.simplify = 0.0
+        MM._set_weight!(weights, MM.SimplifyMutation, 0.0)
     end
     return nothing
 end
@@ -802,6 +914,39 @@ function MF.get_contents_for_mutation(ex::TemplateExpression, rng::AbstractRNG)
     return raw_contents[key_to_mutate], key_to_mutate
 end
 
+function _crossover_template_inners(
+    ex1::E, ex2::E, rng::AbstractRNG
+) where {E<:AbstractComposableExpression}
+    return MF.crossover_trees(copy(ex1), copy(ex2), rng)
+end
+
+function _template_crossover_child(
+    ex::TemplateExpression, crossed_inner::AbstractComposableExpression, context::Symbol
+)
+    raw_contents = get_contents(ex)
+    raw_contents_keys = keys(raw_contents)
+    new_contents = NamedTuple{raw_contents_keys}(
+        ntuple(length(raw_contents_keys)) do i
+            key = raw_contents_keys[i]
+            return key == context ? crossed_inner : copy(raw_contents[key])
+        end,
+    )
+    new_parameters = _copy(get_metadata(ex).parameters::NamedTuple)
+    return with_metadata(with_contents(ex, new_contents); parameters=new_parameters)
+end
+
+function MF.crossover_trees(
+    ex1::E, ex2::E, rng::AbstractRNG=default_rng()
+) where {E<:TemplateExpression}
+    ex1 === ex2 && error("Attempted to crossover the same expression!")
+    inner1, context1 = MF.get_contents_for_mutation(ex1, rng)
+    inner2, context2 = MF.get_contents_for_mutation(ex2, rng)
+    crossed1, crossed2 = _crossover_template_inners(inner1, inner2, rng)
+    child1 = _template_crossover_child(ex1, crossed1, context1)
+    child2 = _template_crossover_child(ex2, crossed2, context2)
+    return child1, child2
+end
+
 """See `get_contents_for_mutation(::TemplateExpression, ::AbstractRNG)`."""
 function MF.with_contents_for_mutation(
     ex::TemplateExpression, new_inner_contents, context::Symbol
@@ -827,7 +972,7 @@ end
 
 function MM.condition_mutate_constant!(
     ::Type{<:TemplateExpression},
-    weights::AbstractMutationWeights,
+    weights::AbstractVector,
     member::AbstractPopMember,
     options::AbstractOptions,
     curmaxsize::Int,
@@ -870,13 +1015,14 @@ function MF.mutate_constant(
     ex::TemplateExpression{T},
     temperature,
     options::AbstractOptions,
+    m::ConstantMutation=ConstantMutation(),
     rng::AbstractRNG=default_rng(),
 ) where {T<:DATA_TYPE}
     regular_constant_mutation = !has_params(ex) || (has_constants(ex) && rand(rng, Bool))
     if regular_constant_mutation
         # Normal mutation of inner constant
         tree, context = MF.get_contents_for_mutation(ex, rng)
-        new_tree = MF.mutate_constant(tree, temperature, options, rng)
+        new_tree = MF.mutate_constant(tree, temperature, options, m, rng)
         return MF.with_contents_for_mutation(ex, new_tree, context)
     else # Mutate parameters
 
@@ -891,27 +1037,29 @@ function MF.mutate_constant(
             rng, 1:num_params, num_params_to_mutate; replace=false
         )
         parameters = get_metadata(ex).parameters[key_to_mutate]::ParamVector
-        factors = [MF.mutate_factor(T, temperature, options, rng) for _ in idx_to_mutate]
+        factors = [MF.mutate_factor(T, temperature, m, rng) for _ in idx_to_mutate]
         @inbounds for (i, f) in zip(idx_to_mutate, factors)
             parameters._data[i] *= f
         end
         return ex
     end
 end
-# TODO: Look at other ParametricExpression behavior
 
-for f in (:(DE.count_scalar_constants), :(CO.count_constants_for_optimization))
-    @eval function $f(ex::TemplateExpression)
-        return (
-            sum($f, values(get_contents(ex))) +
-            (has_params(ex) ? sum($f, values(get_metadata(ex).parameters)) : 0)
+function DE.count_scalar_constants(ex::TemplateExpression)
+    return (
+        sum(DE.count_scalar_constants, values(get_contents(ex))) + (
+            if has_params(ex)
+                sum(DE.count_scalar_constants, values(get_metadata(ex).parameters))
+            else
+                0
+            end
         )
-    end
-    @eval function $f(p::ParamVector)
-        # TODO: This is not general enough; we should be using `get_scalar_constants`
-        # on the parameters themselves.
-        return length(p._data)
-    end
+    )
+end
+function DE.count_scalar_constants(p::ParamVector)
+    # TODO: This is not general enough; we should be using `get_scalar_constants`
+    # on the parameters themselves.
+    return length(p._data)
 end
 
 function CC.check_constraints(
@@ -967,14 +1115,84 @@ end
     TemplateExpressionSpec <: AbstractExpressionSpec
 
 (Experimental) Specification for template expressions with pre-defined structure.
+
+# Fields
+- `structure`: The `TemplateStructure` defining how inner expressions and parameters
+    are combined.
+- `inner_expression_type`: The expression type used for each inner expression. Custom
+    types must implement the DynamicExpressions expression interface, including
+    `Base.copy` with independent copies of any mutable candidate-local metadata.
+- `inner_expression_options`: Additional keyword arguments passed to inner expressions.
+- `parameter_initializer`: **Experimental** optional function called as
+    `parameter_initializer(rng, T, num_parameters)` when creating a new candidate.
+    It must return a `NamedTuple` with the same keys and vector lengths as
+    `num_parameters`. By default, template parameters are initialized with `randn`.
 """
-Base.@kwdef struct TemplateExpressionSpec{ST<:TemplateStructure} <: AbstractExpressionSpec
+struct TemplateExpressionSpec{ST<:TemplateStructure,IET,IEO<:NamedTuple,PI} <:
+       AbstractExpressionSpec
     structure::ST
+    inner_expression_type::Type{IET}
+    inner_expression_options::IEO
+    parameter_initializer::PI
+    function TemplateExpressionSpec{ST,IET,IEO,PI}(
+        structure, inner_expression_type, inner_expression_options, parameter_initializer
+    ) where {ST<:TemplateStructure,IET,IEO<:NamedTuple,PI}
+        return new{ST,IET,IEO,PI}(
+            structure,
+            inner_expression_type,
+            inner_expression_options,
+            parameter_initializer,
+        )
+    end
+end
+# Positional form. `::Type{IET}` with a positional default binds IET in the
+# `where` clause (kwarg defaults don't), so the inferred return type stays
+# concrete for downstream consumers.
+function TemplateExpressionSpec(
+    structure::TemplateStructure,
+    (::Type{IET})=ComposableExpression,
+    inner_expression_options::NamedTuple=NamedTuple(),
+    parameter_initializer=nothing,
+) where {IET}
+    return TemplateExpressionSpec{
+        typeof(structure),IET,typeof(inner_expression_options),typeof(parameter_initializer)
+    }(
+        structure, IET, inner_expression_options, parameter_initializer
+    )
+end
+@unstable function TemplateExpressionSpec(;
+    structure::TemplateStructure,
+    inner_expression_type::Type=ComposableExpression,
+    inner_expression_options::NamedTuple=NamedTuple(),
+    parameter_initializer=nothing,
+)
+    return TemplateExpressionSpec(
+        structure, inner_expression_type, inner_expression_options, parameter_initializer
+    )
 end
 
 # COV_EXCL_START
 ES.get_expression_type(::TemplateExpressionSpec) = TemplateExpression
-ES.get_expression_options(spec::TemplateExpressionSpec) = (; structure=spec.structure)
+# Explicit NamedTuple type pins `inner_expression_type` as `Type{IET}`
+# (a `(; ...)` shorthand widens it to `Type`, killing inference).
+function ES.get_expression_options(
+    spec::TemplateExpressionSpec{ST,IET,IEO,PI}
+) where {ST,IET,IEO,PI}
+    return NamedTuple{
+        (
+            :structure,
+            :inner_expression_type,
+            :inner_expression_options,
+            :parameter_initializer,
+        ),
+        Tuple{ST,Type{IET},IEO,PI},
+    }((
+        spec.structure,
+        spec.inner_expression_type,
+        spec.inner_expression_options,
+        spec.parameter_initializer,
+    ),)
+end
 ES.get_node_type(::TemplateExpressionSpec) = Node
 # COV_EXCL_STOP
 
@@ -1025,20 +1243,20 @@ parse_expression((; f="cos(#1) - 1.5", g="exp(#2) - #1"); expression_type=Templa
     kws...,
 )
     if expression_spec !== nothing
-        actual_expression_type = ES.get_expression_type(expression_spec)
-        actual_expression_options = ES.get_expression_options(expression_spec)
-        actual_node_type = ES.get_node_type(expression_spec)
+        resolved_expression_type = ES.get_expression_type(expression_spec)
+        resolved_expression_options = ES.get_expression_options(expression_spec)
+        resolved_node_type = ES.get_node_type(expression_spec)
     else
-        actual_expression_type = something(expression_type, TemplateExpression)
-        actual_expression_options = expression_options
-        actual_node_type = something(node_type, Node)
+        resolved_expression_type = something(expression_type, TemplateExpression)
+        resolved_expression_options = expression_options
+        resolved_node_type = something(node_type, Node)
     end
 
     # COV_EXCL_START
-    @assert actual_expression_type <: TemplateExpression
+    @assert resolved_expression_type <: TemplateExpression
     @assert(
-        actual_expression_options !== nothing &&
-            actual_expression_options.structure isa TemplateStructure,
+        resolved_expression_options !== nothing &&
+            resolved_expression_options.structure isa TemplateStructure,
         "NamedTuple expressions require expression_options with a TemplateStructure"
     )
     # COV_EXCL_STOP
@@ -1048,6 +1266,18 @@ parse_expression((; f="cos(#1) - 1.5", g="exp(#2) - #1"); expression_type=Templa
     else
         NamedTuple()
     end
+    inner_expression_type =
+        if hasproperty(resolved_expression_options, :inner_expression_type)
+            resolved_expression_options.inner_expression_type
+        else
+            ComposableExpression
+        end
+    inner_expression_options =
+        if hasproperty(resolved_expression_options, :inner_expression_options)
+            resolved_expression_options.inner_expression_options
+        else
+            NamedTuple()
+        end
 
     inner_expressions = NamedTuple{keys(ex)}(
         map(values(ex)) do expr_str
@@ -1070,19 +1300,23 @@ parse_expression((; f="cos(#1) - 1.5", g="exp(#2) - #1"); expression_type=Templa
                 unary_operators,
                 variable_names=placeholder_variable_names,
                 expression_type=DE.Expression,
-                node_type=actual_node_type,
+                node_type=resolved_node_type,
                 kws...,
             )
 
-            ComposableExpression(
-                parsed_expr.tree; operators, variable_names=nothing, eval_options_kws...
+            DE.constructorof(inner_expression_type)(
+                parsed_expr.tree;
+                operators,
+                variable_names=nothing,
+                eval_options_kws...,
+                inner_expression_options...,
             )
         end,
     )
 
-    return actual_expression_type(
+    return DE.constructorof(resolved_expression_type)(
         inner_expressions;
-        structure=actual_expression_options.structure,
+        structure=resolved_expression_options.structure,
         operators,
         variable_names=nothing,
         kws...,

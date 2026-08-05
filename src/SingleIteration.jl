@@ -2,15 +2,20 @@ module SingleIterationModule
 
 using ADTypes: AutoEnzyme
 using DynamicExpressions: AbstractExpression, string_tree, simplify_tree!, combine_operators
-using ..UtilsModule: @threads_if
-using ..CoreModule: AbstractOptions, Dataset, RecordType, create_expression, batch
-using ..ComplexityModule: compute_complexity
+using ..UtilsModule: @threads_if, strictmap
+using ..CoreModule:
+    AbstractOptions,
+    Dataset,
+    RecordType,
+    create_expression,
+    batch,
+    on_cycle_start!,
+    on_cycle_end!
 using ..PopMemberModule: generate_reference
 using ..PopulationModule: Population, finalize_costs
-using ..HallOfFameModule: HallOfFame
-using ..AdaptiveParsimonyModule: RunningSearchStatistics
+using ..HallOfFameModule: HallOfFame, _update_hall_of_fame_unchecked!
 using ..RegularizedEvolutionModule: reg_evol_cycle
-using ..LossFunctionsModule: eval_cost
+using ..LossFunctionsModule: create_eval_options, eval_cost
 using ..ConstantOptimizationModule: optimize_constants
 using ..RecorderModule: @recorder
 
@@ -20,45 +25,38 @@ function s_r_cycle(
     dataset::D,
     pop::P,
     ncycles::Int,
-    curmaxsize::Int,
-    running_search_statistics::RunningSearchStatistics;
+    curmaxsize::Int;
     verbosity::Int=0,
     options::AbstractOptions,
     record::RecordType,
+    plugin_states::Tuple,
 )::Tuple{
     P,HallOfFame{T,L,N},Float64
 } where {T,L,D<:Dataset{T,L},N<:AbstractExpression{T},P<:Population{T,L,N}}
-    max_temp = 1.0
-    min_temp = 0.0
-    if !options.annealing
-        min_temp = max_temp
-    end
-    all_temperatures = ncycles > 1 ? LinRange(max_temp, min_temp, ncycles) : [max_temp]
     best_examples_seen = HallOfFame(options, dataset)
     num_evals = 0.0
 
     batched_dataset = options.batching ? batch(dataset, options.batch_size) : dataset
+    eval_options = create_eval_options(batched_dataset, options, curmaxsize)
 
-    for temperature in all_temperatures
+    for cycle_idx in 1:ncycles
+        strictmap(options.plugins, plugin_states) do plugin, pstate
+            on_cycle_start!(pstate, plugin, cycle_idx, ncycles, options)
+        end
         pop, tmp_num_evals = reg_evol_cycle(
             batched_dataset,
             pop,
-            temperature,
             curmaxsize,
-            running_search_statistics,
             options,
-            record,
+            record;
+            plugin_states,
+            best_seen=best_examples_seen,
+            eval_options,
         )
         num_evals += tmp_num_evals
-        for member in pop.members
-            size = compute_complexity(member, options)
-            if 0 < size <= options.maxsize && (
-                !best_examples_seen.exists[size] ||
-                member.cost < best_examples_seen.members[size].cost
-            )
-                best_examples_seen.exists[size] = true
-                best_examples_seen.members[size] = copy(member)
-            end
+        _update_hall_of_fame_unchecked!(best_examples_seen, pop.members, options)
+        strictmap(options.plugins, plugin_states) do plugin, pstate
+            on_cycle_end!(pstate, plugin, pop, batched_dataset, best_examples_seen, options)
         end
     end
 

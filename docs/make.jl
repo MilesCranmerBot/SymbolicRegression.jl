@@ -7,7 +7,6 @@ using SymbolicRegression:
     ExpressionInterface,
     Dataset,
     update_baseline_loss!,
-    AbstractMutationWeights,
     AbstractOptions,
     mutate!,
     condition_mutation_weights!,
@@ -15,7 +14,27 @@ using SymbolicRegression:
     MutationResult,
     AbstractRuntimeOptions,
     AbstractSearchState,
-    @extend_operators
+    @extend_operators,
+    AbstractPlugin,
+    MutationEvent,
+    init_plugin_state,
+    init_plugin_states,
+    fork_plugin_state,
+    refresh_worker_plugin_state,
+    on_search_start!,
+    on_search_end!,
+    on_generation_end!,
+    on_cycle_start!,
+    on_cycle_end!,
+    on_mutation_end!,
+    init_member,
+    tournament_cost_multiplier,
+    mutation_acceptance_multiplier,
+    prepare_mutation_context,
+    condition_mutation!,
+    AdaptiveMutationWeightsPlugin,
+    SimulatedAnnealingPlugin,
+    MutationBurstPlugin
 using DynamicExpressions
 
 include("utils.jl")
@@ -342,12 +361,14 @@ makedocs(;
             "Parameterized Expressions" => "examples/parameterized_function.md",
             "Parameterized Template Expressions" => "examples/template_parametric_expression.md",
             "Custom Types" => "examples/custom_types.md",
+            "Writing a Custom Plugin" => "examples/plugin_tutorial.md",
             "Using SymbolicRegression.jl on a Cluster" => "slurm.md",
         ],
         "API" => "api.md",
         "Losses" => "losses.md",
         "Types" => "types.md",
         "Customization" => "customization.md",
+        "Plugins" => "plugins.md",
     ],
 )
 

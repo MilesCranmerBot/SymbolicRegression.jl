@@ -66,6 +66,13 @@ end
     variable_names::Union{AbstractVector{<:AbstractString},Nothing}=nothing,
     eval_options::Union{Nothing,EvalOptions}=nothing,
 ) where {T}
+    if eval_options !== nothing && eval_options.buffer !== nothing
+        throw(
+            ArgumentError(
+                "ComposableExpression metadata cannot contain an evaluation buffer."
+            ),
+        )
+    end
     d = (; operators, variable_names, eval_options)
     return ComposableExpression(tree, Metadata(d))
 end
@@ -95,8 +102,8 @@ function DE.set_scalar_constants!(ex::AbstractComposableExpression, constants, r
     return DE.set_scalar_constants!(DE.get_contents(ex), constants, refs)
 end
 
-function Base.copy(ex::AbstractComposableExpression)
-    return ComposableExpression(copy(ex.tree), copy(ex.metadata))
+function Base.copy(ex::ComposableExpression)
+    return ComposableExpression(copy(DE.get_contents(ex)), copy(DE.get_metadata(ex)))
 end
 
 function Base.convert(::Type{E}, ex::AbstractComposableExpression) where {E<:Expression}
@@ -116,23 +123,24 @@ end
 function DE.count_scalar_constants(ex::AbstractComposableExpression)
     return DE.count_scalar_constants(convert(Expression, ex))
 end
-function CO.count_constants_for_optimization(ex::AbstractComposableExpression)
-    return CO.count_constants_for_optimization(convert(Expression, ex))
+function CO.get_optimizable_parameters(ex::ComposableExpression, _options)
+    return DE.get_scalar_constants(ex)
+end
+function CO.set_optimizable_parameters!(ex::ComposableExpression, x, refs)
+    return DE.set_scalar_constants!(ex, x, refs)
+end
+function CO.extract_optimizable_gradient(grad, ex::ComposableExpression, _refs)
+    return DE.extract_gradient(grad, ex)
 end
 
-struct PreallocatedComposableExpression{N}
-    tree::N
-end
 function DE.allocate_container(
     prototype::ComposableExpression, n::Union{Nothing,Integer}=nothing
 )
-    return PreallocatedComposableExpression(
-        DE.allocate_container(get_contents(prototype), n)
-    )
+    return (; tree=DE.allocate_container(get_contents(prototype), n))
 end
-function DE.copy_into!(dest::PreallocatedComposableExpression, src::ComposableExpression)
+function DE.copy_into!(dest::NamedTuple, src::ComposableExpression)
     new_tree = DE.copy_into!(dest.tree, get_contents(src))
-    return DE.with_contents(src, new_tree)
+    return with_contents(src, new_tree)
 end
 
 @implements(
