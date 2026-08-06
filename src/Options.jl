@@ -271,6 +271,8 @@ const deprecated_options_mapping = Base.ImmutableDict(
     :enable_autodiff => :deprecated_enable_autodiff,
     :ns => :tournament_selection_n,
     :loss => :elementwise_loss,
+    :use_recorder => :use_tracing,
+    :recorder_file => :tracing_file,
 )
 
 # For static analysis tools:
@@ -683,8 +685,8 @@ $(OPTION_DESCRIPTIONS)
     bin_constraints=nothing,
     una_constraints=nothing,
     terminal_width::Union{Nothing,Integer}=nothing,
-    use_recorder::Bool=false,
-    recorder_file::AbstractString="pysr_recorder.json",
+    use_tracing::Bool=false,
+    tracing_file::AbstractString="pysr_trace.jsonl",
     popmember_type::Type=default_popmember_type(),
     plugins::Union{Tuple,AbstractVector}=(),
     default_plugins::Union{Nothing,Tuple,AbstractVector}=nothing,
@@ -742,6 +744,8 @@ $(OPTION_DESCRIPTIONS)
         k == :enable_autodiff && continue
         k == :ns && (tournament_selection_n = kws[k]; true) && continue
         k == :loss && (elementwise_loss = kws[k]; true) && continue
+        k == :use_recorder && (use_tracing = kws[k]; true) && continue
+        k == :recorder_file && (tracing_file = kws[k]; true) && continue
         if k == :mutationWeights
             if typeof(kws[k]) <: AbstractVector
                 _mutation_weights = kws[k]
@@ -1119,7 +1123,7 @@ $(OPTION_DESCRIPTIONS)
         deprecated_return_state::Union{Bool,Nothing},
         typeof(_autodiff_backend),
         print_precision,
-        use_recorder,
+        use_tracing,
     }(
         operators,
         op_constraints,
@@ -1175,7 +1179,7 @@ $(OPTION_DESCRIPTIONS)
         optimizer_nrestarts,
         optimizer_options,
         _autodiff_backend,
-        recorder_file,
+        tracing_file,
         tournament_selection_p,
         early_stop_condition,
         Val(deprecated_return_state),
@@ -1185,7 +1189,7 @@ $(OPTION_DESCRIPTIONS)
         skip_mutation_failures,
         deterministic,
         define_helper_functions,
-        Val(use_recorder),
+        Val(use_tracing),
         popmember_type,
         plugin_tuple,
     )

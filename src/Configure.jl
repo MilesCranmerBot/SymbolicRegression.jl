@@ -349,12 +349,12 @@ function test_entire_pipeline(
                     5;
                     verbosity=verbosity,
                     options=options,
-                    record=RecordType(),
+                    trace=new_trace(options),
                     # TODO: Use isolated states so this smoke test does not emit synthetic lifecycle events to shared plugin resources.
                     plugin_states=worker_plugin_states,
                 )[1]
                 tmp_pop = optimize_and_simplify_population(
-                    dataset, tmp_pop, options, options.maxsize, RecordType()
+                    dataset, tmp_pop, options, options.maxsize, nothing
                 )
             end
         )
@@ -384,7 +384,7 @@ function configure_workers(;
 )
     (procs, we_created_procs) = if procs === nothing
         withenv("JULIA_WORKER_TIMEOUT" => string(worker_timeout)) do
-            (addprocs_function(numprocs; lazy=false, exeflags), true)
+            return (addprocs_function(numprocs; lazy=false, exeflags), true)
         end
     else
         (procs, false)

@@ -1,7 +1,7 @@
 @testitem "Test optimization mutation" begin
     using SymbolicRegression
     using SymbolicRegression: SymbolicRegression
-    using SymbolicRegression: Dataset, RecordType
+    using SymbolicRegression: Dataset, TraceType
     using Optim: Optim
     using SymbolicRegression.MutateModule: next_generation
     using DynamicExpressions: get_scalar_constants
@@ -27,7 +27,7 @@
     maxsize = 20
 
     new_member, _, _ = next_generation(
-        dataset, member, maxsize, options; tmp_recorder=RecordType(), plugin_states
+        dataset, member, maxsize, options; tmp_trace=TraceType(), plugin_states
     )
 
     resultant_constants, refs = get_scalar_constants(new_member.tree)

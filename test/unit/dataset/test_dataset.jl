@@ -1,3 +1,14 @@
+@testitem "Dataset mismatched X/y dimensions" begin
+    using SymbolicRegression
+
+    # Transposed X (nsamples × nfeatures) should fail early with a clear error
+    @test_throws DimensionMismatch Dataset(randn(32, 3), randn(32))
+    @test_throws DimensionMismatch Dataset(randn(3, 32), randn(31))
+    # Correct shapes still work
+    @test Dataset(randn(3, 32), randn(32)) isa Dataset
+    @test Dataset(randn(3, 32)) isa Dataset
+end
+
 @testitem "Dataset construction" begin
     using SymbolicRegression
 

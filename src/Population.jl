@@ -2,18 +2,16 @@ module PopulationModule
 
 using StatsBase: StatsBase
 using DispatchDoctor: @unstable
-using DynamicExpressions: AbstractExpression, string_tree, constructorof
+using DynamicExpressions: AbstractExpression, constructorof
 using ..CoreModule:
     AbstractOptions,
     Options,
     Dataset,
-    RecordType,
     DATA_TYPE,
     LOSS_TYPE,
     init_member,
     resolve_init_member,
     tournament_cost_multiplier
-using ..ComplexityModule: compute_complexity
 using ..LossFunctionsModule: eval_cost, update_baseline_loss!
 using ..MutationFunctionsModule: gen_random_tree
 using ..PopMemberModule: AbstractPopMember, PopMember
@@ -176,7 +174,7 @@ function _best_of_sample(
     for i in eachindex(members, adjusted_costs)
         member = members[i]
         multipliers = strictmap(options.plugins, plugin_states) do plugin, pstate
-            L(tournament_cost_multiplier(pstate, plugin, member, options))
+            return L(tournament_cost_multiplier(pstate, plugin, member, options))
         end
         adjusted_costs[i] = L(member.cost) * prod(multipliers)
     end
@@ -240,23 +238,6 @@ function best_sub_pop(pop::P; topn::Int=10)::P where {P<:Population}
     # Ensure we don't try to access more elements than exist in the population
     actual_topn = min(topn, pop.n)
     return Population(pop.members[best_idx[1:actual_topn]])
-end
-
-function record_population(pop::Population, options::AbstractOptions)::RecordType
-    return RecordType(
-        "population" => [
-            RecordType(
-                "tree" => string_tree(member.tree, options; pretty=false),
-                "loss" => member.loss,
-                "cost" => member.cost,
-                "complexity" => compute_complexity(member, options),
-                "birth" => member.birth,
-                "ref" => member.ref,
-                "parent" => member.parent,
-            ) for member in pop.members
-        ],
-        "time" => time(),
-    )
 end
 
 # Type accessor for Population

@@ -265,9 +265,9 @@ end
     @test n_calls[] == 1
 end
 
-@testitem "MutationBurstPlugin records every compound mutation" begin
+@testitem "MutationBurstPlugin traces every compound mutation" begin
     using SymbolicRegression
-    using SymbolicRegression: Dataset, RecordType, init_plugin_state
+    using SymbolicRegression: Dataset, TraceType, init_plugin_state
     using SymbolicRegression.RegularizedEvolutionModule: reg_evol_cycle
     using Test
 
@@ -282,35 +282,35 @@ end
         crossover_probability=0.0,
         population_size=2,
         tournament_selection_n=1,
-        use_recorder=true,
+        use_tracing=true,
     )
     dataset = Dataset(zeros(1, 8), zeros(8))
     plugin_states = (init_plugin_state(plugin, options, dataset),)
     population = Population(
         dataset; population_size=2, nlength=1, options, nfeatures=1, plugin_states
     )
-    record = RecordType()
+    trace = TraceType()
 
     reg_evol_cycle(
         dataset,
         population,
         options.maxsize,
         options,
-        record;
+        trace;
         plugin_states,
         best_seen=SymbolicRegression.HallOfFame(options, dataset),
     )
 
-    mutation_events = Tuple{String,RecordType}[]
-    for (parent, member_record) in record["mutations"]
-        for event in member_record["events"]
+    mutation_events = Tuple{String,TraceType}[]
+    for (parent, member_trace) in trace["mutations"]
+        for event in member_trace["events"]
             event["type"] == "mutate" && push!(mutation_events, (parent, event))
         end
     end
     @test length(mutation_events) == 3 * options.population_size
     @test count(event -> event[2]["selected"], mutation_events) == options.population_size
     for (parent, event) in mutation_events
-        child = record["mutations"]["$(event["child"])"]
+        child = trace["mutations"]["$(event["child"])"]
         @test child["parent"] == parse(Int, parent)
         @test event["mutation"]["type"] == "identity"
     end
@@ -349,10 +349,10 @@ end
     @test @inferred(step2(())).member == (:a, :b)
 end
 
-@testitem "recorder captures rejected retry branches" begin
+@testitem "trace captures rejected retry branches" begin
     using SymbolicRegression
     using SymbolicRegression:
-        Dataset, RecordType, init_plugin_state, MutationAcceptanceContext
+        Dataset, TraceType, init_plugin_state, MutationAcceptanceContext
     using SymbolicRegression.RegularizedEvolutionModule: reg_evol_cycle
     using Test
 
@@ -374,21 +374,21 @@ end
         crossover_probability=0.0,
         population_size=2,
         tournament_selection_n=1,
-        use_recorder=true,
+        use_tracing=true,
         skip_mutation_failures=true,
     )
     dataset = Dataset(randn(1, 8), randn(8))
     plugin_states = (init_plugin_state(loop, options, dataset), nothing)
     member = PopMember(dataset, Node(Float64; val=1.0), options; deterministic=false)
     population = Population([member, copy(member)])
-    record = RecordType()
+    trace = TraceType()
 
     reg_evol_cycle(
         dataset,
         population,
         options.maxsize,
         options,
-        record;
+        trace;
         plugin_states,
         best_seen=SymbolicRegression.HallOfFame(options, dataset),
     )
@@ -397,8 +397,8 @@ end
         n_mutate = 0
         n_selected = 0
         n_death = 0
-        for (_, member_record) in record["mutations"]
-            for event in member_record["events"]
+        for (_, member_trace) in trace["mutations"]
+            for event in member_trace["events"]
                 if event["type"] == "mutate"
                     n_mutate += 1
                     n_selected += event["selected"]
@@ -409,16 +409,16 @@ end
         end
         (n_mutate, n_selected, n_death)
     end
-    # Every rejected retry is its own recorded event: retry_attempts per
+    # Every rejected retry is its own traced event: retry_attempts per
     # tournament round, population_size rounds.
     @test n_mutate_events == 3 * options.population_size
     @test n_selected_events == options.population_size
     @test n_death_events == 0
 end
 
-@testitem "recorder captures accepted mutations" begin
+@testitem "trace captures accepted mutations" begin
     using SymbolicRegression
-    using SymbolicRegression: Dataset, RecordType
+    using SymbolicRegression: Dataset, TraceType
     using SymbolicRegression.MutateModule: next_generation
     using Test
 
@@ -426,24 +426,24 @@ end
         default_mutations=(),
         mutations=(ConstantMutation() => 1.0,),
         default_plugins=(),
-        use_recorder=true,
+        use_tracing=true,
     )
     dataset = Dataset(zeros(1, 8), zeros(8))
     member = PopMember(dataset, Node(Float64; val=1.0), options; deterministic=false)
-    recorder = RecordType()
+    trace = TraceType()
 
     _, accepted, _ = next_generation(
-        dataset, member, options.maxsize, options; tmp_recorder=recorder, plugin_states=()
+        dataset, member, options.maxsize, options; tmp_trace=trace, plugin_states=()
     )
 
     @test accepted
-    @test recorder["result"] == "accept"
-    @test recorder["reason"] == "pass"
+    @test trace["result"] == "accept"
+    @test trace["reason"] == "pass"
 end
 
 @testitem "reg_evol_cycle owns middleware evaluation accounting" begin
     using SymbolicRegression
-    using SymbolicRegression: AbstractPlugin, Dataset, MutationResult, RecordType
+    using SymbolicRegression: AbstractPlugin, Dataset, MutationResult, TraceType
     using SymbolicRegression.RegularizedEvolutionModule: reg_evol_cycle
     using Test
 
@@ -507,7 +507,7 @@ end
         population,
         options.maxsize,
         options,
-        RecordType();
+        TraceType();
         plugin_states,
         best_seen=SymbolicRegression.HallOfFame(options, dataset),
     )
@@ -527,7 +527,7 @@ end
         population,
         skip_options.maxsize,
         skip_options,
-        RecordType();
+        TraceType();
         plugin_states=(nothing,),
         best_seen=SymbolicRegression.HallOfFame(skip_options, dataset),
     )
@@ -546,7 +546,7 @@ end
         population,
         fabricate_options.maxsize,
         fabricate_options,
-        RecordType();
+        TraceType();
         plugin_states=(nothing,),
         best_seen=SymbolicRegression.HallOfFame(fabricate_options, dataset),
     )
@@ -566,7 +566,7 @@ end
         population,
         modify_options.maxsize,
         modify_options,
-        RecordType();
+        TraceType();
         plugin_states=(nothing,),
         best_seen=SymbolicRegression.HallOfFame(modify_options, dataset),
     )
@@ -575,7 +575,7 @@ end
 
 @testitem "MutationBurstPlugin preserves accepted intermediate Hall-of-Fame members" begin
     using SymbolicRegression
-    using SymbolicRegression: Dataset, MutationResult, RecordType, init_plugin_state
+    using SymbolicRegression: Dataset, MutationResult, TraceType, init_plugin_state
     using SymbolicRegression.PopMemberModule: create_child
     using Test
 
@@ -613,7 +613,7 @@ end
     plugin_states = (init_plugin_state(plugin, options, dataset),)
 
     final_population, best_seen, _ = s_r_cycle(
-        dataset, population, 1, options.maxsize; options, record=RecordType(), plugin_states
+        dataset, population, 1, options.maxsize; options, trace=TraceType(), plugin_states
     )
 
     @test only(final_population.members).cost == 2.0
@@ -623,7 +623,7 @@ end
 @testitem "mutation-cycle entry points require plugin state" begin
     using SymbolicRegression
     using SymbolicRegression:
-        AbstractPlugin, Dataset, MutationEvent, RecordType, init_plugin_state
+        AbstractPlugin, Dataset, MutationEvent, TraceType, init_plugin_state
     using SymbolicRegression.MutateModule: next_generation
     using Test
 
@@ -660,11 +660,11 @@ end
     plugin_states = (init_plugin_state(plugin, options, dataset),)
 
     next_generation(
-        dataset, member, options.maxsize, options; tmp_recorder=RecordType(), plugin_states
+        dataset, member, options.maxsize, options; tmp_trace=TraceType(), plugin_states
     )
     @test calls[] == 1
     @test_throws UndefKeywordError next_generation(
-        dataset, member, options.maxsize, options; tmp_recorder=RecordType()
+        dataset, member, options.maxsize, options; tmp_trace=TraceType()
     )
 
     population = Population([member])
@@ -672,10 +672,10 @@ end
         dataset; population_size=2, options, nfeatures=1
     )
     @test s_r_cycle(
-        dataset, population, 1, options.maxsize; options, record=RecordType(), plugin_states
+        dataset, population, 1, options.maxsize; options, trace=TraceType(), plugin_states
     ) isa Tuple
     @test_throws UndefKeywordError s_r_cycle(
-        dataset, population, 1, options.maxsize; options, record=RecordType()
+        dataset, population, 1, options.maxsize; options, trace=TraceType()
     )
 end
 

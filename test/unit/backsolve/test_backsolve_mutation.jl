@@ -345,7 +345,7 @@
             member,
             BacksolveMutation(),
             options;
-            recorder=Dict{String,Any}(),
+            trace=Dict{String,Any}(),
             dataset=dataset,
         )
 

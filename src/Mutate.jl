@@ -30,7 +30,7 @@ using ..CoreModule:
     DoNothingMutation,
     BUILTIN_MUTATION_TYPES,
     Dataset,
-    RecordType,
+    MaybeTrace,
     max_features,
     dataset_fraction,
     AbstractPlugin,
@@ -62,7 +62,8 @@ using ..MutationFunctionsModule:
     randomize_tree,
     backsolve_rewrite_random_node
 using ..ConstantOptimizationModule: optimize_constants
-using ..RecorderModule: @recorder
+using ..TracingModule:
+    trace_identity_mutation!, trace_mutation_result!, trace_mutation_type!
 
 abstract type AbstractMutationResult{N<:AbstractExpression,P<:AbstractPopMember} end
 
@@ -130,14 +131,14 @@ end
 function _set_weight!(
     weights::AbstractVector, ::Type{M}, value::Real
 ) where {M<:AbstractMutation}
-    _update_weight!(Returns(Float64(value)), weights, M)
+    return _update_weight!(Returns(Float64(value)), weights, M)
 end
 
 """Multiply the weight of every `<: M` entry by `factor` (in place)."""
 function _scale_weight!(
     weights::AbstractVector, ::Type{M}, factor::Real
 ) where {M<:AbstractMutation}
-    _update_weight!(w -> w * Float64(factor), weights, M)
+    return _update_weight!(w -> w * Float64(factor), weights, M)
 end
 
 """
@@ -279,7 +280,7 @@ end
     member::P,
     curmaxsize::Int,
     options::AbstractOptions;
-    tmp_recorder::RecordType,
+    tmp_trace::MaybeTrace,
     plugin_states::Tuple,
     eval_options=nothing,
     population_for_backsolve=nothing,
@@ -318,7 +319,7 @@ end
         before_loss,
         parent_ref,
         options,
-        tmp_recorder,
+        tmp_trace,
         plugin_states,
         eval_options,
         population_for_backsolve,
@@ -337,7 +338,7 @@ function _next_generation(
     before_loss,
     parent_ref,
     options::AbstractOptions,
-    tmp_recorder::RecordType,
+    tmp_trace::MaybeTrace,
     plugin_states::Tuple,
     eval_options,
     population_for_backsolve,
@@ -360,7 +361,9 @@ function _next_generation(
     mut_context = prepare_mutation_context(mutation_choice)
     if !isnothing(mut_context)
         strictmap(options.plugins, plugin_states) do plugin, pstate
-            condition_mutation!(mut_context, pstate, plugin, mutation_choice, options)
+            return condition_mutation!(
+                mut_context, pstate, plugin, mutation_choice, options
+            )
         end
     end
 
@@ -377,7 +380,7 @@ function _next_generation(
             member,
             mutation_choice,
             options;
-            recorder=tmp_recorder,
+            trace=tmp_trace,
             context=mut_context,
             dataset,
             cost=before_cost,
@@ -425,10 +428,7 @@ function _next_generation(
     tree = rtree[]
 
     if !successful_mutation
-        @recorder begin
-            tmp_recorder["result"] = "reject"
-            tmp_recorder["reason"] = "failed_constraint_check"
-        end
+        trace_mutation_result!(tmp_trace, "reject", "failed_constraint_check")
         mutation_accepted = false
         _fire_on_mutation_end!(
             options,
@@ -456,10 +456,7 @@ function _next_generation(
     num_evals += dataset_fraction(dataset)
 
     if isnan(after_cost)
-        @recorder begin
-            tmp_recorder["result"] = "reject"
-            tmp_recorder["reason"] = "nan_loss"
-        end
+        trace_mutation_result!(tmp_trace, "reject", "nan_loss")
         mutation_accepted = false
         _fire_on_mutation_end!(
             options,
@@ -486,15 +483,12 @@ function _next_generation(
     acceptance_ctx = MutationAcceptanceContext(member, tree, before_cost, after_cost)
     probChange = prod(
         strictmap(options.plugins, plugin_states) do plugin, pstate
-            mutation_acceptance_multiplier(pstate, plugin, acceptance_ctx, options)
+            return mutation_acceptance_multiplier(pstate, plugin, acceptance_ctx, options)
         end,
     )
 
     if probChange < rand()
-        @recorder begin
-            tmp_recorder["result"] = "reject"
-            tmp_recorder["reason"] = "acceptance"
-        end
+        trace_mutation_result!(tmp_trace, "reject", "acceptance")
         _fire_on_mutation_end!(
             options,
             plugin_states,
@@ -518,10 +512,7 @@ function _next_generation(
         )
     end
 
-    @recorder begin
-        tmp_recorder["result"] = "accept"
-        tmp_recorder["reason"] = "pass"
-    end
+    trace_mutation_result!(tmp_trace, "accept", "pass")
     new_member = create_child(
         member, tree, after_cost, after_loss, options; parent_ref=parent_ref
     )
@@ -559,7 +550,7 @@ Add a new mutation by defining a struct subtyping
 - `curmaxsize`: The current maximum size constraint, which may differ from `options.maxsize`.
 - `nfeatures`: The number of features in the dataset.
 - `parent_ref`: Reference to `parent_member`'s parent (used for lineage logging).
-- `recorder::RecordType`: A recorder to log mutation details.
+- `trace::MaybeTrace`: Mutation tracing state, or `nothing` when tracing is disabled.
 - `context`: per-call mutable context for the selected mutation type (built by
   [`prepare_mutation_context`](@ref) and conditioned by plugins via
   [`condition_mutation!`](@ref)); `nothing` for mutations without one.
@@ -583,13 +574,13 @@ function mutate!(
     parent_member::P,
     m::ConstantMutation,
     options::AbstractOptions;
-    recorder::RecordType,
+    trace::MaybeTrace,
     context::Union{Nothing,ConstantMutationContext}=nothing,
     kws...,
 ) where {N<:AbstractExpression,P<:AbstractPopMember}
     scale = isnothing(context) ? 1.0 : context.scale
     new_tree = mutate_constant(new_tree, scale, options, m)
-    @recorder recorder["type"] = "mutate_constant"
+    trace_mutation_type!(trace, "mutate_constant")
     return MutationResult{N,P}(; tree=new_tree)
 end
 
@@ -598,11 +589,11 @@ function mutate!(
     parent_member::P,
     ::OperatorMutation,
     options::AbstractOptions;
-    recorder::RecordType,
+    trace::MaybeTrace,
     kws...,
 ) where {N<:AbstractExpression,P<:AbstractPopMember}
     new_tree = mutate_operator(new_tree, options)
-    @recorder recorder["type"] = "mutate_operator"
+    trace_mutation_type!(trace, "mutate_operator")
     return MutationResult{N,P}(; tree=new_tree)
 end
 
@@ -611,12 +602,12 @@ function mutate!(
     parent_member::P,
     ::FeatureMutation,
     options::AbstractOptions;
-    recorder::RecordType,
+    trace::MaybeTrace,
     nfeatures,
     kws...,
 ) where {N<:AbstractExpression,P<:AbstractPopMember}
     new_tree = mutate_feature(new_tree, nfeatures)
-    @recorder recorder["type"] = "mutate_feature"
+    trace_mutation_type!(trace, "mutate_feature")
     return MutationResult{N,P}(; tree=new_tree)
 end
 
@@ -625,11 +616,11 @@ function mutate!(
     parent_member::P,
     ::SwapOperandsMutation,
     options::AbstractOptions;
-    recorder::RecordType,
+    trace::MaybeTrace,
     kws...,
 ) where {N<:AbstractExpression,P<:AbstractPopMember}
     new_tree = swap_operands(new_tree)
-    @recorder recorder["type"] = "swap_operands"
+    trace_mutation_type!(trace, "swap_operands")
     return MutationResult{N,P}(; tree=new_tree)
 end
 
@@ -638,16 +629,16 @@ function mutate!(
     parent_member::P,
     ::AddNodeMutation,
     options::AbstractOptions;
-    recorder::RecordType,
+    trace::MaybeTrace,
     nfeatures,
     kws...,
 ) where {N<:AbstractExpression,P<:AbstractPopMember}
     if rand() < 0.5
         new_tree = append_random_op(new_tree, options, nfeatures)
-        @recorder recorder["type"] = "add_node:append"
+        trace_mutation_type!(trace, "add_node:append")
     else
         new_tree = prepend_random_op(new_tree, options, nfeatures)
-        @recorder recorder["type"] = "add_node:prepend"
+        trace_mutation_type!(trace, "add_node:prepend")
     end
     return MutationResult{N,P}(; tree=new_tree)
 end
@@ -657,12 +648,12 @@ function mutate!(
     parent_member::P,
     ::InsertNodeMutation,
     options::AbstractOptions;
-    recorder::RecordType,
+    trace::MaybeTrace,
     nfeatures,
     kws...,
 ) where {N<:AbstractExpression,P<:AbstractPopMember}
     new_tree = insert_random_op(new_tree, options, nfeatures)
-    @recorder recorder["type"] = "insert_node"
+    trace_mutation_type!(trace, "insert_node")
     return MutationResult{N,P}(; tree=new_tree)
 end
 
@@ -671,11 +662,11 @@ function mutate!(
     parent_member::P,
     ::DeleteNodeMutation,
     options::AbstractOptions;
-    recorder::RecordType,
+    trace::MaybeTrace,
     kws...,
 ) where {N<:AbstractExpression,P<:AbstractPopMember}
     new_tree = delete_random_op!(new_tree)
-    @recorder recorder["type"] = "delete_node"
+    trace_mutation_type!(trace, "delete_node")
     return MutationResult{N,P}(; tree=new_tree)
 end
 
@@ -684,11 +675,11 @@ function mutate!(
     parent_member::P,
     ::FormConnectionMutation,
     options::AbstractOptions;
-    recorder::RecordType,
+    trace::MaybeTrace,
     kws...,
 ) where {N<:AbstractExpression,P<:AbstractPopMember}
     new_tree = form_random_connection!(new_tree)
-    @recorder recorder["type"] = "form_connection"
+    trace_mutation_type!(trace, "form_connection")
     return MutationResult{N,P}(; tree=new_tree)
 end
 
@@ -697,11 +688,11 @@ function mutate!(
     parent_member::P,
     ::BreakConnectionMutation,
     options::AbstractOptions;
-    recorder::RecordType,
+    trace::MaybeTrace,
     kws...,
 ) where {N<:AbstractExpression,P<:AbstractPopMember}
     new_tree = break_random_connection!(new_tree)
-    @recorder recorder["type"] = "break_connection"
+    trace_mutation_type!(trace, "break_connection")
     return MutationResult{N,P}(; tree=new_tree)
 end
 
@@ -710,11 +701,11 @@ function mutate!(
     parent_member::P,
     ::RotateTreeMutation,
     options::AbstractOptions;
-    recorder::RecordType,
+    trace::MaybeTrace,
     kws...,
 ) where {N<:AbstractExpression,P<:AbstractPopMember}
     new_tree = randomly_rotate_tree!(new_tree)
-    @recorder recorder["type"] = "rotate_tree"
+    trace_mutation_type!(trace, "rotate_tree")
     return MutationResult{N,P}(; tree=new_tree)
 end
 
@@ -723,7 +714,7 @@ function mutate!(
     parent_member::P,
     m::BacksolveMutation,
     options::AbstractOptions;
-    recorder::RecordType,
+    trace::MaybeTrace,
     dataset::Dataset,
     population_for_backsolve=nothing,
     kws...,
@@ -735,7 +726,7 @@ function mutate!(
         backsolve_options=m,
         population_for_backsolve=population_for_backsolve,
     )
-    @recorder recorder["type"] = "backsolve"
+    trace_mutation_type!(trace, "backsolve")
     return MutationResult{N,P}(; tree=new_tree)
 end
 
@@ -745,7 +736,7 @@ function mutate!(
     parent_member::P,
     ::SimplifyMutation,
     options::AbstractOptions;
-    recorder::RecordType,
+    trace::MaybeTrace,
     dataset::Dataset,
     parent_ref,
     kws...,
@@ -762,7 +753,7 @@ function mutate!(
         options,
         simplified_complexity,
     )
-    @recorder recorder["type"] = "simplify"
+    trace_mutation_type!(trace, "simplify")
     new_member = create_child(
         parent_member,
         new_tree,
@@ -780,13 +771,13 @@ function mutate!(
     ::P,
     ::RandomizeMutation,
     options::AbstractOptions;
-    recorder::RecordType,
+    trace::MaybeTrace,
     curmaxsize,
     nfeatures,
     kws...,
 ) where {T,N<:AbstractExpression{T},P<:AbstractPopMember}
     new_tree = randomize_tree(new_tree, curmaxsize, options, nfeatures)
-    @recorder recorder["type"] = "randomize"
+    trace_mutation_type!(trace, "randomize")
     return MutationResult{N,P}(; tree=new_tree)
 end
 
@@ -795,12 +786,12 @@ function mutate!(
     parent_member::P,
     ::OptimizeMutation,
     options::AbstractOptions;
-    recorder::RecordType,
+    trace::MaybeTrace,
     dataset::Dataset,
     kws...,
 ) where {N<:AbstractExpression,P<:AbstractPopMember}
     cur_member, new_num_evals = optimize_constants(dataset, parent_member, options)
-    @recorder recorder["type"] = "optimize"
+    trace_mutation_type!(trace, "optimize")
     return MutationResult{N,P}(;
         member=cur_member, num_evals=new_num_evals, return_immediately=true
     )
@@ -811,15 +802,11 @@ function mutate!(
     parent_member::P,
     ::DoNothingMutation,
     options::AbstractOptions;
-    recorder::RecordType,
+    trace::MaybeTrace,
     parent_ref,
     kws...,
 ) where {N<:AbstractExpression,P<:AbstractPopMember}
-    @recorder begin
-        recorder["type"] = "identity"
-        recorder["result"] = "accept"
-        recorder["reason"] = "identity"
-    end
+    trace_identity_mutation!(trace)
     return MutationResult{N,P}(;
         member=create_child(
             parent_member,
@@ -840,7 +827,7 @@ function crossover_generation(
     dataset::D,
     curmaxsize::Int,
     options::AbstractOptions;
-    recorder::RecordType=RecordType(),
+    trace::MaybeTrace=nothing,
     eval_options=nothing,
 )::Tuple{P,P,Bool,Float64} where {T,L,D<:Dataset{T,L},N,P<:AbstractPopMember{T,L,N}}
     tree1 = member1.tree
@@ -863,10 +850,7 @@ function crossover_generation(
             break
         end
         if num_tries > max_tries
-            @recorder begin
-                recorder["result"] = "reject"
-                recorder["reason"] = "failed_constraint_check"
-            end
+            trace_mutation_result!(trace, "reject", "failed_constraint_check")
             crossover_accepted = false
             return member1, member2, crossover_accepted, num_evals  # Fail.
         end
@@ -900,10 +884,7 @@ function crossover_generation(
         parent_ref=member2.ref,
     )::P
 
-    @recorder begin
-        recorder["result"] = "accept"
-        recorder["reason"] = "pass"
-    end
+    trace_mutation_result!(trace, "accept", "pass")
 
     crossover_accepted = true
     return baby1, baby2, crossover_accepted, num_evals
