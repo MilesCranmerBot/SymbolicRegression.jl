@@ -22,6 +22,12 @@
     @test options.should_optimize_constants == true
     @test options.elementwise_loss == L2DistLoss()
 
+    recorder_options = @test_deprecated Options(; use_recorder=true)
+    @test recorder_options.use_tracing == Val(true)
+
+    recorder_file_options = @test_deprecated Options(; recorder_file="legacy_trace.json")
+    @test recorder_file_options.tracing_file == "legacy_trace.json"
+
     options = Options(; mutationWeights=[1.0 for i in 1:8])
     @test only(
         weight for (mutation, weight) in options.mutations if mutation isa AddNodeMutation

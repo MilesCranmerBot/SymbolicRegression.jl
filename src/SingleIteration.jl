@@ -1,12 +1,12 @@
 module SingleIterationModule
 
 using ADTypes: AutoEnzyme
-using DynamicExpressions: AbstractExpression, string_tree, simplify_tree!, combine_operators
+using DynamicExpressions: AbstractExpression, simplify_tree!, combine_operators
 using ..UtilsModule: @threads_if, strictmap
 using ..CoreModule:
     AbstractOptions,
     Dataset,
-    RecordType,
+    MaybeTrace,
     create_expression,
     batch,
     on_cycle_start!,
@@ -17,7 +17,7 @@ using ..HallOfFameModule: HallOfFame, _update_hall_of_fame_unchecked!
 using ..RegularizedEvolutionModule: reg_evol_cycle
 using ..LossFunctionsModule: create_eval_options, eval_cost
 using ..ConstantOptimizationModule: optimize_constants
-using ..RecorderModule: @recorder
+using ..TracingModule: trace_optimization!
 
 # Cycle through regularized evolution many times,
 # printing the fittest equation every 10% through
@@ -28,7 +28,7 @@ function s_r_cycle(
     curmaxsize::Int;
     verbosity::Int=0,
     options::AbstractOptions,
-    record::RecordType,
+    trace::MaybeTrace,
     plugin_states::Tuple,
 )::Tuple{
     P,HallOfFame{T,L,N},Float64
@@ -41,14 +41,14 @@ function s_r_cycle(
 
     for cycle_idx in 1:ncycles
         strictmap(options.plugins, plugin_states) do plugin, pstate
-            on_cycle_start!(pstate, plugin, cycle_idx, ncycles, options)
+            return on_cycle_start!(pstate, plugin, cycle_idx, ncycles, options)
         end
         pop, tmp_num_evals = reg_evol_cycle(
             batched_dataset,
             pop,
             curmaxsize,
             options,
-            record;
+            trace;
             plugin_states,
             best_seen=best_examples_seen,
             eval_options,
@@ -56,7 +56,9 @@ function s_r_cycle(
         num_evals += tmp_num_evals
         _update_hall_of_fame_unchecked!(best_examples_seen, pop.members, options)
         strictmap(options.plugins, plugin_states) do plugin, pstate
-            on_cycle_end!(pstate, plugin, pop, batched_dataset, best_examples_seen, options)
+            return on_cycle_end!(
+                pstate, plugin, pop, batched_dataset, best_examples_seen, options
+            )
         end
     end
 
@@ -64,7 +66,7 @@ function s_r_cycle(
 end
 
 function optimize_and_simplify_population(
-    dataset::D, pop::P, options::AbstractOptions, curmaxsize::Int, record::RecordType
+    dataset::D, pop::P, options::AbstractOptions, curmaxsize::Int, trace::MaybeTrace
 )::Tuple{P,Float64} where {T,L,D<:Dataset{T,L},P<:Population{T,L}}
     array_num_evals = zeros(Float64, pop.n)
     do_optimization = rand(pop.n) .< options.optimizer_probability
@@ -92,46 +94,16 @@ function optimize_and_simplify_population(
     pop, tmp_num_evals = finalize_costs(dataset, pop, options)
     num_evals += tmp_num_evals
 
-    # Now, we create new references for every member,
-    # and optionally record which operations occurred.
+    # Now, we create new references for every member.
     for j in 1:(pop.n)
         old_ref = pop.members[j].ref
         new_ref = generate_reference()
         pop.members[j].parent = old_ref
         pop.members[j].ref = new_ref
 
-        @recorder begin
-            # Same structure as in RegularizedEvolution.jl,
-            # except we assume that the record already exists.
-            @assert haskey(record, "mutations")
-            member = pop.members[j]
-            if !haskey(record["mutations"], "$(member.ref)")
-                record["mutations"]["$(member.ref)"] = RecordType(
-                    "events" => Vector{RecordType}(),
-                    "tree" => string_tree(member.tree, options),
-                    "cost" => member.cost,
-                    "loss" => member.loss,
-                    "parent" => member.parent,
-                )
-            end
-            optimize_and_simplify_event = RecordType(
-                "type" => "tuning",
-                "time" => time(),
-                "child" => new_ref,
-                "mutation" => RecordType(
-                    "type" =>
-                        if (do_optimization[j] && options.should_optimize_constants)
-                            "simplification_and_optimization"
-                        else
-                            "simplification"
-                        end,
-                ),
-            )
-            death_event = RecordType("type" => "death", "time" => time())
-
-            push!(record["mutations"]["$(old_ref)"]["events"], optimize_and_simplify_event)
-            push!(record["mutations"]["$(old_ref)"]["events"], death_event)
-        end
+        trace_optimization!(
+            trace, pop.members[j], old_ref, new_ref, do_optimization[j], options
+        )
     end
     return (pop, num_evals)
 end

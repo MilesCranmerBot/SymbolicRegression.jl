@@ -2,7 +2,6 @@ using BenchmarkTools
 using SymbolicRegression, BenchmarkTools, Random
 using SymbolicRegression.MutateModule: next_generation
 using SymbolicRegression.AdaptiveParsimonyModule: RunningSearchStatistics
-using SymbolicRegression.RecorderModule: RecordType
 using SymbolicRegression.PopulationModule: best_of_sample
 using SymbolicRegression.ConstantOptimizationModule: optimize_constants
 using SymbolicRegression.CheckConstraintsModule: check_constraints
@@ -84,7 +83,7 @@ end
 function _plugin_states(options, dataset)
     return if hasproperty(options, :plugins)
         map(options.plugins) do plugin
-            SymbolicRegression.init_plugin_state(plugin, options, dataset)
+            return SymbolicRegression.init_plugin_state(plugin, options, dataset)
         end
     else
         ()
@@ -110,7 +109,7 @@ function _best_of_sample_api(state)
     elseif applicable(best_of_sample, state.pop, state.rss, state.options)
         return Val(:rss)
     end
-    error("Unsupported `best_of_sample` signature.")
+    return error("Unsupported `best_of_sample` signature.")
 end
 
 function _run_best_of_sample(::Val{:plugin_states}, state)
@@ -143,7 +142,7 @@ function _setup_next_generation()
         mutation_weights,
     )
     plugin_states = _plugin_states(options, dataset)
-    recorder = RecordType()
+    trace = isdefined(SymbolicRegression, :TracingModule) ? nothing : Dict{String,Any}()
     temperature = 1.0
     curmaxsize = 20
     rss = RunningSearchStatistics(; options)
@@ -156,9 +155,7 @@ function _setup_next_generation()
         PopMember(dataset, expression, options; deterministic=false) for
         expression in expressions
     ]
-    return (;
-        dataset, options, plugin_states, recorder, temperature, curmaxsize, rss, members
-    )
+    return (; dataset, options, plugin_states, trace, temperature, curmaxsize, rss, members)
 end
 
 function _next_generation_api(state)
@@ -185,22 +182,30 @@ function _next_generation_api(state)
     )
         return Val(:rss)
     end
-    error("Unsupported `next_generation` signature.")
+    return error("Unsupported `next_generation` signature.")
+end
+
+const NEXT_GENERATION_USES_TRACE = isdefined(SymbolicRegression, :TracingModule)
+
+@inline function _next_generation_trace_kwargs(trace)
+    return NEXT_GENERATION_USES_TRACE ? (; tmp_trace=trace) : (; tmp_recorder=trace)
 end
 
 function _run_next_generation(::Val{:plugin_states}, state)
+    trace_kws = _next_generation_trace_kwargs(state.trace)
     for member in state.members
         next_generation(
             state.dataset,
             member,
             state.curmaxsize,
             state.options;
-            tmp_recorder=state.recorder,
+            trace_kws...,
             plugin_states=state.plugin_states,
         )
     end
 end
 function _run_next_generation(::Val{:temperature}, state)
+    trace_kws = _next_generation_trace_kwargs(state.trace)
     for member in state.members
         next_generation(
             state.dataset,
@@ -208,12 +213,13 @@ function _run_next_generation(::Val{:temperature}, state)
             state.temperature,
             state.curmaxsize,
             state.options;
-            tmp_recorder=state.recorder,
+            trace_kws...,
             plugin_states=state.plugin_states,
         )
     end
 end
 function _run_next_generation(::Val{:rss}, state)
+    trace_kws = _next_generation_trace_kwargs(state.trace)
     for member in state.members
         next_generation(
             state.dataset,
@@ -222,7 +228,7 @@ function _run_next_generation(::Val{:rss}, state)
             state.curmaxsize,
             state.rss,
             state.options;
-            tmp_recorder=state.recorder,
+            trace_kws...,
         )
     end
 end

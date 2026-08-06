@@ -37,11 +37,6 @@ function is_anonymous_function(op)
 end
 precompile(Tuple{typeof(is_anonymous_function),Function})
 
-recursive_merge(x::AbstractVector...) = cat(x...; dims=1)
-recursive_merge(x::AbstractDict...) = merge(recursive_merge, x...)
-recursive_merge(x...) = x[end]
-recursive_merge() = error("Unexpected input.")
-
 get_base_type(::Type{Complex{BT}}) where {BT} = BT
 
 const subscripts = ('₀', '₁', '₂', '₃', '₄', '₅', '₆', '₇', '₈', '₉')
@@ -210,7 +205,7 @@ function _save_kwargs(log_variable::Symbol, fdef::Expr)
     end
 end
 
-json3_write(args...) = error("Please load the JSON3.jl package.")
+json3_write(args...; kws...) = error("Please load the JSON3.jl package.")
 
 """
     PerTaskCache{T,F}

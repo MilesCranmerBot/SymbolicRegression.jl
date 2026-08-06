@@ -62,7 +62,7 @@ end
 
 @testitem "GraphNode break connection mutation" begin
     using SymbolicRegression
-    using SymbolicRegression: RecordType, mutate!
+    using SymbolicRegression: TraceType, mutate!
     using SymbolicRegression.MutationFunctionsModule: break_random_connection!
     using Random: MersenneTwister
 
@@ -96,14 +96,14 @@ end
     dataset = Dataset(randn(3, 8), randn(8))
     member = PopMember(dataset, ex, options; deterministic=true)
     result = mutate!(
-        copy(ex), member, BreakConnectionMutation(), options; recorder=RecordType()
+        copy(ex), member, BreakConnectionMutation(), options; trace=TraceType()
     )
     @test result.tree isa typeof(ex)
 end
 
 @testitem "GraphNode form connection mutation" begin
     using SymbolicRegression
-    using SymbolicRegression: RecordType, mutate!
+    using SymbolicRegression: TraceType, mutate!
     using SymbolicRegression.MutationFunctionsModule: form_random_connection!
     using Random: MersenneTwister
 
@@ -145,8 +145,6 @@ end
 
     dataset = Dataset(randn(2, 8), randn(8))
     member = PopMember(dataset, ex, options; deterministic=true)
-    result = mutate!(
-        copy(ex), member, FormConnectionMutation(), options; recorder=RecordType()
-    )
+    result = mutate!(copy(ex), member, FormConnectionMutation(), options; trace=TraceType())
     @test result.tree isa typeof(ex)
 end

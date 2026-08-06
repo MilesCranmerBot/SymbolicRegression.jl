@@ -3,7 +3,6 @@
     using DynamicExpressions: AbstractExpression, Node
     using SymbolicRegression
     using SymbolicRegression: AbstractPlugin
-    using SymbolicRegression.CoreModule: RecordType
     using SymbolicRegression.SearchUtilsModule: AbstractRuntimeOptions, AbstractSearchState
     import SymbolicRegression.SearchUtilsModule: close_reader!
     using Test
@@ -44,7 +43,6 @@
         worker_output::Vector{Vector{Future}}
         plugin_states::Vector{Tuple{TeardownProbeState}}
         stdin_reader::TeardownProbeReader
-        record::Base.RefValue{RecordType}
     end
 
     called = Ref(false)
@@ -65,12 +63,7 @@
     try
         future = Future(proc)
         search_state = TeardownProbeSearchState(
-            [proc],
-            true,
-            [[future]],
-            [(plugin_state,)],
-            TeardownProbeReader(),
-            Ref(RecordType()),
+            [proc], true, [[future]], [(plugin_state,)], TeardownProbeReader()
         )
 
         elapsed = @elapsed SymbolicRegression._tear_down!(

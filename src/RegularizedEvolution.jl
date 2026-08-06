@@ -1,10 +1,9 @@
 module RegularizedEvolutionModule
 
-using DynamicExpressions: string_tree
 using ..CoreModule:
     AbstractOptions,
     Dataset,
-    RecordType,
+    MaybeTrace,
     DATA_TYPE,
     LOSS_TYPE,
     MutationStepResult,
@@ -13,7 +12,14 @@ using ..PopulationModule: Population, best_of_sample
 using ..HallOfFameModule: HallOfFame, update_hall_of_fame!, _update_hall_of_fame_unchecked!
 using ..ComplexityModule: compute_complexity
 using ..MutateModule: next_generation, crossover_generation
-using ..RecorderModule: @recorder
+using ..TracingModule:
+    new_trace,
+    new_step_trace,
+    new_traced_steps,
+    reset_traced_steps!,
+    trace_crossover!,
+    trace_mutation_attempts!,
+    trace_mutation_step!
 using ..UtilsModule: argmin_fast, strictmap
 
 """
@@ -39,7 +45,7 @@ end
 
 """
 Engine-owned state for one mutation step. Mutable contents accumulate every
-middleware attempt so evaluation counts, Hall-of-Fame updates, and recording
+middleware attempt so evaluation counts, Hall-of-Fame updates, and tracing
 stay under engine control.
 """
 struct MutationStep{D,P,O,S,E,H,A,M,R}
@@ -52,17 +58,17 @@ struct MutationStep{D,P,O,S,E,H,A,M,R}
     best_seen::H
     attempted_results::A
     attempted_members::M
-    recorded_steps::R
+    traced_steps::R
 end
 
 function (step::MutationStep)(parent)
-    step_recorder = RecordType()
+    step_trace = new_step_trace(step.traced_steps)
     member, accepted, num_evals = next_generation(
         step.dataset,
         parent,
         step.curmaxsize,
         step.options;
-        tmp_recorder=step_recorder,
+        tmp_trace=step_trace,
         plugin_states=step.plugin_states,
         eval_options=step.eval_options,
         population_for_backsolve=step.population,
@@ -71,9 +77,7 @@ function (step::MutationStep)(parent)
     result = MutationStepResult(member, accepted, attempt_id, num_evals)
     !isnothing(step.attempted_results) && push!(step.attempted_results, result)
     !isnothing(step.attempted_members) && push!(step.attempted_members, copy(member))
-    if !isnothing(step.recorded_steps)
-        push!(step.recorded_steps, (copy(parent), copy(member), step_recorder))
-    end
+    trace_mutation_step!(step.traced_steps, parent, member, step_trace)
     accepted &&
         !isnothing(step.attempted_members) &&
         update_hall_of_fame!(step.best_seen, member, step.options)
@@ -83,7 +87,7 @@ end
 function reset!(step::MutationStep)
     !isnothing(step.attempted_results) && empty!(step.attempted_results)
     !isnothing(step.attempted_members) && empty!(step.attempted_members)
-    !isnothing(step.recorded_steps) && empty!(step.recorded_steps)
+    reset_traced_steps!(step.traced_steps)
     return nothing
 end
 
@@ -94,7 +98,7 @@ function reg_evol_cycle(
     pop::P,
     curmaxsize::Int,
     options::AbstractOptions,
-    record::RecordType;
+    trace::MaybeTrace;
     plugin_states::Tuple,
     best_seen::HallOfFame,
     eval_options=nothing,
@@ -102,11 +106,7 @@ function reg_evol_cycle(
     num_evals = 0.0
     n_evol_cycles = ceil(Int, pop.n / options.tournament_selection_n)
     mutation_wrappers = strictmap(wrap_mutation_step, plugin_states, options.plugins)
-    recorded_steps = if options.use_recorder isa Val{true}
-        Tuple{eltype(pop.members),eltype(pop.members),RecordType}[]
-    else
-        nothing
-    end
+    traced_steps = new_traced_steps(trace, eltype(pop.members))
     has_mutation_wrappers = any(!isnothing, mutation_wrappers)
     attempted_results =
         has_mutation_wrappers ? MutationStepResult{eltype(pop.members)}[] : nothing
@@ -121,7 +121,7 @@ function reg_evol_cycle(
         best_seen,
         attempted_results,
         attempted_members,
-        recorded_steps,
+        traced_steps,
     )
     wrapped_step = build_mutation_step(mutation_wrappers, base_step)
 
@@ -158,46 +158,15 @@ function reg_evol_cycle(
                 0
             end
 
-            @recorder begin
-                steps = something(recorded_steps)
-
-                if !haskey(record, "mutations")
-                    record["mutations"] = RecordType()
-                end
-                members_to_record =
-                    should_replace ? [pop.members[oldest]] : eltype(pop.members)[]
-                for (parent, child, _) in steps
-                    push!(members_to_record, parent, child)
-                end
-                for member in members_to_record
-                    if !haskey(record["mutations"], "$(member.ref)")
-                        record["mutations"]["$(member.ref)"] = RecordType(
-                            "events" => Vector{RecordType}(),
-                            "tree" => string_tree(member.tree, options),
-                            "cost" => member.cost,
-                            "loss" => member.loss,
-                            "parent" => member.parent,
-                        )
-                    end
-                end
-                for (attempt_idx, (parent, child, step_recorder)) in enumerate(steps)
-                    mutate_event = RecordType(
-                        "type" => "mutate",
-                        "time" => time(),
-                        "child" => child.ref,
-                        "selected" => attempt_idx == selected_attempt_idx,
-                        "mutation" => step_recorder,
-                    )
-                    push!(record["mutations"]["$(parent.ref)"]["events"], mutate_event)
-                end
-                if should_replace
-                    death_event = RecordType("type" => "death", "time" => time())
-                    push!(
-                        record["mutations"]["$(pop.members[oldest].ref)"]["events"],
-                        death_event,
-                    )
-                end
-            end
+            trace_mutation_attempts!(
+                trace,
+                traced_steps,
+                pop,
+                oldest,
+                should_replace,
+                selected_attempt_idx,
+                options,
+            )
 
             should_replace || continue
             pop.members[oldest] = baby
@@ -206,14 +175,14 @@ function reg_evol_cycle(
             allstar1 = best_of_sample(pop, options; plugin_states)
             allstar2 = best_of_sample(pop, options; plugin_states)
 
-            crossover_recorder = RecordType()
+            crossover_trace = new_trace(trace)
             baby1, baby2, crossover_accepted, tmp_num_evals = crossover_generation(
                 allstar1,
                 allstar2,
                 dataset,
                 curmaxsize,
                 options;
-                recorder=crossover_recorder,
+                trace=crossover_trace,
                 eval_options,
             )
             num_evals += tmp_num_evals
@@ -237,51 +206,18 @@ function reg_evol_cycle(
                 i == oldest1 ? typemax(BT) : pop.members[i].birth for i in 1:(pop.n)
             ])
 
-            @recorder begin
-                if !haskey(record, "mutations")
-                    record["mutations"] = RecordType()
-                end
-                for member in [
-                    allstar1,
-                    allstar2,
-                    baby1,
-                    baby2,
-                    pop.members[oldest1],
-                    pop.members[oldest2],
-                ]
-                    if !haskey(record["mutations"], "$(member.ref)")
-                        record["mutations"]["$(member.ref)"] = RecordType(
-                            "events" => Vector{RecordType}(),
-                            "tree" => string_tree(member.tree, options),
-                            "cost" => member.cost,
-                            "loss" => member.loss,
-                            "parent" => member.parent,
-                        )
-                    end
-                end
-                crossover_event = RecordType(
-                    "type" => "crossover",
-                    "time" => time(),
-                    "parent1" => allstar1.ref,
-                    "parent2" => allstar2.ref,
-                    "child1" => baby1.ref,
-                    "child2" => baby2.ref,
-                    "details" => crossover_recorder,
-                )
-                death_event1 = RecordType("type" => "death", "time" => time())
-                death_event2 = RecordType("type" => "death", "time" => time())
-
-                push!(record["mutations"]["$(allstar1.ref)"]["events"], crossover_event)
-                push!(record["mutations"]["$(allstar2.ref)"]["events"], crossover_event)
-                push!(
-                    record["mutations"]["$(pop.members[oldest1].ref)"]["events"],
-                    death_event1,
-                )
-                push!(
-                    record["mutations"]["$(pop.members[oldest2].ref)"]["events"],
-                    death_event2,
-                )
-            end
+            trace_crossover!(
+                trace,
+                allstar1,
+                allstar2,
+                baby1,
+                baby2,
+                pop,
+                oldest1,
+                oldest2,
+                crossover_trace,
+                options,
+            )
 
             # Replace old members with new ones:
             pop.members[oldest1] = baby1
