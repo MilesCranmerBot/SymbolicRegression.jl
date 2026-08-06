@@ -100,7 +100,9 @@ jobs:
         shell: bash
       - name: "Run REPL stdin nonblocking test"
         if: matrix.os == 'ubuntu-latest' && matrix.group == 'evaluation'
-        run: expect test/repl/test_repl_stdin_nonblocking.exp
+        run: |
+          julia --project=. --startup-file=no --history-file=no --color=no -q -e 'using SymbolicRegression'
+          expect test/repl/test_repl_stdin_nonblocking.exp
         shell: bash
       - name: "Sanitize artifact group"
         id: sanitize_unit_group
