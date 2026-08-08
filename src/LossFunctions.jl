@@ -23,7 +23,8 @@ using ..CoreModule:
     init_value
 using ..ComplexityModule: compute_complexity
 using ..DimensionalAnalysisModule: violates_dimensional_constraints
-using ..InterfaceDynamicExpressionsModule: expected_array_type, takes_eval_context
+using ..InterfaceDynamicExpressionsModule:
+    expected_array_type, takes_eval_context, _process_eval_options
 
 function create_eval_context(dataset::Dataset, options::AbstractOptions, num_arrays::Int)
     if options.bumper isa Val{true} || !takes_eval_context(options.operators)
@@ -170,7 +171,9 @@ function eval_loss(
     regularization::Bool=true,
     idx=nothing,
     eval_context=nothing,
+    eval_options=nothing,
 )::L where {T<:DATA_TYPE,L<:LOSS_TYPE}
+    eval_context = _process_eval_options(eval_context, eval_options, :eval_loss)
     loss_val = if !isnothing(options.loss_function)
         f = options.loss_function::Function
         inner_tree = tree isa AbstractExpression ? get_tree(tree) : tree
@@ -224,7 +227,9 @@ function eval_cost(
     options::AbstractOptions;
     complexity::Union{Int,Nothing}=nothing,
     eval_context=nothing,
+    eval_options=nothing,
 )::Tuple{L,L} where {T<:DATA_TYPE,L<:LOSS_TYPE}
+    eval_context = _process_eval_options(eval_context, eval_options, :eval_cost)
     result_loss = eval_loss(get_tree_from_member(member), dataset, options; eval_context)
     cost = loss_to_cost(
         result_loss,

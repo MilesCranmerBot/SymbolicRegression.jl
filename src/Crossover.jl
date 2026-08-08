@@ -13,6 +13,7 @@ using ..CoreModule:
     dataset_fraction
 using ..ComplexityModule: compute_complexity
 using ..LossFunctionsModule: eval_cost
+using ..InterfaceDynamicExpressionsModule: _process_eval_options
 using ..CheckConstraintsModule: check_constraints
 using ..PopMemberModule: AbstractPopMember, create_child
 using ..MutationFunctionsModule: crossover_trees
@@ -115,8 +116,10 @@ end
     options::AbstractOptions;
     trace::MaybeTrace=nothing,
     eval_context=nothing,
+    eval_options=nothing,
     plugin_states::Tuple=ntuple(Returns(nothing), length(options.plugins)),
 )::Tuple{P,P,Bool,Float64} where {T,L,D<:Dataset{T,L},N,P<:AbstractPopMember{T,L,N}}
+    eval_context = _process_eval_options(eval_context, eval_options, :crossover_generation)
     crossovers = options.crossovers
     # Skip sampling for a single entry so the default configuration consumes
     # no extra RNG draws.

@@ -44,6 +44,7 @@ using ..CoreModule:
     ExpressionSpecModule as ES
 using ..ConstantOptimizationModule: ConstantOptimizationModule as CO
 using ..InterfaceDynamicExpressionsModule: InterfaceDynamicExpressionsModule as IDE
+using ..InterfaceDynamicExpressionsModule: _process_eval_options
 using ..MutationFunctionsModule: MutationFunctionsModule as MF
 using ..ExpressionBuilderModule: ExpressionBuilderModule as EB
 using ..HallOfFameModule: HallOfFameModule as HOF
@@ -799,8 +800,12 @@ end
             cX::AbstractMatrix,
             operators::Union{AbstractOperatorEnum,Nothing}=nothing;
             eval_context=nothing,
+            eval_options=nothing,
             kws...,
         )
+            eval_context = _process_eval_options(
+                eval_context, eval_options, :eval_tree_array
+            )
             raw_contents = get_contents(tree)
             metadata = get_metadata(tree)
             if has_invalid_variables(tree)
@@ -1234,6 +1239,7 @@ parse_expression((; f="cos(#1) - 1.5", g="exp(#2) - #1"); expression_type=Templa
     expression_spec::Union{ES.AbstractExpressionSpec,Nothing}=nothing,
     expression_options::Union{NamedTuple,Nothing}=nothing,
     eval_context::Union{EvalContext,Nothing}=nothing,
+    eval_options::Union{EvalContext,Nothing}=nothing,
     operators::Union{AbstractOperatorEnum,Nothing}=nothing,
     binary_operators::Union{Vector{<:Function},Nothing}=nothing,
     unary_operators::Union{Vector{<:Function},Nothing}=nothing,
@@ -1242,6 +1248,7 @@ parse_expression((; f="cos(#1) - 1.5", g="exp(#2) - #1"); expression_type=Templa
     node_type::Union{Type,Nothing}=nothing,
     kws...,
 )
+    eval_context = _process_eval_options(eval_context, eval_options, :parse_expression)
     if expression_spec !== nothing
         resolved_expression_type = ES.get_expression_type(expression_spec)
         resolved_expression_options = ES.get_expression_options(expression_spec)

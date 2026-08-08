@@ -22,6 +22,19 @@ takes_eval_context(::Type{<:AbstractOperatorEnum}) = false
 takes_eval_context(::Type{<:OperatorEnum}) = true
 takes_eval_context(::T) where {T} = takes_eval_context(T)
 
+@inline _process_eval_options(eval_context, ::Nothing, ::Symbol) = eval_context
+@noinline function _process_eval_options(eval_context, eval_options, function_name::Symbol)
+    Base.depwarn(
+        "The `eval_options` keyword is deprecated; use `eval_context` instead.",
+        function_name,
+    )
+    @assert(
+        eval_context === nothing,
+        "Cannot use both `eval_context` and deprecated `eval_options`."
+    )
+    return eval_options
+end
+
 """
     eval_tree_array(tree::Union{AbstractExpression,AbstractExpressionNode}, X::AbstractArray, options::AbstractOptions; kws...)
 
@@ -65,8 +78,10 @@ which speed up evaluation significantly.
         turbo=nothing,
         bumper=nothing,
         eval_context=nothing,
+        eval_options=nothing,
         kws...,
     )
+        eval_context = _process_eval_options(eval_context, eval_options, :eval_tree_array)
         A = expected_array_type(X, typeof(tree))
         operators = DE.get_operators(tree, options)
         eval_context_kws = if takes_eval_context(operators)
