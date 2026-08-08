@@ -619,8 +619,8 @@ $(OPTION_DESCRIPTIONS)
     @nospecialize(early_stop_condition::Union{Function,Real,Nothing} = nothing),
     ## 11. Performance and Parallelization:
     ###           [others, passed to `equation_search`]
-    @nospecialize(batching::Union{Bool,Nothing} = nothing),
-    @nospecialize(batch_size::Union{Nothing,Integer} = nothing),
+    ###           batching
+    ###           batch_size
     ###           turbo
     ###           bumper
     ###           autodiff_backend
@@ -678,6 +678,8 @@ $(OPTION_DESCRIPTIONS)
     max_evals::Union{Nothing,Integer}=nothing,
     input_stream::IO=stdin,
     ## 11. Performance and Parallelization:
+    batching::Union{Bool,Nothing}=nothing,
+    batch_size::Union{Nothing,Integer}=nothing,
     turbo::Bool=false,
     bumper::Bool=false,
     autodiff_backend::Union{AbstractADType,Symbol,Nothing}=nothing,
