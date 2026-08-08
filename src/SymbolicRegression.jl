@@ -24,6 +24,8 @@ export Population,
     RandomizeMutation,
     OptimizeMutation,
     DoNothingMutation,
+    AbstractCrossover,
+    SubtreeCrossover,
     AdaptiveParsimonyPlugin,
     AdaptiveMutationWeightsPlugin,
     MutationBurstPlugin,
@@ -193,7 +195,7 @@ using Compat: @compat, Fix
     public,
     (
         AbstractOptions, AbstractRuntimeOptions, RuntimeOptions,
-        mutate!, condition_mutation_weights!,
+        mutate!, condition_mutation_weights!, crossover, CrossoverResult,
         sample_mutation, MutationResult, AbstractPopMember, AbstractSearchState, SearchState,
         LOSS_TYPE, DATA_TYPE, node_type,
         AbstractComposableExpression,
@@ -249,6 +251,7 @@ using DispatchDoctor: @stable, @unstable
     include("Tracing.jl")
     include("ExpressionBuilder.jl")
     include("Mutate.jl")
+    include("Crossover.jl")
     include("RegularizedEvolution.jl")
     include("SingleIteration.jl")
     include("ProgressBars.jl")
@@ -295,6 +298,9 @@ using .CoreModule:
     OptimizeMutation,
     DoNothingMutation,
     default_mutations,
+    AbstractCrossover,
+    SubtreeCrossover,
+    default_crossovers,
     AbstractExpressionSpec,
     ExpressionSpec,
     init_value,
@@ -384,6 +390,7 @@ using .HallOfFameModule:
     string_dominating_pareto_curve,
     update_hall_of_fame!
 using .MutateModule: mutate!, condition_mutation_weights!, MutationResult
+using .CrossoverModule: crossover, CrossoverResult
 using .SingleIterationModule: s_r_cycle, optimize_and_simplify_population
 using .ProgressBarsModule: WrappedProgressBar
 using .TracingModule:

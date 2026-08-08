@@ -55,7 +55,6 @@ using ..MutationFunctionsModule:
     prepend_random_op,
     insert_random_op,
     delete_random_op!,
-    crossover_trees,
     form_random_connection!,
     break_random_connection!,
     randomly_rotate_tree!,
@@ -230,16 +229,13 @@ function condition_mutate_constant!(
     return nothing
 end
 
-@unstable function _sample_mutation(
-    mutations::AbstractVector{<:Pair{<:AbstractMutation,<:Real}}
-)
+@unstable function _sample_mutation(mutations::AbstractVector{<:Pair{<:Any,<:Real}})
     total_weight = 0.0
     for (_, weight) in mutations
-        weight >= 0.0 || throw(ArgumentError("Mutation weights must be nonnegative."))
+        weight >= 0.0 || throw(ArgumentError("Weights must be nonnegative."))
         total_weight += weight
     end
-    total_weight > 0.0 ||
-        throw(ArgumentError("At least one mutation weight must be positive."))
+    total_weight > 0.0 || throw(ArgumentError("At least one weight must be positive."))
 
     threshold = rand() * total_weight
     cumulative_weight = 0.0
@@ -382,6 +378,7 @@ function _next_generation(
             options;
             trace=tmp_trace,
             context=mut_context,
+            attempt=attempts + 1,
             dataset,
             cost=before_cost,
             loss=before_loss,
@@ -550,6 +547,8 @@ Add a new mutation by defining a struct subtyping
 - `curmaxsize`: The current maximum size constraint, which may differ from `options.maxsize`.
 - `nfeatures`: The number of features in the dataset.
 - `parent_ref`: Reference to `parent_member`'s parent (used for lineage logging).
+- `attempt::Int`: 1-based attempt number within the engine's constraint-retry
+  loop. Expensive mutations can use this to behave differently on retries.
 - `trace::MaybeTrace`: Mutation tracing state, or `nothing` when tracing is disabled.
 - `context`: per-call mutable context for the selected mutation type (built by
   [`prepare_mutation_context`](@ref) and conditioned by plugins via
@@ -818,76 +817,6 @@ function mutate!(
         ),
         return_immediately=true,
     )
-end
-
-"""Generate a generation via crossover of two members."""
-function crossover_generation(
-    member1::P,
-    member2::P,
-    dataset::D,
-    curmaxsize::Int,
-    options::AbstractOptions;
-    trace::MaybeTrace=nothing,
-    eval_options=nothing,
-)::Tuple{P,P,Bool,Float64} where {T,L,D<:Dataset{T,L},N,P<:AbstractPopMember{T,L,N}}
-    tree1 = member1.tree
-    tree2 = member2.tree
-    crossover_accepted = false
-
-    # We breed these until constraints are no longer violated:
-    child_tree1, child_tree2 = crossover_trees(tree1, tree2)
-    num_tries = 1
-    max_tries = 10
-    num_evals = 0.0
-    afterSize1 = -1
-    afterSize2 = -1
-    while true
-        afterSize1 = compute_complexity(child_tree1, options)
-        afterSize2 = compute_complexity(child_tree2, options)
-        # Both trees satisfy constraints
-        if check_constraints(child_tree1, options, curmaxsize, afterSize1) &&
-            check_constraints(child_tree2, options, curmaxsize, afterSize2)
-            break
-        end
-        if num_tries > max_tries
-            trace_mutation_result!(trace, "reject", "failed_constraint_check")
-            crossover_accepted = false
-            return member1, member2, crossover_accepted, num_evals  # Fail.
-        end
-        child_tree1, child_tree2 = crossover_trees(tree1, tree2)
-        num_tries += 1
-    end
-    after_cost1, after_loss1 = eval_cost(
-        dataset, child_tree1, options; complexity=afterSize1, eval_options
-    )
-    after_cost2, after_loss2 = eval_cost(
-        dataset, child_tree2, options; complexity=afterSize2, eval_options
-    )
-    num_evals += 2 * dataset_fraction(dataset)
-
-    baby1 = create_child(
-        (member1, member2),
-        child_tree1::AbstractExpression,
-        after_cost1,
-        after_loss1,
-        options;
-        complexity=afterSize1,
-        parent_ref=member1.ref,
-    )::P
-    baby2 = create_child(
-        (member1, member2),
-        child_tree2::AbstractExpression,
-        after_cost2,
-        after_loss2,
-        options;
-        complexity=afterSize2,
-        parent_ref=member2.ref,
-    )::P
-
-    trace_mutation_result!(trace, "accept", "pass")
-
-    crossover_accepted = true
-    return baby1, baby2, crossover_accepted, num_evals
 end
 
 end  # module MutateModule

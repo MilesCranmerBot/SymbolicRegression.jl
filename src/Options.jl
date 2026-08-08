@@ -38,6 +38,7 @@ using ..OperatorsModule:
     safe_atanh
 using ..MutationWeightsModule: MutationWeightsModule, MutationWeights, _mutation_weights
 using ..MutationsModule: MutationsModule
+using ..CrossoversModule: CrossoversModule
 import ..OptionsStructModule: Options
 using ..OptionsStructModule: ComplexityMapping, operator_specialization
 using ..PluginModule:
@@ -483,6 +484,14 @@ const OPTION_DESCRIPTIONS = """- `defaults`: What set of defaults to use for `Op
 - `default_mutations`: Default weighted mutations considered after `mutations`.
     Pass `()` to disable every automatic default.
 - `crossover_probability`: Probability of performing crossover.
+- `crossovers`: Override or extend the default crossover weights, as a vector of
+    `CrossoverType() => weight` pairs, sampled from whenever crossover is selected
+    via `crossover_probability`. An entry here replaces the default weight for that
+    crossover type; new (custom) crossover types are added alongside the defaults.
+    The default is `SubtreeCrossover() => 1.0`, which swaps a random subtree of one
+    parent with a random subtree of the other.
+- `default_crossovers`: Default weighted crossovers considered after `crossovers`.
+    Pass `()` to disable every automatic default.
 - `annealing`: Whether to use simulated annealing.
 - `warmup_maxsize_by`: Whether to slowly increase the max size from 5 up to
     `maxsize`. If nonzero, specifies the fraction through the search
@@ -577,6 +586,8 @@ $(OPTION_DESCRIPTIONS)
     @nospecialize(mutation_weights::Union{MutationWeights,NamedTuple,Nothing} = nothing),
     @nospecialize(default_mutations::Union{AbstractVector,Tuple,Nothing} = nothing),
     @nospecialize(mutations::Union{AbstractVector,Tuple,Nothing} = nothing),
+    @nospecialize(default_crossovers::Union{AbstractVector,Tuple,Nothing} = nothing),
+    @nospecialize(crossovers::Union{AbstractVector,Tuple,Nothing} = nothing),
     @nospecialize(crossover_probability::Union{Real,Nothing} = nothing),
     @nospecialize(annealing::Union{Bool,Nothing} = nothing),
     @nospecialize(alpha::Union{Nothing,Real} = nothing),
@@ -608,8 +619,8 @@ $(OPTION_DESCRIPTIONS)
     @nospecialize(early_stop_condition::Union{Function,Real,Nothing} = nothing),
     ## 11. Performance and Parallelization:
     ###           [others, passed to `equation_search`]
-    @nospecialize(batching::Union{Bool,Nothing} = nothing),
-    @nospecialize(batch_size::Union{Nothing,Integer} = nothing),
+    ###           batching
+    ###           batch_size
     ###           turbo
     ###           bumper
     ###           autodiff_backend
@@ -667,6 +678,8 @@ $(OPTION_DESCRIPTIONS)
     max_evals::Union{Nothing,Integer}=nothing,
     input_stream::IO=stdin,
     ## 11. Performance and Parallelization:
+    batching::Union{Bool,Nothing}=nothing,
+    batch_size::Union{Nothing,Integer}=nothing,
     turbo::Bool=false,
     bumper::Bool=false,
     autodiff_backend::Union{AbstractADType,Symbol,Nothing}=nothing,
@@ -1079,6 +1092,25 @@ $(OPTION_DESCRIPTIONS)
     )
     _resolved_mutations = vcat(_explicit_mutations, _remaining_defaults)
 
+    _default_crossovers = if default_crossovers === nothing
+        CrossoversModule.default_crossovers()
+    else
+        Pair{CrossoversModule.AbstractCrossover,Float64}[
+            p.first => Float64(p.second) for p in default_crossovers
+        ]
+    end
+    _explicit_crossovers = Pair{CrossoversModule.AbstractCrossover,Float64}[
+        p.first => Float64(p.second) for p in something(crossovers, ())
+    ]
+    _remaining_default_crossovers = filter(
+        default ->
+            !any(
+                explicit -> explicit.first isa typeof(default.first), _explicit_crossovers
+            ),
+        _default_crossovers,
+    )
+    _resolved_crossovers = vcat(_explicit_crossovers, _remaining_default_crossovers)
+
     user_plugin_tuple = Tuple(plugins)
     default_plugin_tuple = if default_plugins === nothing
         (
@@ -1148,6 +1180,7 @@ $(OPTION_DESCRIPTIONS)
         batching,
         batch_size,
         _resolved_mutations,
+        _resolved_crossovers,
         crossover_probability,
         warmup_maxsize_by,
         use_frequency,

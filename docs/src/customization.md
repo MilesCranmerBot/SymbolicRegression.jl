@@ -65,6 +65,59 @@ sample_mutation
 MutationResult
 ```
 
+## Custom Crossovers
+
+Define a custom crossover by subtyping `AbstractCrossover`, implementing
+`crossover`, and passing it with a weight through `Options(; crossovers=...)`.
+Whenever the engine selects crossover (via `crossover_probability`), it samples
+one crossover kind by weight from `options.crossovers` and retries it on
+constraint failures, up to an attempt limit.
+
+Here is a crossover that, instead of swapping subtrees, combines both parents
+wholesale under a random binary operator (so `x + y` and `cos(x)` might produce
+`(x + y) * cos(x)`):
+
+```julia
+using SymbolicRegression
+using SymbolicRegression: AbstractCrossover, CrossoverResult
+using DynamicExpressions: get_contents, with_contents
+
+struct RootCrossover <: AbstractCrossover end
+
+function SymbolicRegression.crossover(
+    member1::P, member2::P, ::RootCrossover, options; kws...
+) where {T,L,N,P<:PopMember{T,L,N}}
+    t1 = get_contents(member1.tree)
+    t2 = get_contents(member2.tree)
+    op1, op2 = rand(1:length(options.operators.binops), 2)
+    child1 = with_contents(member1.tree, Node(; op=op1, l=copy(t1), r=copy(t2)))
+    child2 = with_contents(member2.tree, Node(; op=op2, l=copy(t2), r=copy(t1)))
+    return CrossoverResult{N}(; child1, child2)
+end
+```
+
+Pass it to `Options` with a weight. New crossover types are added alongside the
+default `SubtreeCrossover`; to remove the default, pass `default_crossovers=()`:
+
+```julia
+model = SRRegressor(
+    binary_operators=[+, -, *, /],
+    unary_operators=[cos],
+    crossovers=[RootCrossover() => 0.2],
+)
+```
+
+The engine retries the sampled crossover when the children violate constraints,
+passing a 1-based `attempt` keyword each time. A crossover that is expensive to
+run (e.g. one backed by an external model) can check `attempt` and return
+copies of the parents' trees on retries instead of re-running.
+
+```@docs
+crossover
+AbstractCrossover
+CrossoverResult
+```
+
 ## Custom Expressions
 
 You can create your own expression types by defining a new type that extends `AbstractExpression`.

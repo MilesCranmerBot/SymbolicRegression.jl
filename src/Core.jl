@@ -6,6 +6,7 @@ include("Utils.jl")
 include("ProgramConstants.jl")
 include("Dataset.jl")
 include("Mutations.jl")
+include("Crossovers.jl")
 include("MutationWeights.jl")
 include("OptionsStruct.jl")
 include("Operators.jl")
@@ -47,6 +48,8 @@ using .MutationsModule:
     ConstantMutationContext,
     BUILTIN_MUTATION_TYPES,
     default_mutations
+using .CrossoversModule:
+    AbstractCrossover, SubtreeCrossover, BUILTIN_CROSSOVER_TYPES, default_crossovers
 using .OptionsStructModule:
     AbstractOptions,
     Options,
