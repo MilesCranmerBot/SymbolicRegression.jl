@@ -104,7 +104,7 @@ end
     @test !accepted
     @test baby1 === member1 && baby2 === member2
     @test num_evals == 0.0
-    @test op.attempts == collect(1:11)
+    @test op.attempts == collect(1:10)
 
     give_up = GiveUpCrossover(Int[])
     options2 = Options(;
