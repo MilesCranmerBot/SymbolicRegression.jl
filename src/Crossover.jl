@@ -184,7 +184,7 @@ function _crossover_generation(
             check_constraints(child_tree2, options, curmaxsize, afterSize2)
             break
         end
-        if num_tries > max_tries
+        if num_tries >= max_tries
             trace_mutation_result!(trace, "reject", "failed_constraint_check")
             crossover_accepted = false
             return member1, member2, crossover_accepted, num_evals  # Fail.
