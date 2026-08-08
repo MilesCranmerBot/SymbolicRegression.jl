@@ -3,6 +3,7 @@ module LibraryAugmentedSymbolicRegression
 export LaSRPlugin,
     LLMMutateMutation,
     LLMRandomizeMutation,
+    LLMCrossover,
     LLMOptions,
     LLMOperationWeights,
     LaSRMutationWeights,
@@ -49,7 +50,8 @@ using .LLMOptionsStructModule:
     LLMOptions,
     LaSRPlugin,
     LLMMutateMutation,
-    LLMRandomizeMutation
+    LLMRandomizeMutation,
+    LLMCrossover
 using .LLMOptionsModule: LaSROptions
 using .LLMServeModule:
     async_run_llm_server, LLAMAFILE_MODEL, LLAMAFILE_PATH, LLAMAFILE_URL, LLM_PORT
@@ -70,8 +72,7 @@ function __init__()
     should_start_llamafile =
         get(ENV, "START_LLAMASERVER", "false") == "true" ||
         get(ENV, "SYMBOLIC_REGRESSION_TEST_SUITE", "") == "online_llamafile"
-    should_start_llamafile &&
-        async_run_llm_server(LLAMAFILE_URL, LLAMAFILE_PATH, LLM_PORT)
+    should_start_llamafile && async_run_llm_server(LLAMAFILE_URL, LLAMAFILE_PATH, LLM_PORT)
     return nothing
 end
 

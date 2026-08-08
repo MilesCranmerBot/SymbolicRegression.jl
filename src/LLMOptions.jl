@@ -2,12 +2,12 @@ module LLMOptionsModule
 
 using SymbolicRegression
 using PromptingTools
-import SymbolicRegression: plugin_mutations
 using ..LLMOptionsStructModule:
     LLMOptions,
     LLMOperationWeights,
     LLMMutateMutation,
     LLMRandomizeMutation,
+    LLMCrossover,
     LaSRPlugin,
     LaSRPluginState,
     LaSRContext
@@ -26,22 +26,15 @@ function set_llm_mutation_weights(
     ordinary_total = sum(name -> getproperty(weights, name), ordinary)
     weights.randomize *= 1 - probabilities.llm_randomize
     for name in ordinary
-        setproperty!(weights, name, (1 - probabilities.llm_mutate) * getproperty(weights, name))
+        setproperty!(
+            weights, name, (1 - probabilities.llm_mutate) * getproperty(weights, name)
+        )
     end
     weights.llm_randomize == 0.0 &&
         (weights.llm_randomize = probabilities.llm_randomize * randomize_weight)
     weights.llm_mutate == 0.0 &&
         (weights.llm_mutate = probabilities.llm_mutate * ordinary_total / length(ordinary))
     return weights
-end
-
-function plugin_mutations(plugin::LaSRPlugin)
-    plugin.use_llm || return ()
-    pairs = Pair{SymbolicRegression.AbstractMutation,Float64}[]
-    plugin.mutate_weight > 0 && push!(pairs, LLMMutateMutation() => plugin.mutate_weight)
-    plugin.randomize_weight > 0 &&
-        push!(pairs, LLMRandomizeMutation() => plugin.randomize_weight)
-    return pairs
 end
 
 lasr_context(context::LaSRContext, state=nothing) = context
@@ -123,6 +116,8 @@ function LaSROptions(;
     plugins::Union{Tuple,AbstractVector}=(),
     mutations::Union{Tuple,AbstractVector,Nothing}=nothing,
     default_mutations::Union{Tuple,AbstractVector,Nothing}=nothing,
+    crossovers::Union{Tuple,AbstractVector,Nothing}=nothing,
+    default_crossovers::Union{Tuple,AbstractVector,Nothing}=nothing,
     kws...,
 )
     weights = if isnothing(mutation_weights)
@@ -170,17 +165,33 @@ function LaSROptions(;
         variable_names,
         prompts_dir=prompt_path,
         idea_database=AbstractString[something(idea_database, AbstractString[])...],
-        mutate_weight=weights.llm_mutate,
-        randomize_weight=weights.llm_randomize,
-        crossover_probability=use_llm ? probabilities.llm_crossover : 0.0,
     )
     resolved_mutations = isnothing(mutations) ? _mutation_pairs(weights) : mutations
     resolved_defaults = isnothing(default_mutations) ? () : default_mutations
+    llm_crossover_probability = use_llm ? probabilities.llm_crossover : 0.0
+    0 <= llm_crossover_probability <= 1 ||
+        throw(ArgumentError("`llm_crossover` must be between 0 and 1."))
+    generated_legacy_crossovers = isnothing(crossovers) && llm_crossover_probability > 0
+    resolved_crossovers = if generated_legacy_crossovers
+        (
+            LLMCrossover() => llm_crossover_probability,
+            SubtreeCrossover() => 1 - llm_crossover_probability,
+        )
+    else
+        something(crossovers, ())
+    end
+    resolved_default_crossovers = if isnothing(default_crossovers)
+        generated_legacy_crossovers ? () : nothing
+    else
+        default_crossovers
+    end
     return SymbolicRegression.Options(;
         kws...,
         plugins=(Tuple(plugins)..., plugin),
         mutations=resolved_mutations,
         default_mutations=resolved_defaults,
+        crossovers=resolved_crossovers,
+        default_crossovers=resolved_default_crossovers,
     )
 end
 

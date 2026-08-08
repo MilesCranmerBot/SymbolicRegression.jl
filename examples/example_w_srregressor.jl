@@ -7,6 +7,9 @@ using TensorBoardLogger
 using LibraryAugmentedSymbolicRegression:
     LaSRPlugin,
     LLMOptions,
+    LLMMutateMutation,
+    LLMRandomizeMutation,
+    LLMCrossover,
     equation_search,
     calculate_pareto_frontier,
     compute_complexity,
@@ -33,12 +36,11 @@ plugin = LaSRPlugin(;
     use_concept_evolution=true,
     context="We believe the relationship between the theta and offset parameter is a function of the cosine of the theta variable and the square of the offset.",
     variable_names=Dict("x1" => "theta", "x2" => "offset"),
-    mutate_weight=p,
-    randomize_weight=p,
-    crossover_probability=p,
 )
 model = LaSRRegressor(;
     plugin,
+    mutations=(LLMMutateMutation() => p, LLMRandomizeMutation() => p),
+    crossovers=(LLMCrossover() => p,),
     niterations=40,
     logger=logger,
     binary_operators=[+, -, *, /, ^],

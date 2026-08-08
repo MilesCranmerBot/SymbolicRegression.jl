@@ -27,15 +27,14 @@ plugin = LaSRPlugin(;
     use_concept_evolution=true,
     context="We believe the relationship between the theta and offset parameter is a function of the cosine of the theta variable and the square of the offset.",
     variable_names=Dict("x1" => "theta", "x2" => "offset"),
-    mutate_weight=p,
-    randomize_weight=p,
-    crossover_probability=p,
 )
 options = Options(;
     binary_operators=[+, -, *, /, ^],
     unary_operators=[cos],
     populations=20,
     plugins=(plugin,),
+    mutations=(LLMMutateMutation() => p, LLMRandomizeMutation() => p),
+    crossovers=(LLMCrossover() => p,),
 )
 
 hall_of_fame = equation_search(

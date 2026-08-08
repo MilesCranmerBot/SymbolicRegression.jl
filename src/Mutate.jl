@@ -1,32 +1,29 @@
 module MutateModule
 
 using Random: rand
-using UUIDs: uuid1
 using DynamicExpressions:
     AbstractExpression, get_tree, with_contents, simplify_tree!, combine_operators
 using SymbolicRegression:
     AbstractOptions,
     AbstractPopMember,
+    CrossoverResult,
     MutationResult,
     calculate_pareto_frontier,
-    check_constraints,
-    compute_complexity,
     gen_random_tree_fixed_size
 import SymbolicRegression:
+    crossover,
     mutate!,
     init_plugin_state,
     fork_plugin_state,
     on_search_start!,
     on_generation_end!,
-    refresh_worker_plugin_state,
-    propose_crossover
+    refresh_worker_plugin_state
 using ..LLMOptionsStructModule:
-    LaSRPlugin, LaSRPluginState, LLMMutateMutation, LLMRandomizeMutation
+    LaSRPlugin, LaSRPluginState, LLMMutateMutation, LLMRandomizeMutation, LLMCrossover
 using ..LLMOptionsModule: lasr_context, lasr_state
 using ..LLMFunctionsModule:
     llm_mutate_tree, llm_crossover_trees, llm_randomize_tree, generate_concepts
-using ..LoggingModule: LaSRLogger, log_generation!
-using ..ParseModule: render_expr
+using ..LoggingModule: LaSRLogger
 
 function mutate!(
     tree::N,
@@ -87,10 +84,7 @@ end
 fork_plugin_state(state::LaSRPluginState, ::LaSRPlugin, dataset) = _copy_plugin_state(state)
 
 function refresh_worker_plugin_state(
-    worker_state::LaSRPluginState,
-    head_state::LaSRPluginState,
-    ::LaSRPlugin,
-    dataset,
+    worker_state::LaSRPluginState, head_state::LaSRPluginState, ::LaSRPlugin, dataset
 )
     return _copy_plugin_state(head_state)
 end
@@ -123,33 +117,45 @@ function on_generation_end!(
     if !isempty(dominating)
         filter!(member -> member.loss > last(dominating).loss, state.worst_members)
     end
-    generate_concepts(
-        dominating, state.worst_members, lasr_context(options, state)
-    )
+    generate_concepts(dominating, state.worst_members, lasr_context(options, state))
     empty!(state.worst_members)
     return nothing
 end
 
-_is_constant(expression) = let tree = get_tree(expression)
-    tree.degree == 0 && tree.constant
-end
+_is_constant(expression) =
+    let tree = get_tree(expression)
+        tree.degree == 0 && tree.constant
+    end
 
-function propose_crossover(
-    state::LaSRPluginState,
-    plugin::LaSRPlugin,
-    parent1::E,
-    parent2::E,
+function crossover(
+    member1::P,
+    member2::P,
+    ::LLMCrossover,
+    options::AbstractOptions;
+    plugin_states::Tuple,
     dataset,
-    curmaxsize,
-    options,
-) where {T,E<:AbstractExpression{T}}
-    config = plugin
-    config.use_llm || return nothing
-    rand() < plugin.crossover_probability || return nothing
+    curmaxsize::Int,
+    attempt::Int,
+    kws...,
+) where {T,N<:AbstractExpression{T},P<:AbstractPopMember{T,<:Any,N}}
+    parent1, parent2 = member1.tree, member2.tree
+    # SymbolicRegression retries crossovers which violate constraints. Do not
+    # repeat an expensive model call on those retries.
+    if attempt > 1
+        return CrossoverResult{N}(; child1=copy(parent1), child2=copy(parent2))
+    end
 
+    state = lasr_state(options, plugin_states)
     context = lasr_context(options, state)
-    child1 = combine_operators(simplify_tree!(copy(parent1), options.operators), options.operators)
-    child2 = combine_operators(simplify_tree!(copy(parent2), options.operators), options.operators)
+    context.use_llm ||
+        return CrossoverResult{N}(; child1=copy(parent1), child2=copy(parent2))
+
+    child1 = combine_operators(
+        simplify_tree!(copy(parent1), options.operators), options.operators
+    )
+    child2 = combine_operators(
+        simplify_tree!(copy(parent2), options.operators), options.operators
+    )
     if _is_constant(child1)
         child1 = with_contents(
             child1,
@@ -166,23 +172,10 @@ function propose_crossover(
     child1, child2 = llm_crossover_trees(child1, child2, context)
     child1 = combine_operators(simplify_tree!(child1, options.operators), options.operators)
     child2 = combine_operators(simplify_tree!(child2, options.operators), options.operators)
-    valid =
-        !_is_constant(child1) &&
-        !_is_constant(child2) &&
-        check_constraints(
-            child1, options, curmaxsize, compute_complexity(child1, options)
-        ) &&
-        check_constraints(
-            child2, options, curmaxsize, compute_complexity(child2, options)
-        )
-    generation_id = uuid1()
-    rendered = render_expr(child1, context) * " && " * render_expr(child2, context)
-    if valid
-        log_generation!(state.lasr_logger; id=generation_id, mode="crossover", chosen=rendered)
-        return child1, child2
+    if _is_constant(child1) || _is_constant(child2)
+        return CrossoverResult{N}(; child1=copy(parent1), child2=copy(parent2))
     end
-    log_generation!(state.lasr_logger; id=generation_id, mode="crossover", failed=rendered)
-    return nothing
+    return CrossoverResult{N}(; child1, child2)
 end
 
 end

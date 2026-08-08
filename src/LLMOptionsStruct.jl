@@ -1,7 +1,8 @@
 module LLMOptionsStructModule
 
 using PromptingTools: aigenerate
-using SymbolicRegression: AbstractMutation, AbstractOptions, AbstractPlugin, Options
+using SymbolicRegression:
+    AbstractCrossover, AbstractMutation, AbstractOptions, AbstractPlugin, Options
 using ..LaSRMutationWeightsModule: LaSRMutationWeights
 using ..LoggingModule: LaSRLogger
 
@@ -30,6 +31,7 @@ end
 
 struct LLMMutateMutation <: AbstractMutation end
 struct LLMRandomizeMutation <: AbstractMutation end
+struct LLMCrossover <: AbstractCrossover end
 
 """
     LaSRPlugin(; kws...)
@@ -37,9 +39,9 @@ struct LLMRandomizeMutation <: AbstractMutation end
 Library-augmented symbolic regression plugin. Pass it through
 `Options(; plugins=(LaSRPlugin(...),), ...)`. LLM client settings
 (`model`, `api_key`, ...) live in [`LLMOptions`](@ref); everything else is
-set directly on the plugin. The mutation weights are unnormalized, like all
-entries in `Options.mutations`; `crossover_probability` is conditional on
-SR selecting crossover.
+set directly on the plugin. Select the LLM operations by adding
+[`LLMMutateMutation`](@ref), [`LLMRandomizeMutation`](@ref), and
+[`LLMCrossover`](@ref) to the native `Options` operation lists.
 """
 struct LaSRPlugin <: AbstractPlugin
     llm_options::LLMOptions
@@ -57,9 +59,6 @@ struct LaSRPlugin <: AbstractPlugin
     prompts_dir::String
     idea_database::Vector{AbstractString}
     lasr_logger::Union{LaSRLogger,Nothing}
-    mutate_weight::Float64
-    randomize_weight::Float64
-    crossover_probability::Float64
     function LaSRPlugin(;
         llm_options::LLMOptions=LLMOptions(),
         use_llm::Bool=true,
@@ -76,15 +75,7 @@ struct LaSRPlugin <: AbstractPlugin
         prompts_dir::AbstractString=DEFAULT_PROMPTS_DIR,
         idea_database::Vector{<:AbstractString}=AbstractString[],
         lasr_logger::Union{LaSRLogger,Nothing}=nothing,
-        mutate_weight::Real=0.0,
-        randomize_weight::Real=0.0,
-        crossover_probability::Real=0.0,
     )
-        mutate_weight >= 0 || throw(ArgumentError("`mutate_weight` must be nonnegative."))
-        randomize_weight >= 0 ||
-            throw(ArgumentError("`randomize_weight` must be nonnegative."))
-        0 <= crossover_probability <= 1 ||
-            throw(ArgumentError("`crossover_probability` must be between 0 and 1."))
         return new(
             llm_options,
             use_llm,
@@ -101,9 +92,6 @@ struct LaSRPlugin <: AbstractPlugin
             String(prompts_dir),
             AbstractString[idea_database...],
             lasr_logger,
-            Float64(mutate_weight),
-            Float64(randomize_weight),
-            Float64(crossover_probability),
         )
     end
 end

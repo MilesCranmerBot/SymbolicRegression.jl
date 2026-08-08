@@ -30,15 +30,14 @@ plugin = LaSRPlugin(;
     use_concepts=true,
     use_concept_evolution=true,
     context="The response depends on an angle and an offset.",
-    mutate_weight=0.01,
-    randomize_weight=0.001,
-    crossover_probability=0.01,
 )
 
 options = Options(;
     binary_operators=[+, -, *, /],
     unary_operators=[cos],
     plugins=(plugin,),
+    mutations=(LLMMutateMutation() => 0.01, LLMRandomizeMutation() => 0.001),
+    crossovers=(LLMCrossover() => 0.01,),
 )
 
 X = randn(2, 100)
@@ -46,9 +45,9 @@ y = @. 2cos(X[1, :]) + X[2, :]^2
 hall_of_fame = equation_search(X, y; options, niterations=40)
 ```
 
-The mutation weights are unnormalized, exactly like other entries in
-`Options.mutations`. `crossover_probability` is conditional on SR first
-selecting crossover via `crossover_probability`.
+The operation weights are unnormalized, exactly like other entries in
+`Options.mutations` and `Options.crossovers`. SR's `crossover_probability`
+still controls how often the search selects the crossover path at all.
 
 LaSR ships its prompt templates in `prompts/`; `LaSRPlugin()` uses that package
 directory by default. Set `prompts_dir` to use domain-specific templates.
@@ -64,10 +63,10 @@ using LibraryAugmentedSymbolicRegression
 
 plugin = LaSRPlugin(;
     llm_options=LLMOptions(; model="my-model", api_key="..."),
-    mutate_weight=0.01,
 )
 model = LaSRRegressor(;
     plugin,
+    mutations=(LLMMutateMutation() => 0.01,),
     niterations=40,
     binary_operators=[+, -, *, /],
 )
@@ -87,8 +86,9 @@ fit!(mach)
 - `context`, `variable_names`, `prompts_dir`, and `idea_database` provide
   domain context. If `variable_names` is omitted, LaSR uses the SR dataset's
   names.
-- `mutate_weight`, `randomize_weight`, and `crossover_probability` set how
-  often the LLM mutations and crossover run.
+- `Options.mutations` and `Options.crossovers` set how often the LLM
+  operations run, using `LLMMutateMutation`, `LLMRandomizeMutation`, and
+  `LLMCrossover`.
 
 `LLMOptions` only carries settings for the language model itself:
 
@@ -99,16 +99,17 @@ fit!(mach)
 
 `LaSROptions`, `LaSRMutationWeights`, and `LLMOperationWeights` remain as a
 compatibility path for older Julia callers, but new code should use
-`Options(; plugins=(LaSRPlugin(...),))`.
+the native `Options` operation lists with `LaSRPlugin`.
 
 ## Plugin mapping
 
 LaSR uses SR v2 extension points without replacing the search loop:
 
 - `LLMMutateMutation` and `LLMRandomizeMutation` are custom
-  `AbstractMutation`s contributed by the plugin.
-- LLM crossover proposes child expressions through SR's crossover proposal
-  hook; SR retains constraint checks, evaluation accounting, and fallback.
+  `AbstractMutation`s selected through `Options.mutations`.
+- `LLMCrossover` is an `AbstractCrossover` selected through
+  `Options.crossovers`; SR retains retries, constraint checks, evaluation,
+  accounting, and replacement.
 - logger initialization runs in `on_search_start!`.
 - concept evolution runs serially on the head node in `on_generation_end!`.
 - concept and logger state is copied to workers through the plugin-state
