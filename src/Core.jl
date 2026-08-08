@@ -118,6 +118,8 @@ using .PluginModule:
     on_cycle_start!,
     prepare_mutation_context,
     condition_mutation!,
+    plugin_mutations,
+    plugin_crossovers,
     default_adaptive_parsimony_plugin,
     default_simulated_annealing_plugin
 

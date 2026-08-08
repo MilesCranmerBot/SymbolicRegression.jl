@@ -108,6 +108,16 @@ condition_mutation!
 mutation weight vector before sampling. See the [Customization](customization.md)
 page for its full docstring.
 
+### Operation defaults
+
+Plugins may contribute weighted mutation and crossover defaults. Explicit
+entries in `Options(; mutations=..., crossovers=...)` take precedence.
+
+```@docs
+plugin_mutations
+plugin_crossovers
+```
+
 ### Population seeding
 
 ```@docs

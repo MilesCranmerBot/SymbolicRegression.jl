@@ -2,13 +2,14 @@ module PluginModule
 
 using DispatchDoctor: @unstable
 using ..MutationsModule: AbstractMutation, ConstantMutation, ConstantMutationContext
+using ..CrossoversModule: AbstractCrossover
 using ..UtilsModule: strictmap
 
 # ────────────────────────────────────────────────────────────────────────────
 # Hook naming taxonomy
 # ────────────────────────────────────────────────────────────────────────────
 #
-# All plugin hooks belong to one of five categories. The name's verb/suffix
+# All plugin hooks belong to one of six categories. The name's verb/suffix
 # tells you the contract; the docstring tells you the semantics.
 #
 #   `on_X_start!` / `on_X_end!`   — Observer. Engine fires; plugin reacts.
@@ -33,8 +34,11 @@ using ..UtilsModule: strictmap
 #                                   with the dataset. Returns a new instance
 #                                   for the worker.
 #
+#   `plugin_X`                     — Defaults. Returns configuration contributed
+#                                   by a plugin when Options is constructed.
+#
 # When adding a new hook: pick a category, follow the verb shape. If the name
-# feels ambiguous, the contract probably isn't one of these five — rethink
+# feels ambiguous, the contract probably isn't one of these six — rethink
 # whether you need a new category or are forcing the feature into the wrong
 # shape.
 #
@@ -127,6 +131,32 @@ function init_plugin_states(options, dataset)
         init_plugin_state(plugin, options, dataset)
     end
 end
+
+"""
+    plugin_mutations(plugin::AbstractPlugin) -> collection
+
+Weighted custom mutations contributed by `plugin`, as
+`AbstractMutation() => weight` pairs. These are treated as plugin defaults:
+an explicit entry in `Options(; mutations=...)` of the same mutation type
+overrides the plugin contribution, while a plugin contribution overrides a
+built-in default. The default is empty.
+
+!!! warning "Experimental"
+"""
+plugin_mutations(::AbstractPlugin) = ()
+
+"""
+    plugin_crossovers(plugin::AbstractPlugin) -> collection
+
+Weighted custom crossovers contributed by `plugin`, as
+`AbstractCrossover() => weight` pairs. These are treated as plugin defaults:
+an explicit entry in `Options(; crossovers=...)` of the same crossover type
+overrides the plugin contribution, while a plugin contribution overrides a
+built-in default. The default is empty.
+
+!!! warning "Experimental"
+"""
+plugin_crossovers(::AbstractPlugin) = ()
 
 """
     on_search_start!(state, plugin, dataset, options, ropt)

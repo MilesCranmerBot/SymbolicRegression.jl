@@ -98,6 +98,55 @@
     @test w == before
 end
 
+@testitem "Plugin interface: operation defaults" begin
+    using SymbolicRegression
+    import SymbolicRegression:
+        AbstractPlugin,
+        AbstractMutation,
+        AbstractCrossover,
+        ConstantMutation,
+        SubtreeCrossover,
+        plugin_mutations,
+        plugin_crossovers
+    using Test
+
+    struct PluginMutation <: AbstractMutation end
+    struct PluginCrossover <: AbstractCrossover end
+    struct OperationDefaultsPlugin <: AbstractPlugin end
+
+    SymbolicRegression.plugin_mutations(::OperationDefaultsPlugin) = (
+        PluginMutation() => 2.0, ConstantMutation() => 3.0
+    )
+    SymbolicRegression.plugin_crossovers(::OperationDefaultsPlugin) = (
+        PluginCrossover() => 4.0, SubtreeCrossover() => 5.0
+    )
+
+    plugin = OperationDefaultsPlugin()
+    @test plugin_mutations(plugin) == (PluginMutation() => 2.0, ConstantMutation() => 3.0)
+    @test plugin_crossovers(plugin) == (PluginCrossover() => 4.0, SubtreeCrossover() => 5.0)
+
+    options = Options(; binary_operators=[+, *], plugins=(plugin,), default_plugins=())
+    @test first.(options.mutations)[1:2] == [PluginMutation(), ConstantMutation()]
+    @test last.(options.mutations)[1:2] == [2.0, 3.0]
+    @test count(pair -> pair.first isa ConstantMutation, options.mutations) == 1
+    @test first.(options.crossovers) == [PluginCrossover(), SubtreeCrossover()]
+    @test last.(options.crossovers) == [4.0, 5.0]
+
+    overridden = Options(;
+        binary_operators=[+, *],
+        plugins=(plugin,),
+        default_plugins=(),
+        mutations=(PluginMutation() => 6.0,),
+        crossovers=(PluginCrossover() => 7.0,),
+    )
+    @test first(overridden.mutations).first isa PluginMutation
+    @test first(overridden.mutations).second == 6.0
+    @test count(pair -> pair.first isa PluginMutation, overridden.mutations) == 1
+    @test first(overridden.crossovers).first isa PluginCrossover
+    @test first(overridden.crossovers).second == 7.0
+    @test count(pair -> pair.first isa PluginCrossover, overridden.crossovers) == 1
+end
+
 @testitem "Plugin interface: lifecycle hooks called for each plugin" begin
     using SymbolicRegression
     import SymbolicRegression:
