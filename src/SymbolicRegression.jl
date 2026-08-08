@@ -199,7 +199,7 @@ using Compat: @compat, Fix
         sample_mutation, MutationResult, AbstractPopMember, AbstractSearchState, SearchState,
         LOSS_TYPE, DATA_TYPE, node_type,
         AbstractComposableExpression,
-        optimize_constants, get_constants_for_optimization,
+        can_optimize, optimize_constants, get_constants_for_optimization,
         set_constants_for_optimization!, extract_gradient_for_optimization,
         get_optimizable_parameters,
         set_optimizable_parameters!, extract_optimizable_gradient,
@@ -373,6 +373,7 @@ using .InterfaceDynamicExpressionsModule:
     @extend_operators, require_copy_to_workers, make_example_inputs
 using .LossFunctionsModule: eval_loss, eval_cost, update_baseline_loss!, score_func
 using .ConstantOptimizationModule:
+    can_optimize,
     optimize_constants,
     get_constants_for_optimization,
     set_constants_for_optimization!,
