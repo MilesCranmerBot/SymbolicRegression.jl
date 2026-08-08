@@ -29,6 +29,13 @@
     Base.isreadable(::UnsupportedReadableIO) = true
     Base.start_reading(::UnsupportedReadableIO) = nothing
 
+    struct ReadAvailableErrorIO{E} <: IO
+        error::E
+    end
+    Base.isreadable(::ReadAvailableErrorIO) = true
+    Base.start_reading(::ReadAvailableErrorIO) = nothing
+    Base.readavailable(stream::ReadAvailableErrorIO) = throw(stream.error)
+
     Base.bytesavailable(stream::FakeInputStream) =
         isempty(stream.chunks) ? 0 : stream.reported_bytes
 
@@ -66,6 +73,21 @@
     unsupported_reader = SymbolicRegression.watch_stream(UnsupportedReadableIO())
     @test !unsupported_reader.can_read_user_input
 
+    io_error_reader = SymbolicRegression.watch_stream(
+        ReadAvailableErrorIO(Base.IOError("test", 0))
+    )
+    @test io_error_reader.can_read_user_input
+    eof_reader = SymbolicRegression.watch_stream(ReadAvailableErrorIO(EOFError()))
+    @test eof_reader.can_read_user_input
+    @test_throws ArgumentError SymbolicRegression.read_available_nonblocking(
+        ReadAvailableErrorIO(ArgumentError())
+    )
+
+    buffer_stream = Base.BufferStream()
+    write(buffer_stream, "x")
+    @test SymbolicRegression.read_available_nonblocking(buffer_stream) == UInt8[0x78]
+    close(buffer_stream)
+
     # Reproducer for freeze path in check_for_user_quit.
     slow_input = FakeInputStream(["x"]; reported_bytes=1, read_delay_s=0.2)
     slow_reader = SymbolicRegression.StdinReader(true, slow_input)
@@ -89,4 +111,10 @@
     )
     @test !SymbolicRegression.check_for_user_quit(chunked_reader)
     @test SymbolicRegression.check_for_user_quit(chunked_reader)
+
+    control_c_reader = SymbolicRegression.StdinReader(
+        true, FakeInputStream(["\x03"]; reported_bytes=1)
+    )
+    @test SymbolicRegression.check_for_user_quit(control_c_reader)
+    SymbolicRegression.close_reader!(control_c_reader)
 end
