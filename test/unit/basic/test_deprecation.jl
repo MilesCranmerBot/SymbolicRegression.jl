@@ -70,7 +70,7 @@ end
     X = reshape([1.0, 2.0, 3.0], 1, :)
     dataset = Dataset(X, copy(vec(X)))
     tree = Node{Float64}(; feature=1)
-    eval_options = @test_deprecated EvalOptions(; early_exit=false)
+    eval_options = EvalOptions(; early_exit=false)
 
     @test (@test_deprecated eval_tree_array(tree, X, options; eval_options)) ==
         eval_tree_array(tree, X, options; eval_context=eval_options)
