@@ -278,7 +278,7 @@ end
     options::AbstractOptions;
     tmp_trace::MaybeTrace,
     plugin_states::Tuple,
-    eval_options=nothing,
+    eval_context=nothing,
     population_for_backsolve=nothing,
 )::Tuple{
     P,Bool,Float64
@@ -317,7 +317,7 @@ end
         options,
         tmp_trace,
         plugin_states,
-        eval_options,
+        eval_context,
         population_for_backsolve,
         num_evals,
     )
@@ -336,7 +336,7 @@ function _next_generation(
     options::AbstractOptions,
     tmp_trace::MaybeTrace,
     plugin_states::Tuple,
-    eval_options,
+    eval_context,
     population_for_backsolve,
     num_evals::Float64,
 )::Tuple{
@@ -449,7 +449,7 @@ function _next_generation(
         )
     end
 
-    after_cost, after_loss = eval_cost(dataset, tree, options; eval_options)
+    after_cost, after_loss = eval_cost(dataset, tree, options; eval_context)
     num_evals += dataset_fraction(dataset)
 
     if isnan(after_cost)

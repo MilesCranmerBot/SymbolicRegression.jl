@@ -12,15 +12,15 @@ using DynamicExpressions:
     AbstractExpressionNode,
     Node,
     GraphNode,
-    EvalOptions
+    EvalContext
 using DynamicQuantities: dimension, ustrip
 using ..CoreModule: AbstractOptions, Dataset
 using ..CoreModule.OptionsModule: inverse_opmap
 using ..UtilsModule: subscriptify
 
-takes_eval_options(::Type{<:AbstractOperatorEnum}) = false
-takes_eval_options(::Type{<:OperatorEnum}) = true
-takes_eval_options(::T) where {T} = takes_eval_options(T)
+takes_eval_context(::Type{<:AbstractOperatorEnum}) = false
+takes_eval_context(::Type{<:OperatorEnum}) = true
+takes_eval_context(::T) where {T} = takes_eval_context(T)
 
 """
     eval_tree_array(tree::Union{AbstractExpression,AbstractExpressionNode}, X::AbstractArray, options::AbstractOptions; kws...)
@@ -64,25 +64,25 @@ which speed up evaluation significantly.
         options::AbstractOptions;
         turbo=nothing,
         bumper=nothing,
-        eval_options=nothing,
+        eval_context=nothing,
         kws...,
     )
         A = expected_array_type(X, typeof(tree))
         operators = DE.get_operators(tree, options)
-        eval_options_kws = if takes_eval_options(operators)
-            de_eval_options = if isnothing(eval_options)
-                EvalOptions(;
+        eval_context_kws = if takes_eval_context(operators)
+            de_eval_context = if isnothing(eval_context)
+                EvalContext(;
                     turbo=something(turbo, options.turbo),
                     bumper=something(bumper, options.bumper),
                 )
             else
-                eval_options
+                eval_context
             end
-            (; eval_options=de_eval_options,)
+            (; eval_context=de_eval_context,)
         else
             NamedTuple()
         end
-        out, complete = DE.eval_tree_array(tree, X, operators; eval_options_kws..., kws...)
+        out, complete = DE.eval_tree_array(tree, X, operators; eval_context_kws..., kws...)
         if isnothing(out)
             return nothing, false
         else
