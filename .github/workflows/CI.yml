@@ -168,6 +168,31 @@ jobs:
           path: lcov.info
           retention-days: 1
 
+  repl-stdin-monitoring:
+    name: u/repl-stdin-monitoring-1.10-ubuntu-latest
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - name: "Set up Julia"
+        uses: julia-actions/setup-julia@v3
+        with:
+          version: "1.10"
+      - name: "Cache dependencies"
+        uses: julia-actions/cache@v3
+        with:
+          cache-name: julia-cache;workflow=${{ github.workflow }};job=${{ github.job }};group=repl-stdin-monitoring;project=${{ hashFiles('Project.toml') }}
+      - name: "Build package"
+        uses: julia-actions/julia-buildpkg@v1
+      - name: "Install expect"
+        run: sudo apt-get update && sudo apt-get install -y expect
+        shell: bash
+      - name: "Run REPL stdin monitoring test"
+        run: |
+          julia --project=. --startup-file=no --history-file=no --color=no -q -e 'using SymbolicRegression'
+          expect test/repl/test_repl_stdin_nonblocking.exp
+        shell: bash
+
   upload-coverage:
     name: Upload Coverage to Codecov
     needs: [unit, integration]
