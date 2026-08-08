@@ -90,20 +90,6 @@ jobs:
           julia --color=yes --project=. --threads=auto --check-bounds=yes --depwarn=yes --code-coverage=user -e 'import Coverage; import Pkg; Pkg.test(coverage=true)'
           julia --color=yes coverage.jl
         shell: bash
-      - name: "Install expect"
-        if: matrix.os == 'ubuntu-latest' && matrix.group == 'evaluation'
-        run: |
-          if ! command -v expect >/dev/null 2>&1; then
-            sudo apt-get update
-            sudo apt-get install -y expect
-          fi
-        shell: bash
-      - name: "Run REPL stdin nonblocking test"
-        if: matrix.os == 'ubuntu-latest' && matrix.group == 'evaluation'
-        run: |
-          julia --project=. --startup-file=no --history-file=no --color=no -q -e 'using SymbolicRegression'
-          expect test/repl/test_repl_stdin_nonblocking.exp
-        shell: bash
       - name: "Sanitize artifact group"
         id: sanitize_unit_group
         shell: bash
@@ -181,6 +167,31 @@ jobs:
           name: coverage-integration-${{ steps.sanitize_integration_group.outputs.group }}-${{ matrix.julia-version }}
           path: lcov.info
           retention-days: 1
+
+  repl-stdin-monitoring:
+    name: repl-stdin-monitoring-1.10-ubuntu-latest
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - name: "Set up Julia"
+        uses: julia-actions/setup-julia@v3
+        with:
+          version: "1.10"
+      - name: "Cache dependencies"
+        uses: julia-actions/cache@v3
+        with:
+          cache-name: julia-cache;workflow=${{ github.workflow }};job=${{ github.job }};group=repl-stdin-monitoring;project=${{ hashFiles('Project.toml') }}
+      - name: "Build package"
+        uses: julia-actions/julia-buildpkg@v1
+      - name: "Install expect"
+        run: sudo apt-get update && sudo apt-get install -y expect
+        shell: bash
+      - name: "Run REPL stdin monitoring test"
+        run: |
+          julia --project=. --startup-file=no --history-file=no --color=no -q -e 'using SymbolicRegression'
+          expect test/repl/test_repl_stdin_nonblocking.exp
+        shell: bash
 
   upload-coverage:
     name: Upload Coverage to Codecov
