@@ -18,9 +18,10 @@ using DynamicExpressions:
     set_child!,
     max_degree
 using Statistics: median
-using ..CoreModule: AbstractOptions, DATA_TYPE, init_value, sample_value, Dataset
+using ..CoreModule:
+    AbstractOptions, DATA_TYPE, init_value, sample_value, Dataset, ConstantMutation
 using ..EvaluateInverseModule: eval_inverse_tree_array, is_bad_array
-using ..BacksolveModule: fit_sparse_expression
+using ..BacksolveModule: fit_sparse_expression, configured_backsolve
 
 import ..CoreModule: mutate_value
 
@@ -118,16 +119,17 @@ function mutate_operator(
     return tree
 end
 
-"""Randomly perturb a constant"""
+"""Randomly perturb a constant."""
 function mutate_constant(
     ex::AbstractExpression{T},
     temperature,
     options::AbstractOptions,
+    m::ConstantMutation=ConstantMutation(),
     rng::AbstractRNG=default_rng(),
 ) where {T<:DATA_TYPE}
     tree, context = get_contents_for_mutation(ex, rng)
     ex = with_contents_for_mutation(
-        ex, mutate_constant(tree, temperature, options, rng), context
+        ex, mutate_constant(tree, temperature, options, m, rng), context
     )
     return ex
 end
@@ -135,31 +137,48 @@ function mutate_constant(
     tree::AbstractExpressionNode{T},
     temperature,
     options::AbstractOptions,
+    m::ConstantMutation=ConstantMutation(),
     rng::AbstractRNG=default_rng(),
 ) where {T<:DATA_TYPE}
-    # T is between 0 and 1.
-
     if !(has_constants(tree))
         return tree
     end
     node = rand(rng, NodeSampler(; tree, filter=t -> (t.degree == 0 && t.constant)))
-    node.val = mutate_value(rng, node.val, temperature, options)
+    node.val = _mutate_value(rng, node.val, temperature, m, options)
     return tree
 end
 
-function mutate_value(rng::AbstractRNG, val::Number, temperature, options)
-    return val * mutate_factor(typeof(val), temperature, options, rng)
+function _mutate_value(
+    rng::AbstractRNG,
+    val::Number,
+    temperature,
+    m::ConstantMutation,
+    options::AbstractOptions,
+)
+    return mutate_value(rng, val, temperature, m)
 end
 
-function mutate_factor(::Type{T}, temperature, options, rng) where {T<:Number}
+function _mutate_value(
+    rng::AbstractRNG, val, temperature, m::ConstantMutation, options::AbstractOptions
+)
+    return mutate_value(rng, val, temperature, options)
+end
+
+function mutate_value(
+    rng::AbstractRNG, val::Number, temperature, m::ConstantMutation=ConstantMutation()
+)
+    return val * mutate_factor(typeof(val), temperature, m, rng)
+end
+
+function mutate_factor(::Type{T}, temperature, m::ConstantMutation, rng) where {T<:Number}
     bottom = 1//10
-    maxChange = options.perturbation_factor * temperature + 1 + bottom
+    maxChange = m.perturbation_factor * temperature + 1 + bottom
     factor = T(maxChange^rand(rng, T))
     makeConstBigger = rand(rng, Bool)
 
     factor = makeConstBigger ? factor : 1 / factor
 
-    if rand(rng) > options.probability_negate_constant
+    if rand(rng) > m.probability_negate
         factor *= -1
     end
     return factor
@@ -648,6 +667,7 @@ function backsolve_rewrite_random_node(
     dataset::Dataset{T},
     options::AbstractOptions,
     rng::AbstractRNG=default_rng();
+    backsolve_options=configured_backsolve(options),
     population_for_backsolve=nothing,
 ) where {T<:DATA_TYPE}
     throw(
@@ -662,11 +682,12 @@ function backsolve_rewrite_random_node(
     dataset::Dataset{T},
     options::AbstractOptions,
     rng::AbstractRNG=default_rng();
+    backsolve_options=configured_backsolve(options),
     population_for_backsolve=nothing,
 ) where {T<:DATA_TYPE}
     tree = get_contents(ex)
     new_tree = backsolve_rewrite_random_node(
-        tree, dataset, options, rng; population_for_backsolve=population_for_backsolve
+        tree, dataset, options, rng; backsolve_options, population_for_backsolve
     )
     return with_contents(ex, new_tree)
 end
@@ -676,6 +697,7 @@ function backsolve_rewrite_random_node(
     dataset::Dataset{T},
     options::AbstractOptions,
     rng::AbstractRNG=default_rng();
+    backsolve_options=configured_backsolve(options),
     population_for_backsolve=nothing,
 ) where {T<:DATA_TYPE}
     if !(T <: Union{AbstractFloat,Complex{<:AbstractFloat}})
@@ -700,7 +722,13 @@ function backsolve_rewrite_random_node(
 
     nfeatures = size(dataset.X, 1)
     new_node = fit_sparse_expression(
-        node_to_invert, target_values, dataset, options, nfeatures; population_for_backsolve
+        node_to_invert,
+        target_values,
+        dataset,
+        options,
+        nfeatures;
+        backsolve_options,
+        population_for_backsolve,
     )
 
     if new_node !== nothing
@@ -727,6 +755,7 @@ function backsolve_rewrite_random_node(
     dataset::Dataset{T},
     options::AbstractOptions,
     rng::AbstractRNG=default_rng();
+    backsolve_options=configured_backsolve(options),
     population_for_backsolve=nothing,
 ) where {T<:DATA_TYPE,D}
     throw(

@@ -539,7 +539,39 @@ fit!(mach)
 
 This sort of piecewise logic might be difficult to express with only binary operators.
 
-## 13. Additional features
+## 13. Configuring mutation weights
+
+You can adjust how often each type of mutation is applied during the search.
+Pass `mutations` with a list of mutation types and their relative weights.
+An entry replaces the default weight for that mutation type; anything
+you don't list keeps its default.
+
+For example, to enable constant optimization (off by default) and increase
+the rate of constant perturbation:
+
+```julia
+using SymbolicRegression
+using MLJ
+
+X = 2randn(100, 5)
+y = @. 2.7182 * X[:, 1] + 3.1415 * X[:, 2]
+
+model = SRRegressor(
+    binary_operators=[+, -, *],
+    mutations=[
+        OptimizeMutation() => 0.1,
+        ConstantMutation() => 0.5,
+    ],
+    niterations=30,
+)
+mach = machine(model, X, y)
+fit!(mach)
+```
+
+See the [`Options`](@ref) documentation for all available mutation types
+and their default weights.
+
+## 14. Additional features
 
 For the many other features available in SymbolicRegression.jl,
 check out the API page for `Options`. You might also find it useful

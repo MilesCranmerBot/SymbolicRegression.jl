@@ -98,7 +98,7 @@ end
     using DynamicExpressions: Node
 
     # Create test dataset
-    X = [1.0 2.0]
+    X = [1.0; 2.0;;]
     y = [3.0]
     dataset = Dataset(X, y; variable_names=["x1", "x2"])
 
@@ -138,7 +138,7 @@ end
     using DynamicExpressions: Node, Expression
 
     # Create simple test dataset
-    X = [1.0 2.0]
+    X = [1.0; 2.0;;]
     y = [3.0]
     dataset = Dataset(X, y; variable_names=["x1", "x2"])
 

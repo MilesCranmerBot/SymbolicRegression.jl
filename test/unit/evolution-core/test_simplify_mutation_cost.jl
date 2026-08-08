@@ -1,6 +1,6 @@
-@testitem "Simplify mutation updates cost with complexity" begin
+@testitem "SimplifyMutation updates cost with complexity" begin
     using SymbolicRegression
-    using SymbolicRegression: Dataset, RecordType, MutationWeights
+    using SymbolicRegression: Dataset, TraceType, MutationWeights
     using SymbolicRegression.LossFunctionsModule: loss_to_cost
     using SymbolicRegression.MutateModule: mutate!
     using Random: MersenneTwister
@@ -24,10 +24,9 @@
     result = mutate!(
         copy(member.tree),
         member,
-        Val(:simplify),
-        MutationWeights(),
+        SimplifyMutation(),
         options;
-        recorder=RecordType(),
+        trace=TraceType(),
         dataset=dataset,
         parent_ref=1,
     )

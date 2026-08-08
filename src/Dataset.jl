@@ -168,6 +168,13 @@ function Dataset(
 
     n = size(X, 2)
     nfeatures = size(X, 1)
+    if y !== nothing && length(y) != n
+        throw(
+            DimensionMismatch(
+                "Number of samples in `X` (size(X, 2) = $n) does not match the length of `y` ($(length(y))). `X` should have shape (nfeatures, nsamples).",
+            ),
+        )
+    end
     variable_names = @something(variable_names, ["x$(i)" for i in 1:nfeatures])
     display_variable_names = @something(
         display_variable_names, ["x$(subscriptify(i))" for i in 1:nfeatures]

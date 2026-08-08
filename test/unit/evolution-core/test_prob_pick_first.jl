@@ -17,6 +17,8 @@
 
     for reverse in [false, true]
         T = Float32
+        dataset = Dataset(zeros(T, 1, n), zeros(T, n))
+        plugin_states = SymbolicRegression.init_plugin_states(options, dataset)
 
         # Generate members with scores from 0 to 1:
         members = [
@@ -35,11 +37,8 @@
 
         pop = Population(members)
 
-        dummy_running_stats = SymbolicRegression.AdaptiveParsimonyModule.RunningSearchStatistics(;
-            options=options
-        )
         best_pop_member = [
-            SymbolicRegression.best_of_sample(pop, dummy_running_stats, options).cost for
+            SymbolicRegression.best_of_sample(pop, options; plugin_states).cost for
             j in 1:100
         ]
 

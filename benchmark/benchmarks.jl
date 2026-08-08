@@ -1,8 +1,7 @@
 using BenchmarkTools
 using SymbolicRegression, BenchmarkTools, Random
-using SymbolicRegression.AdaptiveParsimonyModule: RunningSearchStatistics
 using SymbolicRegression.MutateModule: next_generation
-using SymbolicRegression.RecorderModule: RecordType
+using SymbolicRegression.AdaptiveParsimonyModule: RunningSearchStatistics
 using SymbolicRegression.PopulationModule: best_of_sample
 using SymbolicRegression.ConstantOptimizationModule: optimize_constants
 using SymbolicRegression.CheckConstraintsModule: check_constraints
@@ -25,6 +24,7 @@ function create_search_benchmark()
         extra_kws = merge(extra_kws, (define_helper_functions=false,))
     end
     option_kws = (;
+        defaults=v"1.0.0",
         binary_operators=(+, -, /, *),
         unary_operators=(exp, abs),
         maxsize=30,
@@ -80,72 +80,175 @@ function create_search_benchmark()
     return suite
 end
 
+function _plugin_states(options, dataset)
+    return if hasproperty(options, :plugins)
+        map(options.plugins) do plugin
+            return SymbolicRegression.init_plugin_state(plugin, options, dataset)
+        end
+    else
+        ()
+    end
+end
+
+function _setup_best_of_sample(options)
+    nfeatures = 1
+    dataset = Dataset(randn(nfeatures, 32), randn(32))
+    plugin_states = _plugin_states(options, dataset)
+    pop = if hasproperty(options, :plugins)
+        Population(dataset; npop=100, nlength=20, options, nfeatures, plugin_states)
+    else
+        Population(dataset; npop=100, nlength=20, options, nfeatures)
+    end
+    rss = RunningSearchStatistics(; options)
+    return (; pop, rss, options, plugin_states)
+end
+
+function _best_of_sample_api(state)
+    if applicable(best_of_sample, state.pop, state.options)
+        return Val(:plugin_states)
+    elseif applicable(best_of_sample, state.pop, state.rss, state.options)
+        return Val(:rss)
+    end
+    return error("Unsupported `best_of_sample` signature.")
+end
+
+function _run_best_of_sample(::Val{:plugin_states}, state)
+    return best_of_sample(state.pop, state.options; plugin_states=state.plugin_states)
+end
+function _run_best_of_sample(::Val{:rss}, state)
+    return best_of_sample(state.pop, state.rss, state.options)
+end
+
+function _setup_next_generation()
+    nfeatures = 1
+    dataset = Dataset(randn(nfeatures, 32), randn(32))
+    mutation_weights = MutationWeights(;
+        mutate_constant=1.0,
+        mutate_operator=1.0,
+        swap_operands=1.0,
+        rotate_tree=1.0,
+        add_node=1.0,
+        insert_node=1.0,
+        simplify=0.0,
+        randomize=0.0,
+        do_nothing=0.0,
+        form_connection=0.0,
+        break_connection=0.0,
+    )
+    options = Options(;
+        defaults=v"1.0.0",
+        unary_operators=[sin, cos],
+        binary_operators=[+, -, *, /],
+        mutation_weights,
+    )
+    plugin_states = _plugin_states(options, dataset)
+    trace = isdefined(SymbolicRegression, :TracingModule) ? nothing : Dict{String,Any}()
+    temperature = 1.0
+    curmaxsize = 20
+    rss = RunningSearchStatistics(; options)
+    trees = [gen_random_tree_fixed_size(15, options, nfeatures, Float64) for _ in 1:100]
+    expressions = [
+        Expression(tree; operators=options.operators, variable_names=["x1"]) for
+        tree in trees
+    ]
+    members = [
+        PopMember(dataset, expression, options; deterministic=false) for
+        expression in expressions
+    ]
+    return (; dataset, options, plugin_states, trace, temperature, curmaxsize, rss, members)
+end
+
+function _next_generation_api(state)
+    member = first(state.members)
+    if applicable(next_generation, state.dataset, member, state.curmaxsize, state.options)
+        return Val(:plugin_states)
+    elseif applicable(
+        next_generation,
+        state.dataset,
+        member,
+        state.temperature,
+        state.curmaxsize,
+        state.options,
+    )
+        return Val(:temperature)
+    elseif applicable(
+        next_generation,
+        state.dataset,
+        member,
+        state.temperature,
+        state.curmaxsize,
+        state.rss,
+        state.options,
+    )
+        return Val(:rss)
+    end
+    return error("Unsupported `next_generation` signature.")
+end
+
+const NEXT_GENERATION_USES_TRACE = isdefined(SymbolicRegression, :TracingModule)
+
+@inline function _next_generation_trace_kwargs(trace)
+    return NEXT_GENERATION_USES_TRACE ? (; tmp_trace=trace) : (; tmp_recorder=trace)
+end
+
+function _run_next_generation(::Val{:plugin_states}, state)
+    trace_kws = _next_generation_trace_kwargs(state.trace)
+    for member in state.members
+        next_generation(
+            state.dataset,
+            member,
+            state.curmaxsize,
+            state.options;
+            trace_kws...,
+            plugin_states=state.plugin_states,
+        )
+    end
+end
+function _run_next_generation(::Val{:temperature}, state)
+    trace_kws = _next_generation_trace_kwargs(state.trace)
+    for member in state.members
+        next_generation(
+            state.dataset,
+            member,
+            state.temperature,
+            state.curmaxsize,
+            state.options;
+            trace_kws...,
+            plugin_states=state.plugin_states,
+        )
+    end
+end
+function _run_next_generation(::Val{:rss}, state)
+    trace_kws = _next_generation_trace_kwargs(state.trace)
+    for member in state.members
+        next_generation(
+            state.dataset,
+            member,
+            state.temperature,
+            state.curmaxsize,
+            state.rss,
+            state.options;
+            trace_kws...,
+        )
+    end
+end
+
 function create_utils_benchmark()
     suite = BenchmarkGroup()
 
-    options = Options(; unary_operators=[sin, cos], binary_operators=[+, -, *, /])
-
+    options = Options(;
+        defaults=v"1.0.0", unary_operators=[sin, cos], binary_operators=[+, -, *, /]
+    )
+    best_of_sample_api = _best_of_sample_api(_setup_best_of_sample(options))
     suite["best_of_sample"] = @benchmarkable(
-        best_of_sample(pop, rss, $options),
-        setup = (
-            nfeatures=1;
-            dataset=Dataset(randn(nfeatures, 32), randn(32));
-            pop=Population(dataset; npop=100, nlength=20, options=($options), nfeatures);
-            rss=RunningSearchStatistics(; options=($options))
-        )
+        _run_best_of_sample($best_of_sample_api, state),
+        setup = (state = _setup_best_of_sample($options))
     )
 
+    next_generation_api = _next_generation_api(_setup_next_generation())
     suite["next_generation_x100"] = @benchmarkable(
-        let
-            for member in members
-                next_generation(
-                    dataset,
-                    member,
-                    temperature,
-                    curmaxsize,
-                    rss,
-                    options;
-                    tmp_recorder=recorder,
-                )
-            end
-        end,
-        setup = (
-            nfeatures=1;
-            dataset=Dataset(randn(nfeatures, 32), randn(32));
-            mutation_weights=MutationWeights(;
-                mutate_constant=1.0,
-                mutate_operator=1.0,
-                swap_operands=1.0,
-                rotate_tree=1.0,
-                add_node=1.0,
-                insert_node=1.0,
-                simplify=0.0,
-                randomize=0.0,
-                do_nothing=0.0,
-                form_connection=0.0,
-                break_connection=0.0,
-            );
-            options=Options(;
-                unary_operators=[sin, cos],
-                binary_operators=[+, -, *, /],
-                mutation_weights,
-            );
-            recorder=RecordType();
-            temperature=1.0;
-            curmaxsize=20;
-            rss=RunningSearchStatistics(; options);
-            trees=[
-                gen_random_tree_fixed_size(15, options, nfeatures, Float64) for _ in 1:100
-            ];
-            expressions=[
-                Expression(tree; operators=options.operators, variable_names=["x1"]) for
-                tree in trees
-            ];
-            members=[
-                PopMember(dataset, expression, options; deterministic=false) for
-                expression in expressions
-            ]
-        )
+        _run_next_generation($next_generation_api, state),
+        setup = (state = _setup_next_generation())
     )
 
     ntrees = 10
@@ -172,6 +275,7 @@ function create_utils_benchmark()
     suite["compute_complexity_x10"] = let s = BenchmarkGroup()
         for T in (Float64, Int, nothing)
             options = Options(;
+                defaults=v"1.0.0",
                 unary_operators=[sin, cos],
                 binary_operators=[+, -, *, /],
                 complexity_of_constants=T === nothing ? T : T(1),
@@ -226,6 +330,7 @@ function create_utils_benchmark()
 
     ntrees = 10
     options = Options(;
+        defaults=v"1.0.0",
         unary_operators=[sin, cos],
         binary_operators=[+, -, *, /],
         maxsize=30,

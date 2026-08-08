@@ -44,8 +44,13 @@ end
 
     # Manually create saved state
     dataset = Dataset(X, y)
-    pop1 = Population(dataset; population_size=5, nlength=3, options=options, nfeatures=2)
-    pop2 = Population(dataset; population_size=5, nlength=3, options=options, nfeatures=2)
+    plugin_states = SymbolicRegression.init_plugin_states(options, dataset)
+    pop1 = Population(
+        dataset; population_size=5, nlength=3, options=options, nfeatures=2, plugin_states
+    )
+    pop2 = Population(
+        dataset; population_size=5, nlength=3, options=options, nfeatures=2, plugin_states
+    )
     hof = HallOfFame(options, dataset)
 
     saved_pops = [[pop1, pop2]]

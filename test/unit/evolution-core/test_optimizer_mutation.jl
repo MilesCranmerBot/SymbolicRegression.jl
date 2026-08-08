@@ -1,7 +1,7 @@
 @testitem "Test optimization mutation" begin
     using SymbolicRegression
     using SymbolicRegression: SymbolicRegression
-    using SymbolicRegression: Dataset, RunningSearchStatistics, RecordType
+    using SymbolicRegression: Dataset, TraceType
     using Optim: Optim
     using SymbolicRegression.MutateModule: next_generation
     using DynamicExpressions: get_scalar_constants
@@ -17,23 +17,17 @@
     X = randn(5, 100)
     y = sin.(X[1, :] .* 2.1 .+ 0.8) .+ X[2, :] .^ 2
     dataset = Dataset(X, y)
+    plugin_states = SymbolicRegression.init_plugin_states(options, dataset)
 
     x1 = Node(Float64; feature=1)
     x2 = Node(Float64; feature=2)
     tree = sin(x1 * 1.9 + 0.2) + x2 * x2
 
     member = PopMember(dataset, tree, options; deterministic=false)
-    temperature = 1.0
     maxsize = 20
 
     new_member, _, _ = next_generation(
-        dataset,
-        member,
-        temperature,
-        maxsize,
-        RunningSearchStatistics(; options=options),
-        options;
-        tmp_recorder=RecordType(),
+        dataset, member, maxsize, options; tmp_trace=TraceType(), plugin_states
     )
 
     resultant_constants, refs = get_scalar_constants(new_member.tree)

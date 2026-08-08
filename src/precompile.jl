@@ -1,4 +1,16 @@
 using PrecompileTools: @compile_workload, @setup_workload
+using Preferences: @load_preference
+
+# The precompile workload can be tuned with Preferences.jl. For example, to
+# disable the Float64 precompilation, set the `precompile_float64` preference
+# to `false`:
+#
+#     using Preferences
+#     Preferences.set_preferences!(SymbolicRegression, "precompile_float64" => false)
+#
+# (Changing this requires a restart of Julia to trigger re-precompilation.)
+const PRECOMPILE_FLOAT64 = @load_preference("precompile_float64", true)
+const PRECOMPILE_TYPES = PRECOMPILE_FLOAT64 ? (Float32, Float64) : (Float32,)
 
 macro maybe_setup_workload(mode, ex)
     precompile_ex = Expr(
@@ -33,7 +45,7 @@ end
 """`mode=:precompile` will use `@precompile_*` directives; `mode=:compile` runs."""
 function do_precompilation(::Val{mode}) where {mode}
     @maybe_setup_workload mode begin
-        for T in [Float32, Float64], nout in 1:2
+        for T in PRECOMPILE_TYPES, nout in (1,)
             start = nout == 1
             N = 30
             X = randn(T, 3, N)
@@ -46,7 +58,7 @@ function do_precompilation(::Val{mode}) where {mode}
                     population_size=start ? 50 : 12,
                     tournament_selection_n=6,
                     ncycles_per_iteration=start ? 30 : 1,
-                    mutation_weights=MutationWeights(;
+                    mutation_weights=(;
                         mutate_constant=1.0,
                         mutate_operator=1.0,
                         swap_operands=1.0,
