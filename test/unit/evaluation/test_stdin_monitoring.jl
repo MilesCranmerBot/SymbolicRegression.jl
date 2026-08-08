@@ -86,7 +86,7 @@
     buffer_stream = Base.BufferStream()
     write(buffer_stream, "x")
     @test SymbolicRegression.SearchUtilsModule.read_available_nonblocking(buffer_stream) ==
-          UInt8[0x78]
+        UInt8[0x78]
     close(buffer_stream)
 
     # Reproducer for freeze path in check_for_user_quit.
