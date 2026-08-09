@@ -44,7 +44,9 @@ using ..OptionsStructModule: ComplexityMapping, operator_specialization
 using ..PluginModule:
     default_adaptive_parsimony_plugin,
     default_simulated_annealing_plugin,
-    _merge_with_default_plugins
+    _merge_with_default_plugins,
+    plugin_mutations,
+    plugin_crossovers
 using ..UtilsModule: @save_kwargs, @ignore
 using ..ExpressionSpecModule:
     AbstractExpressionSpec,
@@ -408,7 +410,9 @@ const OPTION_DESCRIPTIONS = """- `defaults`: What set of defaults to use for `Op
 - `use_frequency_in_tournament`: Whether to use the adaptive parsimony described
     above inside the score, rather than just at the mutation accept/reject stage.
 - `plugins`: Plugin instances to run, as a tuple or vector. Vectors are converted
-    to tuples when the options are constructed.
+    to tuples when the options are constructed. Plugins may also contribute
+    weighted mutation and crossover defaults via [`plugin_mutations`](@ref) and
+    [`plugin_crossovers`](@ref).
 - `default_plugins`: Default plugin instances appended after `plugins`. Set this
     to `()` to disable automatic defaults. An explicit plugin takes precedence
     over a default plugin of the same type.
@@ -1057,6 +1061,17 @@ $(OPTION_DESCRIPTIONS)
         @warn "Optimizer warnings are turned on. This might result in a lot of warnings being printed from NaNs, as these are common during symbolic regression"
     end
 
+    user_plugin_tuple = Tuple(plugins)
+    default_plugin_tuple = if default_plugins === nothing
+        (
+            default_simulated_annealing_plugin(; annealing, alpha),
+            default_adaptive_parsimony_plugin(; use_frequency, use_frequency_in_tournament),
+        )
+    else
+        Tuple(default_plugins)
+    end
+    plugin_tuple = _merge_with_default_plugins(user_plugin_tuple, default_plugin_tuple...)
+
     set_mutation_weights = create_mutation_weights(mutation_weights)
     if mutation_weights_were_provided && default_mutations !== nothing
         throw(
@@ -1085,10 +1100,26 @@ $(OPTION_DESCRIPTIONS)
     _explicit_mutations = Pair{MutationsModule.AbstractMutation,Float64}[
         p.first => Float64(p.second) for p in something(mutations, ())
     ]
+    _plugin_mutations = if default_mutations === nothing
+        Pair{MutationsModule.AbstractMutation,Float64}[
+            p.first => Float64(p.second) for plugin in plugin_tuple for
+            p in plugin_mutations(plugin)
+        ]
+    else
+        Pair{MutationsModule.AbstractMutation,Float64}[]
+    end
+    _defaults_with_plugin_mutations = vcat(
+        _plugin_mutations,
+        filter(
+            default ->
+                !any(plugin -> plugin.first isa typeof(default.first), _plugin_mutations),
+            _default_mutations,
+        ),
+    )
     _remaining_defaults = filter(
         default ->
             !any(explicit -> explicit.first isa typeof(default.first), _explicit_mutations),
-        _default_mutations,
+        _defaults_with_plugin_mutations,
     )
     _resolved_mutations = vcat(_explicit_mutations, _remaining_defaults)
 
@@ -1102,25 +1133,30 @@ $(OPTION_DESCRIPTIONS)
     _explicit_crossovers = Pair{CrossoversModule.AbstractCrossover,Float64}[
         p.first => Float64(p.second) for p in something(crossovers, ())
     ]
+    _plugin_crossovers = if default_crossovers === nothing
+        Pair{CrossoversModule.AbstractCrossover,Float64}[
+            p.first => Float64(p.second) for plugin in plugin_tuple for
+            p in plugin_crossovers(plugin)
+        ]
+    else
+        Pair{CrossoversModule.AbstractCrossover,Float64}[]
+    end
+    _defaults_with_plugin_crossovers = vcat(
+        _plugin_crossovers,
+        filter(
+            default ->
+                !any(plugin -> plugin.first isa typeof(default.first), _plugin_crossovers),
+            _default_crossovers,
+        ),
+    )
     _remaining_default_crossovers = filter(
         default ->
             !any(
                 explicit -> explicit.first isa typeof(default.first), _explicit_crossovers
             ),
-        _default_crossovers,
+        _defaults_with_plugin_crossovers,
     )
     _resolved_crossovers = vcat(_explicit_crossovers, _remaining_default_crossovers)
-
-    user_plugin_tuple = Tuple(plugins)
-    default_plugin_tuple = if default_plugins === nothing
-        (
-            default_simulated_annealing_plugin(; annealing, alpha),
-            default_adaptive_parsimony_plugin(; use_frequency, use_frequency_in_tournament),
-        )
-    else
-        Tuple(default_plugins)
-    end
-    plugin_tuple = _merge_with_default_plugins(user_plugin_tuple, default_plugin_tuple...)
 
     @assert print_precision > 0
 

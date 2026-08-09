@@ -81,6 +81,8 @@ export Population,
     with_contents,
     with_metadata,
     default_mutations,
+    plugin_mutations,
+    plugin_crossovers,
 
     #Operators
     plus,
@@ -364,6 +366,8 @@ using .CoreModule:
     on_cycle_start!,
     prepare_mutation_context,
     condition_mutation!,
+    plugin_mutations,
+    plugin_crossovers,
     ConstantMutationContext
 using .UtilsModule: is_anonymous_function, strictmap, @ignore
 using .ComplexityModule: compute_complexity
