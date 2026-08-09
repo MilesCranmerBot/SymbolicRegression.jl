@@ -55,7 +55,7 @@ struct MutationStep{D,P,O,S,E,H,A,M,R}
     curmaxsize::Int
     options::O
     plugin_states::S
-    eval_options::E
+    eval_context::E
     best_seen::H
     attempted_results::A
     attempted_members::M
@@ -71,7 +71,7 @@ function (step::MutationStep)(parent)
         step.options;
         tmp_trace=step_trace,
         plugin_states=step.plugin_states,
-        eval_options=step.eval_options,
+        eval_context=step.eval_context,
         population_for_backsolve=step.population,
     )
     attempt_id = isnothing(step.attempted_results) ? 1 : length(step.attempted_results) + 1
@@ -102,7 +102,7 @@ function reg_evol_cycle(
     trace::MaybeTrace;
     plugin_states::Tuple,
     best_seen::HallOfFame,
-    eval_options=nothing,
+    eval_context=nothing,
 )::Tuple{P,Float64} where {T<:DATA_TYPE,L<:LOSS_TYPE,P<:Population{T,L}}
     num_evals = 0.0
     n_evol_cycles = ceil(Int, pop.n / options.tournament_selection_n)
@@ -118,7 +118,7 @@ function reg_evol_cycle(
         curmaxsize,
         options,
         plugin_states,
-        eval_options,
+        eval_context,
         best_seen,
         attempted_results,
         attempted_members,
@@ -185,7 +185,7 @@ function reg_evol_cycle(
                 options;
                 trace=crossover_trace,
                 plugin_states,
-                eval_options,
+                eval_context,
             )
             num_evals += tmp_num_evals
             if crossover_accepted

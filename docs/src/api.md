@@ -36,7 +36,7 @@ string_tree
 
 ```@docs
 eval_tree_array
-EvalOptions
+EvalContext
 ```
 
 ## Derivatives

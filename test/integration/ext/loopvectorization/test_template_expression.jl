@@ -422,18 +422,18 @@ end
     @test_throws DimensionMismatch expr(X_complex)
 end
 
-@testitem "Test eval_options with turbo mode" begin
+@testitem "Test eval_context with turbo mode" begin
     using SymbolicRegression
-    using DynamicExpressions: OperatorEnum, EvalOptions
+    using DynamicExpressions: OperatorEnum, EvalContext
     using LoopVectorization: LoopVectorization
 
     operators = OperatorEnum(; binary_operators=(+, *, /, -), unary_operators=(sin, cos))
     variable_names = ["x1", "x2"]
-    eval_options = EvalOptions(; turbo=true)
+    eval_context = EvalContext(; turbo=true)
 
     # Create expressions with turbo mode enabled
     x1 = ComposableExpression(
-        Node{Float64}(; feature=1); operators, variable_names, eval_options
+        Node{Float64}(; feature=1); operators, variable_names, eval_context
     )
     f = x1 + x1
     g = x1
