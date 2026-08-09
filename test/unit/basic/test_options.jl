@@ -50,6 +50,12 @@ end
         if field == :crossover_probability
             @test v1_value == 0.0259
             @test v2_value == 0.20
+        elseif field == :batching
+            @test v1_value === false
+            @test v2_value === :auto
+        elseif field == :batch_size
+            @test v1_value == 50
+            @test v2_value === nothing
         else
             @test isequal(v1_value, v2_value)
         end
@@ -58,6 +64,37 @@ end
     @test Options().crossover_probability == 0.20
     @test Options(; defaults=v"1.0.0").crossover_probability == 0.0259
     @test Options(; defaults=v"2.0.0-alpha").adaptive_parsimony_scaling == 1040.0
+end
+
+@testitem "Test automatic batching options" begin
+    using SymbolicRegression
+    using SymbolicRegression.CoreModule: _get_batch_size, _use_batching
+
+    options = Options()
+    @test options.batching === :auto
+    @test options.batch_size === nothing
+    @test !_use_batching(options, 1000)
+    @test _use_batching(options, 1001)
+    @test map(n -> _get_batch_size(options, n), (1000, 1001, 4999, 5000, 49999, 50000)) ==
+        (1000, 128, 128, 256, 256, 512)
+    @test @inferred(_use_batching(options, 1001))
+    @test @inferred(_get_batch_size(options, 5000)) == 256
+
+    forced = Options(; batching=true)
+    @test _use_batching(forced, 1000)
+    @test _get_batch_size(forced, 1000) == 1000
+
+    disabled = Options(; batching=false, batch_size=64)
+    @test !_use_batching(disabled, 50000)
+    @test _get_batch_size(disabled, 50000) == 64
+
+    explicit_size = Options(; batching=true, batch_size=2000)
+    @test _get_batch_size(explicit_size, 1000) == 1000
+    @test _get_batch_size(explicit_size, 5000) == 2000
+    @test Options(; batch_size=Int32(64)).batch_size === 64
+
+    @test_throws ArgumentError Options(; batching=:sometimes)
+    @test_throws ArgumentError Options(; batch_size=0)
 end
 
 @testitem "Test backsolve options" begin

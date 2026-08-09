@@ -191,6 +191,8 @@ struct Options{
     AD,
     print_precision,
     _use_tracing,
+    B<:Union{Bool,Symbol},
+    BS<:Union{Nothing,Int},
 } <: AbstractOptions
     operators::OP
     op_constraints::OP_CONSTRAINTS
@@ -212,8 +214,8 @@ struct Options{
     output_directory::Union{String,Nothing}
     populations::Int
     perturbation_factor::Float64
-    batching::Bool
-    batch_size::Int
+    batching::B
+    batch_size::BS
     mutations::Vector{Pair{AbstractMutation,Float64}}
     crossovers::Vector{Pair{AbstractCrossover,Float64}}
     crossover_probability::Float64
@@ -260,6 +262,18 @@ struct Options{
     use_tracing::Val{_use_tracing}
     popmember_type::Type{PM}
     plugins::PT
+end
+
+@inline function _use_batching(options::AbstractOptions, n::Integer)
+    return options.batching === true || (options.batching === :auto && n > 1000)
+end
+
+@inline function _get_batch_size(options::AbstractOptions, n::Integer)
+    options.batch_size !== nothing && return min(options.batch_size, n)
+    n <= 1000 && return n
+    n < 5000 && return 128
+    n < 50000 && return 256
+    return 512
 end
 
 function Base.print(io::IO, @nospecialize(options::Options))

@@ -278,6 +278,7 @@ using .CoreModule:
     TraceType,
     Dataset,
     BasicDataset,
+    _use_batching,
     SubDataset,
     AbstractOptions,
     Options,
@@ -1383,7 +1384,7 @@ end
         dataset, out_pop, options, cur_maxsize, trace
     )
     num_evals += evals_from_optimize
-    if options.batching
+    if _use_batching(options, dataset.n)
         for i_member in 1:(options.maxsize)
             if best_seen.exists[i_member]
                 cost, result_loss = eval_cost(dataset, best_seen.members[i_member], options)

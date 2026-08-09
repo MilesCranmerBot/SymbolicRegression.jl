@@ -308,8 +308,12 @@ const OPTION_DESCRIPTIONS = """- `defaults`: What set of defaults to use for `Op
     but a maximum size of `3` in its right argument. Default is
     no constraints.
 - `batching`: Whether to evolve based on small mini-batches of data,
-    rather than the entire dataset.
-- `batch_size`: What batch size to use if using batching.
+    rather than the entire dataset. The default, `:auto`, enables batching
+    for datasets with more than 1,000 rows. Pass `true` or `false` to override it.
+- `batch_size`: What batch size to use if using batching. By default, this uses
+    the full dataset for up to 1,000 rows, 128 rows for fewer than 5,000 rows,
+    256 rows for fewer than 50,000 rows, and 512 rows otherwise. An explicit
+    value is capped at the dataset size.
 - `elementwise_loss`: What elementwise loss function to use. Can be one of
     the following losses, or any other loss of type
     `SupervisedLoss`. You can also pass a function that takes
@@ -682,7 +686,7 @@ $(OPTION_DESCRIPTIONS)
     max_evals::Union{Nothing,Integer}=nothing,
     input_stream::IO=stdin,
     ## 11. Performance and Parallelization:
-    batching::Union{Bool,Nothing}=nothing,
+    batching::Union{Bool,Symbol,Nothing}=nothing,
     batch_size::Union{Nothing,Integer}=nothing,
     turbo::Bool=false,
     bumper::Bool=false,
@@ -861,7 +865,7 @@ $(OPTION_DESCRIPTIONS)
     fraction_replaced_guesses = something(fraction_replaced_guesses, _default_options.fraction_replaced_guesses)
     topn = something(topn, _default_options.topn)
     batching = something(batching, _default_options.batching)
-    batch_size = something(batch_size, _default_options.batch_size)
+    batch_size = batch_size === nothing ? _default_options.batch_size : batch_size
     if !user_provided_operators
         binary_operators = something(binary_operators, _default_options.operators.ops[2])
         unary_operators = something(unary_operators, _default_options.operators.ops[1])
@@ -1175,6 +1179,12 @@ $(OPTION_DESCRIPTIONS)
             output_directory
         end
 
+    batching in (true, false, :auto) ||
+        throw(ArgumentError("`batching` must be `true`, `false`, or `:auto`."))
+    (batch_size === nothing || batch_size >= 1) ||
+        throw(ArgumentError("`batch_size` must be at least 1."))
+    batch_size = batch_size === nothing ? nothing : Int(batch_size)
+
     nops = map(length, operators.ops)
 
     options = Options{
@@ -1193,6 +1203,8 @@ $(OPTION_DESCRIPTIONS)
         typeof(_autodiff_backend),
         print_precision,
         use_tracing,
+        typeof(batching),
+        typeof(batch_size),
     }(
         operators,
         op_constraints,
@@ -1366,7 +1378,9 @@ function default_options(@nospecialize(version::Union{VersionNumber,Nothing} = n
     )
 
     if isnothing(version) || version >= v"2.0.0-"
-        defaults = (; defaults..., crossover_probability=0.20)
+        defaults = (;
+            defaults..., crossover_probability=0.20, batching=:auto, batch_size=nothing
+        )
     end
 
     return defaults
