@@ -872,6 +872,7 @@ $(OPTION_DESCRIPTIONS)
     if should_simplify === nothing
         should_simplify = (
             loss_function === nothing &&
+            loss_function_expression === nothing &&
             nested_constraints === nothing &&
             constraints === nothing &&
             bin_constraints === nothing &&
