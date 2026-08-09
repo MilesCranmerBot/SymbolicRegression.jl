@@ -43,7 +43,6 @@ using ..CoreModule:
     condition_mutation!
 using ..ComplexityModule: compute_complexity
 using ..LossFunctionsModule: eval_cost, loss_to_cost
-using ..InterfaceDynamicExpressionsModule: _process_eval_options
 using ..CheckConstraintsModule: check_constraints
 using ..PopMemberModule: AbstractPopMember, PopMember, create_child
 using ..UtilsModule: strictmap
@@ -281,11 +280,9 @@ end
     plugin_states::Tuple,
     eval_context=nothing,
     population_for_backsolve=nothing,
-    kws...,
 )::Tuple{
     P,Bool,Float64
 } where {T,L,D<:Dataset{T,L},N<:AbstractExpression{T},P<:AbstractPopMember{T,L,N}}
-    eval_context = _process_eval_options(eval_context, kws, :next_generation)
     parent_ref = member.ref
     num_evals = 0.0
 
