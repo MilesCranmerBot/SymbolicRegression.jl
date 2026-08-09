@@ -174,6 +174,8 @@ function eval_loss(
     kws...,
 )::L where {T<:DATA_TYPE,L<:LOSS_TYPE}
     eval_context = _process_eval_options(eval_context, kws, :eval_loss)
+    kws = Base.structdiff((; kws...), (; eval_options=nothing))
+    isempty(kws) || Base.kwerr(kws, eval_loss, tree, dataset, options)
     loss_val = if !isnothing(options.loss_function)
         f = options.loss_function::Function
         inner_tree = tree isa AbstractExpression ? get_tree(tree) : tree
@@ -230,6 +232,8 @@ function eval_cost(
     kws...,
 )::Tuple{L,L} where {T<:DATA_TYPE,L<:LOSS_TYPE}
     eval_context = _process_eval_options(eval_context, kws, :eval_cost)
+    kws = Base.structdiff((; kws...), (; eval_options=nothing))
+    isempty(kws) || Base.kwerr(kws, eval_cost, dataset, member, options)
     result_loss = eval_loss(get_tree_from_member(member), dataset, options; eval_context)
     cost = loss_to_cost(
         result_loss,
