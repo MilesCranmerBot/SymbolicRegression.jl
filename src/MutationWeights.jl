@@ -1,77 +1,35 @@
 module MutationWeightsModule
 
+import ..MutationsModule:
+    AbstractMutation,
+    ConstantMutation,
+    OperatorMutation,
+    FeatureMutation,
+    SwapOperandsMutation,
+    AddNodeMutation,
+    InsertNodeMutation,
+    DeleteNodeMutation,
+    FormConnectionMutation,
+    BreakConnectionMutation,
+    RotateTreeMutation,
+    BacksolveMutation,
+    SimplifyMutation,
+    RandomizeMutation,
+    OptimizeMutation,
+    DoNothingMutation,
+    default_mutations
+
 using StatsBase: StatsBase
 
 """
-    AbstractMutationWeights
-
-An abstract type that defines the interface for mutation weight structures in the symbolic regression framework. Subtypes of `AbstractMutationWeights` specify how often different mutation operations occur during the mutation process.
-
-You can create custom mutation weight types by subtyping `AbstractMutationWeights` and defining your own mutation operations. Additionally, you can overload the `sample_mutation` function to handle sampling from your custom mutation types.
-
-# Usage
-
-To create a custom mutation weighting scheme with new mutation types, define a new subtype of `AbstractMutationWeights` and implement the necessary fields. Here's an example using `Base.@kwdef` to define the struct with default values:
-
-```julia
-using SymbolicRegression: AbstractMutationWeights
-
-# Define custom mutation weights with default values
-Base.@kwdef struct MyMutationWeights <: AbstractMutationWeights
-    mutate_constant::Float64 = 0.1
-    mutate_operator::Float64 = 0.2
-    custom_mutation::Float64 = 0.7
-end
-```
-
-Next, overload the `sample_mutation` function to include your custom mutation types:
-
-```julia
-# Define the list of mutation names (symbols)
-const MY_MUTATIONS = [
-    :mutate_constant,
-    :mutate_operator,
-    :custom_mutation
-]
-
-# Import the `sample_mutation` function to overload it
-import SymbolicRegression: sample_mutation
-using StatsBase: StatsBase
-
-# Overload the `sample_mutation` function
-function sample_mutation(w::MyMutationWeights)
-    weights = [
-        w.mutate_constant,
-        w.mutate_operator,
-        w.custom_mutation
-    ]
-    weights = weights ./ sum(weights)  # Normalize weights to sum to 1.0
-    return StatsBase.sample(MY_MUTATIONS, StatsBase.Weights(weights))
-end
-
-# Pass it when defining `Options`:
-using SymbolicRegression: Options
-options = Options(mutation_weights=MyMutationWeights())
-```
-
-This allows you to customize the mutation sampling process to include your custom mutations according to their specified weights.
-
-To integrate your custom mutations into the mutation process, ensure that the mutation functions corresponding to your custom mutation types are defined and properly registered with the symbolic regression framework. You may need to define methods for `mutate!` that handle your custom mutation types.
-
-# See Also
-
-- [`MutationWeights`](@ref): A concrete implementation of `AbstractMutationWeights` that defines default mutation weightings.
-- [`sample_mutation`](@ref): Function to sample a mutation based on current mutation weights.
-- [`mutate!`](@ref SymbolicRegression.MutateModule.mutate!): Function to apply a mutation to an expression tree.
-- [`AbstractOptions`](@ref SymbolicRegression.OptionsStruct.AbstractOptions): See how to extend abstract types for customizing options.
-"""
-abstract type AbstractMutationWeights end
-
-"""
-    MutationWeights(;kws...) <: AbstractMutationWeights
+    MutationWeights(;kws...)
 
 This defines how often different mutations occur. These weightings
 will be normalized to sum to 1.0 after initialization.
+
+!!! warning
+    `MutationWeights` is deprecated. Pass weighted mutation instances through
+    `Options(; mutations=...)`.
 
 # Arguments
 
@@ -89,6 +47,9 @@ will be normalized to sum to 1.0 after initialization.
 - `optimize::Float64`: How often to optimize the constants in the tree, as a mutation.
     Note that this is different from `optimizer_probability`, which is
     performed at the end of an iteration for all individuals.
+- `backsolve::Float64`: How often to backsolve and rewrite a random subtree
+    by inverting the evaluation path and fitting a replacement expression.
+    **Experimental:** this mutation will change in minor version increments.
 - `form_connection::Float64`: **Only used for `GraphNode`, not regular `Node`**.
     Otherwise, this will automatically be set to 0.0. How often to form a
     connection between two nodes.
@@ -98,27 +59,27 @@ will be normalized to sum to 1.0 after initialization.
 
 # See Also
 
-- [`AbstractMutationWeights`](@ref SymbolicRegression.CoreModule.MutationWeightsModule.AbstractMutationWeights): Use to define custom mutation weight types.
+- [`AbstractMutation`](@ref): Use to define custom mutation types.
 """
-Base.@kwdef mutable struct MutationWeights <: AbstractMutationWeights
-    mutate_constant::Float64 = 0.0353
-    mutate_operator::Float64 = 3.63
-    mutate_feature::Float64 = 0.1
-    swap_operands::Float64 = 0.00608
-    rotate_tree::Float64 = 1.42
-    add_node::Float64 = 0.0771
-    insert_node::Float64 = 2.44
-    delete_node::Float64 = 0.369
-    simplify::Float64 = 0.00148
-    randomize::Float64 = 0.00695
-    do_nothing::Float64 = 0.431
-    optimize::Float64 = 0.0
-    form_connection::Float64 = 0.5
-    break_connection::Float64 = 0.1
+mutable struct MutationWeights
+    mutate_constant::Float64
+    mutate_operator::Float64
+    mutate_feature::Float64
+    swap_operands::Float64
+    rotate_tree::Float64
+    add_node::Float64
+    insert_node::Float64
+    delete_node::Float64
+    simplify::Float64
+    randomize::Float64
+    do_nothing::Float64
+    optimize::Float64
+    backsolve::Float64
+    form_connection::Float64
+    break_connection::Float64
 end
 
 const mutations = fieldnames(MutationWeights)
-const v_mutations = Symbol[mutations...]
 
 # For some reason it's much faster to write out the fields explicitly:
 let contents = [Expr(:., :w, QuoteNode(field)) for field in mutations]
@@ -132,10 +93,74 @@ let contents = [Expr(:., :w, QuoteNode(field)) for field in mutations]
     end
 end
 
-"""Sample a mutation, given the weightings."""
-function sample_mutation(w::AbstractMutationWeights)
-    weights = convert(Vector, w)
-    return StatsBase.sample(v_mutations, StatsBase.Weights(weights))
+const _MUTATION_FROM_SYMBOL = Dict{Symbol,AbstractMutation}(
+    :mutate_constant => ConstantMutation(),
+    :mutate_operator => OperatorMutation(),
+    :mutate_feature => FeatureMutation(),
+    :swap_operands => SwapOperandsMutation(),
+    :rotate_tree => RotateTreeMutation(),
+    :add_node => AddNodeMutation(),
+    :insert_node => InsertNodeMutation(),
+    :delete_node => DeleteNodeMutation(),
+    :simplify => SimplifyMutation(),
+    :randomize => RandomizeMutation(),
+    :do_nothing => DoNothingMutation(),
+    :optimize => OptimizeMutation(),
+    :backsolve => BacksolveMutation(),
+    :form_connection => FormConnectionMutation(),
+    :break_connection => BreakConnectionMutation(),
+)
+
+function _mutation_weights(; kws...)
+    unknown = setdiff(keys(kws), mutations)
+    isempty(unknown) ||
+        throw(ArgumentError("Unknown mutation weight: `$(first(unknown))`."))
+
+    defaults = Dict(
+        typeof(mutation) => weight for (mutation, weight) in default_mutations()
+    )
+    values = map(mutations) do name
+        Float64(get(kws, name, defaults[typeof(_MUTATION_FROM_SYMBOL[name])]))
+    end
+    return MutationWeights(values...)
+end
+
+function MutationWeights(; kws...)
+    Base.depwarn(
+        "`MutationWeights` is deprecated. Pass weighted mutation instances through `Options(; mutations=...)`.",
+        :MutationWeights,
+    )
+    return _mutation_weights(; kws...)
+end
+
+"""
+    _mutations_from_weights(w) -> Vector{Pair{AbstractMutation,Float64}}
+
+Convert built-in mutation weights to the mutation list used by `Options`.
+"""
+function _mutations_from_weights(w::MutationWeights)
+    return Pair{AbstractMutation,Float64}[
+        _MUTATION_FROM_SYMBOL[k] => Float64(getfield(w, k)) for k in fieldnames(typeof(w))
+    ]
+end
+
+using DispatchDoctor: @unstable
+
+"""
+    sample_mutation(mutations) -> AbstractMutation
+
+Pick a mutation kind by weight. Returns the singleton instance.
+
+Marked `@unstable` because the return type is `AbstractMutation` — the
+concrete subtype is selected at runtime by weighted sampling. The caller
+hands the result to `mutate!`, which dispatches per concrete type, so the
+instability is contained.
+"""
+@unstable function sample_mutation(
+    mutations::AbstractVector{<:Pair{<:AbstractMutation,<:Real}},  # COV_EXCL_LINE
+)
+    idx = StatsBase.sample(eachindex(mutations), StatsBase.Weights(map(last, mutations)))
+    return mutations[idx].first
 end
 
 end

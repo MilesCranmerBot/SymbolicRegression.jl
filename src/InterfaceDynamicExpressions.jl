@@ -64,17 +64,21 @@ which speed up evaluation significantly.
         options::AbstractOptions;
         turbo=nothing,
         bumper=nothing,
+        eval_options=nothing,
         kws...,
     )
         A = expected_array_type(X, typeof(tree))
         operators = DE.get_operators(tree, options)
         eval_options_kws = if takes_eval_options(operators)
-            (;
-                eval_options=EvalOptions(;
+            de_eval_options = if isnothing(eval_options)
+                EvalOptions(;
                     turbo=something(turbo, options.turbo),
                     bumper=something(bumper, options.bumper),
                 )
-            )
+            else
+                eval_options
+            end
+            (; eval_options=de_eval_options,)
         else
             NamedTuple()
         end
@@ -377,9 +381,6 @@ function DE.EvaluationHelpersModule._grad_evaluator(
         tree, X, DE.get_operators(tree, options); turbo=options.turbo, kws...
     )
 end
-
-# Allows special handling of class columns in MLJInterface.jl
-handles_class_column(::Type{<:AbstractExpression}) = false
 
 # These functions allow you to declare functions that must be
 # passed to worker nodes explicitly. See TemplateExpressions.jl for

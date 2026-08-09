@@ -396,6 +396,7 @@ stateDiagram-v2
     Complexity --> SearchUtils
     Complexity --> SingleIteration
     Complexity --> SymbolicRegression
+    Complexity --> Tracing
     ConstantOptimization --> ExpressionBuilder
     ConstantOptimization --> Mutate
     ConstantOptimization --> SingleIteration
@@ -415,11 +416,11 @@ stateDiagram-v2
     Core --> MutationFunctions
     Core --> PopMember
     Core --> Population
-    Core --> Recorder
     Core --> RegularizedEvolution
     Core --> SearchUtils
     Core --> SingleIteration
     Core --> SymbolicRegression
+    Core --> Tracing
     Dataset --> Core
     DimensionalAnalysis --> LossFunctions
     ExpressionBuilder --> SymbolicRegression
@@ -480,13 +481,13 @@ stateDiagram-v2
     ProgramConstants --> Operators
     ProgressBars --> SearchUtils
     ProgressBars --> SymbolicRegression
-    Recorder --> Mutate
-    Recorder --> RegularizedEvolution
-    Recorder --> SingleIteration
-    Recorder --> SymbolicRegression
     RegularizedEvolution --> SingleIteration
     SearchUtils --> SymbolicRegression
     SingleIteration --> SymbolicRegression
+    Tracing --> Mutate
+    Tracing --> RegularizedEvolution
+    Tracing --> SingleIteration
+    Tracing --> SymbolicRegression
     Utils --> ConstantOptimization
     Utils --> Dataset
     Utils --> DimensionalAnalysis
@@ -502,6 +503,7 @@ stateDiagram-v2
     Utils --> SearchUtils
     Utils --> SingleIteration
     Utils --> SymbolicRegression
+    Utils --> Tracing
 ```
 
 Bash command to generate dependency structure from `src` directory (requires `vim-stream`):
