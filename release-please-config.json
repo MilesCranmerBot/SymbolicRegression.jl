@@ -5,7 +5,7 @@
       "release-type": "julia",
       "include-component-in-tag": false,
       "versioning": "prerelease",
-      "prerelease-type": "alpha",
+      "prerelease-type": "beta",
       "prerelease": true
     }
   }
