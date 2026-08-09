@@ -23,8 +23,9 @@ takes_eval_context(::Type{<:OperatorEnum}) = true
 takes_eval_context(::T) where {T} = takes_eval_context(T)
 
 @inline function _process_eval_options(eval_context, kws, function_name::Symbol)
-    haskey(kws, :eval_options) || return eval_context
-    return _process_deprecated_eval_options(eval_context, kws[:eval_options], function_name)
+    eval_options = get(kws, :eval_options, nothing)
+    isnothing(eval_options) && return eval_context
+    return _process_deprecated_eval_options(eval_context, eval_options, function_name)
 end
 @noinline function _process_deprecated_eval_options(
     eval_context, eval_options, function_name::Symbol
