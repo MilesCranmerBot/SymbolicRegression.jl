@@ -26,7 +26,9 @@ takes_eval_context(::T) where {T} = takes_eval_context(T)
     haskey(kws, :eval_options) || return eval_context
     return _process_deprecated_eval_options(eval_context, kws[:eval_options], function_name)
 end
-@noinline function _process_deprecated_eval_options(eval_context, eval_options, function_name::Symbol)
+@noinline function _process_deprecated_eval_options(
+    eval_context, eval_options, function_name::Symbol
+)
     Base.depwarn(
         "The `eval_options` keyword is deprecated; use `eval_context` instead.",
         function_name,
@@ -36,13 +38,6 @@ end
         "Cannot use both `eval_context` and deprecated `eval_options`."
     )
     return eval_options
-end
-
-function _process_deprecated_kws(eval_context, deprecated_kws, function_name::Symbol)
-    if any(Base.Fix2(∉, (:eval_options,)), keys(deprecated_kws))
-        throw(ArgumentError("Invalid keyword argument(s): $(keys(deprecated_kws))"))
-    end
-    return _process_eval_options(eval_context, deprecated_kws, function_name)
 end
 
 """

@@ -22,7 +22,7 @@ using DynamicExpressions.ValueInterfaceModule: is_valid_array
 
 using ..ConstantOptimizationModule: ConstantOptimizationModule as CO
 using ..CoreModule: get_safe_op
-using ..InterfaceDynamicExpressionsModule: _process_deprecated_kws
+using ..InterfaceDynamicExpressionsModule: _process_eval_options
 
 abstract type AbstractComposableExpression{T,N} <: AbstractExpression{T,N} end
 
@@ -68,7 +68,9 @@ end
     eval_context::Union{Nothing,EvalContext}=nothing,
     kws...,
 ) where {T}
-    eval_context = _process_deprecated_kws(eval_context, kws, :ComposableExpression)
+    all(Base.Fix2(===, :eval_options), keys(kws)) ||
+        throw(ArgumentError("Invalid keyword argument(s): $(keys(kws))"))
+    eval_context = _process_eval_options(eval_context, kws, :ComposableExpression)
     if eval_context !== nothing && eval_context.buffer !== nothing
         throw(
             ArgumentError(
