@@ -81,6 +81,7 @@ end
 
     f = @test_deprecated ComposableExpression(tree; operators, eval_options)
     @test get_metadata(f).eval_context === eval_options
+    @test_throws ArgumentError ComposableExpression(tree; operators, invalid=true)
 
     structure = TemplateStructure{(:f,)}(((; f), (x1,)) -> f(x1))
     expression = TemplateExpression((; f); structure, operators)

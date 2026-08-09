@@ -38,6 +38,13 @@ end
     return eval_options
 end
 
+function _process_deprecated_kws(eval_context, deprecated_kws, function_name::Symbol)
+    if any(Base.Fix2(∉, (:eval_options,)), keys(deprecated_kws))
+        throw(ArgumentError("Invalid keyword argument(s): $(keys(deprecated_kws))"))
+    end
+    return _process_eval_options(eval_context, deprecated_kws, function_name)
+end
+
 """
     eval_tree_array(tree::Union{AbstractExpression,AbstractExpressionNode}, X::AbstractArray, options::AbstractOptions; kws...)
 
