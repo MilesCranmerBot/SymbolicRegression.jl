@@ -15,7 +15,7 @@ using DispatchDoctor: @unstable
 using ..CoreModule:
     AbstractOptions, Dataset, DATA_TYPE, LOSS_TYPE, specialized_options, dataset_fraction
 using ..UtilsModule: get_birth_order, PerTaskCache, stable_get!
-using ..LossFunctionsModule: create_eval_options, eval_loss, loss_to_cost
+using ..LossFunctionsModule: create_eval_context, eval_loss, loss_to_cost
 using ..PopMemberModule: AbstractPopMember, PopMember
 
 function can_optimize(::AbstractExpression{T}, options) where {T}
@@ -178,12 +178,12 @@ function _optimize_constants(
     dataset, member::P, x0, refs, options, algorithm, optimizer_options, rng
 )::Tuple{P,Float64} where {T,L,N,P<:AbstractPopMember{T,L,N}}
     tree = member.tree
-    eval_options = if options.autodiff_backend === nothing
-        create_eval_options(dataset, options, 0)
+    eval_context = if options.autodiff_backend === nothing
+        create_eval_context(dataset, options, 0)
     else
         nothing
     end
-    ctx = EvaluatorContext(dataset, options, eval_options)
+    ctx = EvaluatorContext(dataset, options, eval_context)
     f = Evaluator(tree, refs, ctx)
     fg! = GradEvaluator(f, options.autodiff_backend)
     return _optimize_constants_inner(
@@ -245,11 +245,11 @@ end
 struct EvaluatorContext{D<:Dataset,O<:AbstractOptions,E} <: Function
     dataset::D
     options::O
-    eval_options::E
+    eval_context::E
 end
 function (c::EvaluatorContext)(tree; regularization=false)
     return eval_loss(
-        tree, c.dataset, c.options; regularization, eval_options=c.eval_options
+        tree, c.dataset, c.options; regularization, eval_context=c.eval_context
     )
 end
 

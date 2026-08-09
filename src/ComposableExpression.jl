@@ -8,7 +8,7 @@ using DynamicExpressions:
     AbstractExpressionNode,
     AbstractOperatorEnum,
     Metadata,
-    EvalOptions,
+    EvalContext,
     constructorof,
     get_metadata,
     eval_tree_array,
@@ -22,6 +22,7 @@ using DynamicExpressions.ValueInterfaceModule: is_valid_array
 
 using ..ConstantOptimizationModule: ConstantOptimizationModule as CO
 using ..CoreModule: get_safe_op
+using ..InterfaceDynamicExpressionsModule: _process_eval_options
 
 abstract type AbstractComposableExpression{T,N} <: AbstractExpression{T,N} end
 
@@ -53,8 +54,8 @@ struct ComposableExpression{
     T,
     N<:AbstractExpressionNode{T},
     D<:@NamedTuple{
-        operators::O, variable_names::V, eval_options::E
-    } where {O<:AbstractOperatorEnum,V,E<:Union{Nothing,EvalOptions}},
+        operators::O, variable_names::V, eval_context::E
+    } where {O<:AbstractOperatorEnum,V,E<:Union{Nothing,EvalContext}},
 } <: AbstractComposableExpression{T,N}
     tree::N
     metadata::Metadata{D}
@@ -64,16 +65,20 @@ end
     tree::AbstractExpressionNode{T};
     operators::Union{AbstractOperatorEnum,Nothing}=nothing,
     variable_names::Union{AbstractVector{<:AbstractString},Nothing}=nothing,
-    eval_options::Union{Nothing,EvalOptions}=nothing,
+    eval_context::Union{Nothing,EvalContext}=nothing,
+    kws...,
 ) where {T}
-    if eval_options !== nothing && eval_options.buffer !== nothing
+    all(Base.Fix2(===, :eval_options), keys(kws)) ||
+        throw(ArgumentError("Invalid keyword argument(s): $(keys(kws))"))
+    eval_context = _process_eval_options(eval_context, kws, :ComposableExpression)
+    if eval_context !== nothing && eval_context.buffer !== nothing
         throw(
             ArgumentError(
                 "ComposableExpression metadata cannot contain an evaluation buffer."
             ),
         )
     end
-    d = (; operators, variable_names, eval_options)
+    d = (; operators, variable_names, eval_context)
     return ComposableExpression(tree, Metadata(d))
 end
 
@@ -172,8 +177,8 @@ struct ValidVector{A<:AbstractVector}
 end
 ValidVector(x::Tuple{Vararg{Any,2}}) = ValidVector(x...)
 
-function get_eval_options(ex::AbstractComposableExpression)
-    return @something(get_metadata(ex).eval_options, EvalOptions())
+function get_eval_context(ex::AbstractComposableExpression)
+    return @something(get_metadata(ex).eval_context, EvalContext())
 end
 function (ex::AbstractComposableExpression)(x)
     return error("ComposableExpression does not support input of type $(typeof(x))")
@@ -227,15 +232,15 @@ function (ex::AbstractComposableExpression)(
 
     if all(_is_valid, valid_args)
         X = stack(map(_get_value, valid_args); dims=1)
-        eval_options = get_eval_options(ex)
-        return ValidVector(eval_tree_array(ex, X; eval_options))
+        eval_context = get_eval_context(ex)
+        return ValidVector(eval_tree_array(ex, X; eval_context=eval_context))
     else
         return ValidVector(_get_value(first(valid_args)), false)
     end
 end
 function (ex::AbstractComposableExpression{T})() where {T}
     X = Matrix{T}(undef, 0, 1)  # Value is irrelevant as it won't be used
-    # TODO: We force avoid the eval_options here,
+    # TODO: We force avoid the eval_context here,
     #       to get a faster constant evaluation result...
     #       but not sure if this is a good idea.
     out, complete = eval_tree_array(ex, X)  # TODO: The valid is not used; not sure how to incorporate
