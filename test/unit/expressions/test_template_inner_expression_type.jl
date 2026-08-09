@@ -3,7 +3,7 @@
         DynamicExpressions,
         AbstractExpressionNode,
         AbstractOperatorEnum,
-        EvalOptions,
+        EvalContext,
         Metadata,
         Node,
         OperatorEnum,
@@ -25,13 +25,13 @@
         tree::AbstractExpressionNode{T};
         operators::Union{AbstractOperatorEnum,Nothing}=nothing,
         variable_names::Union{AbstractVector{<:AbstractString},Nothing}=nothing,
-        eval_options::Union{EvalOptions,Nothing}=nothing,
+        eval_context::Union{EvalContext,Nothing}=nothing,
         tag::Symbol=:wrapped,
         local_parameter::Vector{T}=T[0],
     ) where {T}
         return WrappedExpression(
             tree,
-            Metadata((; operators, variable_names, eval_options, tag, local_parameter)),
+            Metadata((; operators, variable_names, eval_context, tag, local_parameter)),
         )
     end
 
@@ -40,13 +40,13 @@
     function Base.copy(ex::WrappedExpression)
         metadata = get_metadata(ex)
         variable_names = metadata.variable_names
-        eval_options = metadata.eval_options
-        copied_eval_options = isnothing(eval_options) ? nothing : copy(eval_options)
+        eval_context = metadata.eval_context
+        copied_eval_context = isnothing(eval_context) ? nothing : copy(eval_context)
         return WrappedExpression(
             copy(get_contents(ex));
             operators=metadata.operators,
             variable_names,
-            eval_options=copied_eval_options,
+            eval_context=copied_eval_context,
             tag=metadata.tag,
             local_parameter=copy(metadata.local_parameter),
         )

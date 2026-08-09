@@ -15,7 +15,7 @@ using DynamicExpressions:
     AbstractExpression,
     string_tree,
     parse_expression,
-    EvalOptions,
+    EvalContext,
     with_type_parameters,
     constructorof
 using ..UtilsModule: subscriptify
@@ -34,7 +34,7 @@ using ..HallOfFameModule: HallOfFame, string_dominating_pareto_curve, update_hal
 using ..ConstantOptimizationModule: optimize_constants
 using ..ProgressBarsModule: WrappedProgressBar, manually_iterate!, barlen
 using ..ExpressionBuilderModule: strip_metadata
-using ..InterfaceDynamicExpressionsModule: takes_eval_options
+using ..InterfaceDynamicExpressionsModule: takes_eval_context
 
 function logging_callback! end
 
@@ -803,8 +803,8 @@ end
         end
     end
 
-    eval_options_kws = if takes_eval_options(options.operators)
-        (; eval_options=EvalOptions(; options.turbo, options.bumper))
+    eval_context_kws = if takes_eval_context(options.operators)
+        (; eval_context=EvalContext(; options.turbo, options.bumper))
     else
         NamedTuple()
     end
@@ -815,7 +815,7 @@ end
         variable_names=nothing,  # Don't pass dataset variable names - let custom parse_expression handle #N placeholders
         node_type=with_type_parameters(options.node_type, T),
         expression_options=options.expression_options,
-        eval_options_kws...,
+        eval_context_kws...,
     )
 end
 

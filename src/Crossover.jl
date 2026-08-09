@@ -114,7 +114,7 @@ end
     curmaxsize::Int,
     options::AbstractOptions;
     trace::MaybeTrace=nothing,
-    eval_options=nothing,
+    eval_context=nothing,
     plugin_states::Tuple=ntuple(Returns(nothing), length(options.plugins)),
 )::Tuple{P,P,Bool,Float64} where {T,L,D<:Dataset{T,L},N,P<:AbstractPopMember{T,L,N}}
     crossovers = options.crossovers
@@ -134,7 +134,7 @@ end
         curmaxsize,
         options,
         trace,
-        eval_options,
+        eval_context,
         plugin_states,
     )
 end
@@ -147,7 +147,7 @@ function _crossover_generation(
     curmaxsize::Int,
     options::AbstractOptions,
     trace::MaybeTrace,
-    eval_options,
+    eval_context,
     plugin_states::Tuple,
 )::Tuple{
     P,P,Bool,Float64
@@ -192,10 +192,10 @@ function _crossover_generation(
         num_tries += 1
     end
     after_cost1, after_loss1 = eval_cost(
-        dataset, child_tree1, options; complexity=afterSize1, eval_options
+        dataset, child_tree1, options; complexity=afterSize1, eval_context
     )
     after_cost2, after_loss2 = eval_cost(
-        dataset, child_tree2, options; complexity=afterSize2, eval_options
+        dataset, child_tree2, options; complexity=afterSize2, eval_context
     )
     num_evals += 2 * dataset_fraction(dataset)
 
