@@ -116,10 +116,10 @@ end
     options::AbstractOptions;
     trace::MaybeTrace=nothing,
     eval_context=nothing,
-    eval_options=nothing,
     plugin_states::Tuple=ntuple(Returns(nothing), length(options.plugins)),
+    kws...,
 )::Tuple{P,P,Bool,Float64} where {T,L,D<:Dataset{T,L},N,P<:AbstractPopMember{T,L,N}}
-    eval_context = _process_eval_options(eval_context, eval_options, :crossover_generation)
+    eval_context = _process_eval_options(eval_context, kws, :crossover_generation)
     crossovers = options.crossovers
     # Skip sampling for a single entry so the default configuration consumes
     # no extra RNG draws.

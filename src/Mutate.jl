@@ -280,12 +280,12 @@ end
     tmp_trace::MaybeTrace,
     plugin_states::Tuple,
     eval_context=nothing,
-    eval_options=nothing,
     population_for_backsolve=nothing,
+    kws...,
 )::Tuple{
     P,Bool,Float64
 } where {T,L,D<:Dataset{T,L},N<:AbstractExpression{T},P<:AbstractPopMember{T,L,N}}
-    eval_context = _process_eval_options(eval_context, eval_options, :next_generation)
+    eval_context = _process_eval_options(eval_context, kws, :next_generation)
     parent_ref = member.ref
     num_evals = 0.0
 

@@ -22,8 +22,11 @@ takes_eval_context(::Type{<:AbstractOperatorEnum}) = false
 takes_eval_context(::Type{<:OperatorEnum}) = true
 takes_eval_context(::T) where {T} = takes_eval_context(T)
 
-@inline _process_eval_options(eval_context, ::Nothing, ::Symbol) = eval_context
-@noinline function _process_eval_options(eval_context, eval_options, function_name::Symbol)
+@inline function _process_eval_options(eval_context, kws, function_name::Symbol)
+    haskey(kws, :eval_options) || return eval_context
+    return _process_deprecated_eval_options(eval_context, kws[:eval_options], function_name)
+end
+@noinline function _process_deprecated_eval_options(eval_context, eval_options, function_name::Symbol)
     Base.depwarn(
         "The `eval_options` keyword is deprecated; use `eval_context` instead.",
         function_name,
@@ -78,10 +81,10 @@ which speed up evaluation significantly.
         turbo=nothing,
         bumper=nothing,
         eval_context=nothing,
-        eval_options=nothing,
         kws...,
     )
-        eval_context = _process_eval_options(eval_context, eval_options, :eval_tree_array)
+        eval_context = _process_eval_options(eval_context, kws, :eval_tree_array)
+        kws = Base.structdiff((; kws...), (; eval_options=nothing))
         A = expected_array_type(X, typeof(tree))
         operators = DE.get_operators(tree, options)
         eval_context_kws = if takes_eval_context(operators)

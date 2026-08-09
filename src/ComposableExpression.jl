@@ -71,9 +71,7 @@ end
     for key in keys(kws)
         key === :eval_options || error("Unknown keyword argument: $key")
     end
-    eval_context = _process_eval_options(
-        eval_context, get(kws, :eval_options, nothing), :ComposableExpression
-    )
+    eval_context = _process_eval_options(eval_context, kws, :ComposableExpression)
     if eval_context !== nothing && eval_context.buffer !== nothing
         throw(
             ArgumentError(

@@ -104,9 +104,9 @@ function reg_evol_cycle(
     plugin_states::Tuple,
     best_seen::HallOfFame,
     eval_context=nothing,
-    eval_options=nothing,
+    kws...,
 )::Tuple{P,Float64} where {T<:DATA_TYPE,L<:LOSS_TYPE,P<:Population{T,L}}
-    eval_context = _process_eval_options(eval_context, eval_options, :reg_evol_cycle)
+    eval_context = _process_eval_options(eval_context, kws, :reg_evol_cycle)
     num_evals = 0.0
     n_evol_cycles = ceil(Int, pop.n / options.tournament_selection_n)
     mutation_wrappers = strictmap(wrap_mutation_step, plugin_states, options.plugins)
