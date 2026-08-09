@@ -16,7 +16,7 @@ using DynamicExpressions:
     Node,
     OperatorEnum,
     Metadata,
-    EvalOptions,
+    EvalContext,
     get_contents,
     get_metadata,
     get_operators,
@@ -44,6 +44,7 @@ using ..CoreModule:
     ExpressionSpecModule as ES
 using ..ConstantOptimizationModule: ConstantOptimizationModule as CO
 using ..InterfaceDynamicExpressionsModule: InterfaceDynamicExpressionsModule as IDE
+using ..InterfaceDynamicExpressionsModule: _process_eval_options
 using ..MutationFunctionsModule: MutationFunctionsModule as MF
 using ..ExpressionBuilderModule: ExpressionBuilderModule as EB
 using ..HallOfFameModule: HallOfFameModule as HOF
@@ -54,7 +55,7 @@ using ..LossFunctionsModule: LossFunctionsModule as LF
 using ..MutateModule: MutateModule as MM
 using ..PopMemberModule: PopMember, AbstractPopMember
 using ..ComposableExpressionModule:
-    AbstractComposableExpression, ComposableExpression, ValidVector, get_eval_options
+    AbstractComposableExpression, ComposableExpression, ValidVector, get_eval_context
 
 struct ParamVector{T} <: AbstractVector{T}
     _data::Vector{T}
@@ -524,7 +525,7 @@ end
     t,
     operators,
     variable_names,
-    eval_options,
+    eval_context,
     inner_expression_options::NamedTuple,
     ::Val{N},
 ) where {IET,N}
@@ -533,7 +534,7 @@ end
             copy(t);
             operators,
             variable_names,
-            eval_options,
+            eval_context,
             inner_expression_options...,
         ),
         Val(N),
@@ -554,13 +555,13 @@ function EB.create_expression(
 
     operators = options.operators
     variable_names = embed ? dataset.variable_names : nothing
-    eval_options = EvalOptions(; turbo=options.turbo, bumper=options.bumper)
+    eval_context = EvalContext(; turbo=options.turbo, bumper=options.bumper)
     inner_expressions = _build_inner_template_expressions(
         inner_expression_type,
         t,
         operators,
         variable_names,
-        eval_options,
+        eval_context,
         inner_expression_options,
         Val(length(function_keys)),
     )
@@ -773,21 +774,21 @@ function _match_input_eltype(
 end
 
 _with_call_time_buffer(contents, ::Nothing) = contents
-function _with_call_time_buffer(contents::NamedTuple, eval_options::EvalOptions)
-    eval_options.buffer === nothing && return contents
-    return map(Base.Fix2(_with_call_time_buffer, eval_options), contents)
+function _with_call_time_buffer(contents::NamedTuple, eval_context::EvalContext)
+    eval_context.buffer === nothing && return contents
+    return map(Base.Fix2(_with_call_time_buffer, eval_context), contents)
 end
-function _with_call_time_buffer(ex::AbstractComposableExpression, eval_options::EvalOptions)
-    stored = get_eval_options(ex)
+function _with_call_time_buffer(ex::AbstractComposableExpression, eval_context::EvalContext)
+    stored = get_eval_context(ex)
     stored.bumper isa Val{true} && return ex
-    merged = EvalOptions(
+    merged = EvalContext(
         stored.turbo,
         stored.bumper,
         stored.early_exit,
-        eval_options.buffer,
+        eval_context.buffer,
         stored.use_fused,
     )
-    return with_metadata(ex; eval_options=merged)
+    return with_metadata(ex; eval_context=merged)
 end
 
 @stable(
@@ -798,9 +799,10 @@ end
             tree::TemplateExpression,
             cX::AbstractMatrix,
             operators::Union{AbstractOperatorEnum,Nothing}=nothing;
-            eval_options=nothing,
+            eval_context=nothing,
             kws...,
         )
+            eval_context = _process_eval_options(eval_context, kws, :eval_tree_array)
             raw_contents = get_contents(tree)
             metadata = get_metadata(tree)
             if has_invalid_variables(tree)
@@ -813,7 +815,7 @@ end
             end
             result = combine(
                 tree,
-                _with_call_time_buffer(raw_contents, eval_options),
+                _with_call_time_buffer(raw_contents, eval_context),
                 extra_args...,
                 map(x -> ValidVector(copy(x), true), eachrow(cX)),
             )
@@ -1233,7 +1235,7 @@ parse_expression((; f="cos(#1) - 1.5", g="exp(#2) - #1"); expression_type=Templa
     ex::NamedTuple;
     expression_spec::Union{ES.AbstractExpressionSpec,Nothing}=nothing,
     expression_options::Union{NamedTuple,Nothing}=nothing,
-    eval_options::Union{EvalOptions,Nothing}=nothing,
+    eval_context::Union{EvalContext,Nothing}=nothing,
     operators::Union{AbstractOperatorEnum,Nothing}=nothing,
     binary_operators::Union{Vector{<:Function},Nothing}=nothing,
     unary_operators::Union{Vector{<:Function},Nothing}=nothing,
@@ -1242,6 +1244,8 @@ parse_expression((; f="cos(#1) - 1.5", g="exp(#2) - #1"); expression_type=Templa
     node_type::Union{Type,Nothing}=nothing,
     kws...,
 )
+    eval_context = _process_eval_options(eval_context, kws, :parse_expression)
+    kws = Base.structdiff((; kws...), (; eval_options=nothing))
     if expression_spec !== nothing
         resolved_expression_type = ES.get_expression_type(expression_spec)
         resolved_expression_options = ES.get_expression_options(expression_spec)
@@ -1261,8 +1265,8 @@ parse_expression((; f="cos(#1) - 1.5", g="exp(#2) - #1"); expression_type=Templa
     )
     # COV_EXCL_STOP
 
-    eval_options_kws = if eval_options !== nothing
-        (; eval_options)
+    eval_context_kws = if eval_context !== nothing
+        (; eval_context)
     else
         NamedTuple()
     end
@@ -1308,7 +1312,7 @@ parse_expression((; f="cos(#1) - 1.5", g="exp(#2) - #1"); expression_type=Templa
                 parsed_expr.tree;
                 operators,
                 variable_names=nothing,
-                eval_options_kws...,
+                eval_context_kws...,
                 inner_expression_options...,
             )
         end,

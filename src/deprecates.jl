@@ -7,6 +7,8 @@ import .PopulationModule: best_of_sample
 using .AdaptiveParsimonyModule:
     AdaptiveParsimonyPlugin, AdaptiveParsimonyState, RunningSearchStatistics
 
+Base.@deprecate_binding EvalOptions EvalContext
+
 @deprecate(
     best_of_sample(
         pop::Population,

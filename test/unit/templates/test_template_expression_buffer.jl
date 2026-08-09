@@ -1,15 +1,18 @@
 @testitem "TemplateExpression uses one call-time evaluation arena" begin
     using DynamicExpressions:
-        ArrayBuffer, EvalOptions, OperatorEnum, eval_tree_array, get_contents, get_metadata
+        ArrayBuffer, EvalContext, OperatorEnum, eval_tree_array, get_contents, get_metadata
     using SymbolicRegression
     using SymbolicRegression: D
     using SymbolicRegression.LossFunctionsModule: eval_loss
 
+    @test Base.isdeprecated(SymbolicRegression, :EvalOptions)
+    @test SymbolicRegression.EvalOptions === EvalContext
+
     operators = OperatorEnum(; binary_operators=(+, -, *))
-    policy = EvalOptions(; early_exit=false, use_fused=false)
+    policy = EvalContext(; early_exit=false, use_fused=false)
     variable_names = ["x1", "x2"]
     x = ComposableExpression(
-        Node{Float64}(; feature=1); operators, variable_names, eval_options=policy
+        Node{Float64}(; feature=1); operators, variable_names, eval_context=policy
     )
     f = x * x + 1.0
     g = 2.0 * x - 0.5
@@ -17,9 +20,9 @@
 
     function check_buffered(expression, expected)
         unbuffered, unbuffered_complete = eval_tree_array(expression, X, operators)
-        eval_options = EvalOptions(; buffer=ArrayBuffer(Vector{Vector{Float64}}(), Ref(0)))
+        eval_context = EvalContext(; buffer=ArrayBuffer(Vector{Vector{Float64}}(), Ref(0)))
         buffered, buffered_complete = eval_tree_array(
-            expression, X, operators; eval_options
+            expression, X, operators; eval_context=eval_context
         )
 
         @test unbuffered_complete
@@ -27,10 +30,10 @@
         @test buffered ≈ unbuffered
         @test buffered ≈ expected
         @test all(
-            inner -> get_metadata(inner).eval_options.buffer === nothing,
+            inner -> get_metadata(inner).eval_context.buffer === nothing,
             values(get_contents(expression)),
         )
-        return eval_options
+        return eval_context
     end
 
     derivative_structure = TemplateStructure{(:f,)}(
@@ -55,7 +58,7 @@
     repeated_expression = TemplateExpression(
         (; f); structure=repeated_structure, operators, variable_names
     )
-    repeated_eval_options = check_buffered(
+    repeated_eval_context = check_buffered(
         repeated_expression, @. X[1, :]^2 + X[2, :]^2 + 2.0
     )
 
@@ -69,19 +72,19 @@
         operators, expression_spec=TemplateExpressionSpec(; structure=repeated_structure)
     )
     dataset = Dataset(X, zeros(size(X, 2)))
-    repeated_eval_options.buffer.index[] = 1000
+    repeated_eval_context.buffer.index[] = 1000
     loss = eval_loss(
         repeated_expression,
         dataset,
         options;
         regularization=false,
-        eval_options=repeated_eval_options,
+        eval_context=repeated_eval_context,
     )
     @test isfinite(loss)
-    @test repeated_eval_options.buffer.index[] < 1000
+    @test repeated_eval_context.buffer.index[] < 1000
 
-    buffered_metadata = EvalOptions(; buffer=ArrayBuffer(Vector{Vector{Float64}}(), Ref(0)))
+    buffered_metadata = EvalContext(; buffer=ArrayBuffer(Vector{Vector{Float64}}(), Ref(0)))
     @test_throws ArgumentError ComposableExpression(
-        Node{Float64}(; feature=1); operators, eval_options=buffered_metadata
+        Node{Float64}(; feature=1); operators, eval_context=buffered_metadata
     )
 end
