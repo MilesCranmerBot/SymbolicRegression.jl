@@ -109,7 +109,7 @@ end
         DynamicExpressions,
         AbstractExpressionNode,
         AbstractOperatorEnum,
-        EvalOptions,
+        EvalContext,
         Metadata,
         Node,
         NodeTangent,
@@ -133,11 +133,11 @@ end
         tree::AbstractExpressionNode{T};
         operators::Union{AbstractOperatorEnum,Nothing}=nothing,
         variable_names::Union{AbstractVector{<:AbstractString},Nothing}=nothing,
-        eval_options::Union{EvalOptions,Nothing}=nothing,
+        eval_context::Union{EvalContext,Nothing}=nothing,
         scale::T=one(T),
     ) where {T}
         return WrappedExpression(
-            tree, Metadata((; operators, variable_names, eval_options, scale))
+            tree, Metadata((; operators, variable_names, eval_context, scale))
         )
     end
 
@@ -168,7 +168,7 @@ end
         ex.metadata = Metadata((;
             operators=metadata.operators,
             variable_names=metadata.variable_names,
-            eval_options=metadata.eval_options,
+            eval_context=metadata.eval_context,
             scale=T(x[refs.n_tree + 1]),
         ))
         return ex
@@ -186,7 +186,7 @@ end
         Node{Float64}(; val=1.0);
         operators,
         variable_names=["x1"],
-        eval_options=nothing,
+        eval_context=nothing,
         scale=-1.0,
     )
 

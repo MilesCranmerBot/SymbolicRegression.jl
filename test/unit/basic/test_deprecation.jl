@@ -60,3 +60,41 @@
     @test_deprecated member.score = 0.5
     @test member.cost == 0.5
 end
+
+@testitem "Test deprecated evaluation context names" begin
+    using SymbolicRegression
+    using SymbolicRegression: eval_cost, eval_loss
+
+    operators = OperatorEnum(; binary_operators=(+,))
+    options = Options(; operators)
+    X = reshape([1.0, 2.0, 3.0], 1, :)
+    dataset = Dataset(X, copy(vec(X)))
+    tree = Node{Float64}(; feature=1)
+    eval_options = EvalOptions(; early_exit=false)
+
+    @test (@test_deprecated eval_tree_array(tree, X, options; eval_options)) ==
+        eval_tree_array(tree, X, options; eval_context=eval_options)
+    @test (@test_deprecated eval_loss(tree, dataset, options; eval_options)) ==
+        eval_loss(tree, dataset, options; eval_context=eval_options)
+    @test (@test_deprecated eval_cost(dataset, tree, options; eval_options)) ==
+        eval_cost(dataset, tree, options; eval_context=eval_options)
+
+    f = @test_deprecated ComposableExpression(tree; operators, eval_options)
+    @test get_metadata(f).eval_context === eval_options
+    @test_throws ArgumentError ComposableExpression(tree; operators, invalid=true)
+
+    structure = TemplateStructure{(:f,)}(((; f), (x1,)) -> f(x1))
+    expression = TemplateExpression((; f); structure, operators)
+    @test (@test_deprecated eval_tree_array(expression, X, operators; eval_options)) ==
+        eval_tree_array(expression, X, operators; eval_context=eval_options)
+
+    spec = TemplateExpressionSpec(; structure)
+    parsed = @test_deprecated parse_expression(
+        (; f="#1"); expression_spec=spec, operators, eval_options
+    )
+    @test get_metadata(get_contents(parsed).f).eval_context === eval_options
+
+    @test_throws AssertionError eval_tree_array(
+        tree, X, options; eval_context=eval_options, eval_options
+    )
+end
