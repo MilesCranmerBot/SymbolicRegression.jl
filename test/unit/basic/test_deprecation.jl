@@ -78,6 +78,8 @@ end
         eval_loss(tree, dataset, options; eval_context=eval_options)
     @test (@test_deprecated eval_cost(dataset, tree, options; eval_options)) ==
         eval_cost(dataset, tree, options; eval_context=eval_options)
+    @test_throws MethodError eval_loss(tree, dataset, options; eval_contex=eval_options)
+    @test_throws MethodError eval_cost(dataset, tree, options; eval_contex=eval_options)
 
     f = @test_deprecated ComposableExpression(tree; operators, eval_options)
     @test get_metadata(f).eval_context === eval_options
