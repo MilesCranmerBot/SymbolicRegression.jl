@@ -109,6 +109,15 @@ end
     # Test that regular numbers are considered valid
     @test (x + 2).valid
     @test sin(x).valid
+
+    # Test mixed-precision ValidVector-Number operations (natural Julia promotion)
+    xf32 = ValidVector(Float32[1.0, 2.0, 3.0], true)
+    @test (xf32 * 2.0).x ≈ Float32[2.0, 4.0, 6.0]
+    @test eltype((xf32 * 2.0).x) == Float64
+    @test (2.0 * xf32).x ≈ Float32[2.0, 4.0, 6.0]
+    @test eltype((2.0 * xf32).x) == Float64
+    @test (xf32 + 1.0f0).x ≈ Float32[2.0, 3.0, 4.0]
+    @test eltype((xf32 + 1.0f0).x) == Float32
 end
 
 @testitem "Test validity propagation with NaN" begin
