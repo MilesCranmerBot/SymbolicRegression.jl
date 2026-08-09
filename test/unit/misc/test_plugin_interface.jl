@@ -145,6 +145,16 @@ end
     @test first(overridden.crossovers).first isa PluginCrossover
     @test first(overridden.crossovers).second == 7.0
     @test count(pair -> pair.first isa PluginCrossover, overridden.crossovers) == 1
+
+    no_defaults = Options(;
+        binary_operators=[+, *],
+        plugins=(plugin,),
+        default_plugins=(),
+        default_mutations=(),
+        default_crossovers=(),
+    )
+    @test isempty(no_defaults.mutations)
+    @test isempty(no_defaults.crossovers)
 end
 
 @testitem "Plugin interface: lifecycle hooks called for each plugin" begin

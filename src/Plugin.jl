@@ -139,7 +139,8 @@ Weighted custom mutations contributed by `plugin`, as
 `AbstractMutation() => weight` pairs. These are treated as plugin defaults:
 an explicit entry in `Options(; mutations=...)` of the same mutation type
 overrides the plugin contribution, while a plugin contribution overrides a
-built-in default. The default is empty.
+built-in default. Passing `default_mutations` overrides all automatic defaults,
+including plugin contributions. The default is empty.
 
 !!! warning "Experimental"
 """
@@ -152,7 +153,8 @@ Weighted custom crossovers contributed by `plugin`, as
 `AbstractCrossover() => weight` pairs. These are treated as plugin defaults:
 an explicit entry in `Options(; crossovers=...)` of the same crossover type
 overrides the plugin contribution, while a plugin contribution overrides a
-built-in default. The default is empty.
+built-in default. Passing `default_crossovers` overrides all automatic defaults,
+including plugin contributions. The default is empty.
 
 !!! warning "Experimental"
 """

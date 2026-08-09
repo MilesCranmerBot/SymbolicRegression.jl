@@ -1100,10 +1100,14 @@ $(OPTION_DESCRIPTIONS)
     _explicit_mutations = Pair{MutationsModule.AbstractMutation,Float64}[
         p.first => Float64(p.second) for p in something(mutations, ())
     ]
-    _plugin_mutations = Pair{MutationsModule.AbstractMutation,Float64}[
-        p.first => Float64(p.second) for plugin in plugin_tuple for
-        p in plugin_mutations(plugin)
-    ]
+    _plugin_mutations = if default_mutations === nothing
+        Pair{MutationsModule.AbstractMutation,Float64}[
+            p.first => Float64(p.second) for plugin in plugin_tuple for
+            p in plugin_mutations(plugin)
+        ]
+    else
+        Pair{MutationsModule.AbstractMutation,Float64}[]
+    end
     _defaults_with_plugin_mutations = vcat(
         _plugin_mutations,
         filter(
@@ -1129,10 +1133,14 @@ $(OPTION_DESCRIPTIONS)
     _explicit_crossovers = Pair{CrossoversModule.AbstractCrossover,Float64}[
         p.first => Float64(p.second) for p in something(crossovers, ())
     ]
-    _plugin_crossovers = Pair{CrossoversModule.AbstractCrossover,Float64}[
-        p.first => Float64(p.second) for plugin in plugin_tuple for
-        p in plugin_crossovers(plugin)
-    ]
+    _plugin_crossovers = if default_crossovers === nothing
+        Pair{CrossoversModule.AbstractCrossover,Float64}[
+            p.first => Float64(p.second) for plugin in plugin_tuple for
+            p in plugin_crossovers(plugin)
+        ]
+    else
+        Pair{CrossoversModule.AbstractCrossover,Float64}[]
+    end
     _defaults_with_plugin_crossovers = vcat(
         _plugin_crossovers,
         filter(
