@@ -15,7 +15,7 @@ A plugin has two parts: an immutable **config struct** (subtyping
 =#
 using SymbolicRegression
 using SymbolicRegression: AbstractPlugin, MutationEvent, AbstractMutation
-using MLJBase: machine, fit!, report
+using SymbolicRegression: machine, fit!, report
 using Test
 
 struct MutationCounterPlugin <: AbstractPlugin end

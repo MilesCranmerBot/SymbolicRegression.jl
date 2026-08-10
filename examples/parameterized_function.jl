@@ -23,7 +23,7 @@ We will need to simultaneously learn the symbolic expression and per-class param
 =#
 using SymbolicRegression
 using Random: MersenneTwister
-using MLJBase: machine, fit!, predict, report
+using SymbolicRegression: machine, fit!, predict, report
 using Test
 
 #=

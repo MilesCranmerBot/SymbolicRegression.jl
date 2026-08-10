@@ -552,7 +552,7 @@ the rate of constant perturbation:
 
 ```julia
 using SymbolicRegression
-using MLJ
+using SymbolicRegression: machine, fit!, report
 
 X = 2randn(100, 5)
 y = @. 2.7182 * X[:, 1] + 3.1415 * X[:, 2]

@@ -32,7 +32,7 @@ Let's get started!
 using SymbolicRegression
 using SymbolicRegression: ValidVector
 using Random
-using MLJBase: machine, fit!, predict, report
+using SymbolicRegression: machine, fit!, predict, report
 
 #=
 
