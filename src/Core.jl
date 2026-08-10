@@ -56,9 +56,9 @@ using .OptionsStructModule:
     ComplexityMapping,
     specialized_options,
     operator_specialization,
-    _use_batching,
+    use_batching,
     _get_batch_size,
-    _batching_required,
+    batching_required,
     WarmStartIncompatibleError,
     check_warm_start_compatibility
 using .OperatorsModule:

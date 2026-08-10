@@ -114,7 +114,7 @@ function test_dataset_configuration(
             1
     end
 
-    if size(dataset.X, 2) > 10000 && !_use_batching(options, dataset) && verbosity > 0
+    if size(dataset.X, 2) > 10000 && !use_batching(options, dataset) && verbosity > 0
         @info "Note: you are running with more than 10,000 datapoints. You should consider turning on batching (`options.batching`), and also if you need that many datapoints. Unless you have a large amount of noise (in which case you should smooth your dataset first), generally < 10,000 datapoints is enough to find a functional form."
     end
 

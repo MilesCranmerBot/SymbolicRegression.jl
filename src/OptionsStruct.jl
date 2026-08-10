@@ -265,7 +265,7 @@ struct Options{
     plugins::PT
 end
 
-@inline function _use_batching(options::AbstractOptions, dataset::Dataset)
+@inline function use_batching(options::AbstractOptions, dataset::Dataset)
     return options.batching === true || (
         options.batching === :auto &&
         dataset.n > 1000 &&
@@ -281,8 +281,8 @@ end
     return 512
 end
 
-@inline function _batching_required(options::AbstractOptions, dataset::Dataset)
-    return _use_batching(options, dataset) &&
+@inline function batching_required(options::AbstractOptions, dataset::Dataset)
+    return use_batching(options, dataset) &&
            _get_batch_size(options, dataset.n) < dataset.n
 end
 

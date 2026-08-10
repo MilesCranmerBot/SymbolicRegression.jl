@@ -12,7 +12,7 @@ using ..CoreModule:
     init_member,
     resolve_init_member,
     tournament_cost_multiplier,
-    _use_batching
+    use_batching
 using ..LossFunctionsModule: eval_cost, update_baseline_loss!
 using ..MutationFunctionsModule: gen_random_tree
 using ..PopMemberModule: AbstractPopMember, PopMember
@@ -220,7 +220,7 @@ end
 function finalize_costs(
     dataset::Dataset{T,L}, pop::P, options::AbstractOptions
 )::Tuple{P,Float64} where {T,L,P<:Population{T,L}}
-    need_recalculate = _use_batching(options, dataset)
+    need_recalculate = use_batching(options, dataset)
     num_evals = 0.0
     if need_recalculate
         for member in 1:(pop.n)
