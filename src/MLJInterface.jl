@@ -570,9 +570,9 @@ with [`machine`](@ref), then call [`fit!`](@ref), [`predict`](@ref), and
 [`report`](@ref). For pipelines, tuning, and general table support, use the
 MLJ interface instead (identical model structs; load MLJ or MLJBase).
 """
-mutable struct Machine{M<:AbstractSymbolicRegressor}
-    model::M
-    args::Tuple
+mutable struct Machine{M<:AbstractSymbolicRegressor,A<:Tuple}
+    const model::M
+    const args::A
     fitresult::Union{SRFitResult,Nothing}
     cache::Any
     report::Any
