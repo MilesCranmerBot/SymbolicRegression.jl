@@ -1458,7 +1458,11 @@ using .MLJInterfaceModule:
     SRRegressor,
     MultitargetSRRegressor,
     SRTestRegressor,
-    MultitargetSRTestRegressor
+    MultitargetSRTestRegressor,
+    machine,
+    fit!,
+    predict,
+    report
 
 # Hack to get static analysis to work from within tests:
 @ignore include("../test/runtests.jl")
