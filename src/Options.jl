@@ -865,7 +865,7 @@ $(OPTION_DESCRIPTIONS)
     fraction_replaced_guesses = something(fraction_replaced_guesses, _default_options.fraction_replaced_guesses)
     topn = something(topn, _default_options.topn)
     batching = something(batching, _default_options.batching)
-    batch_size = batch_size === nothing ? _default_options.batch_size : batch_size
+    batch_size = something(batch_size, Some(_default_options.batch_size))
     if !user_provided_operators
         binary_operators = something(binary_operators, _default_options.operators.ops[2])
         unary_operators = something(unary_operators, _default_options.operators.ops[1])

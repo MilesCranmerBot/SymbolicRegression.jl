@@ -57,7 +57,7 @@ using .OptionsStructModule:
     specialized_options,
     operator_specialization,
     use_batching,
-    _get_batch_size,
+    get_batch_size,
     batching_required,
     WarmStartIncompatibleError,
     check_warm_start_compatibility

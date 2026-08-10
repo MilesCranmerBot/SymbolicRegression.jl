@@ -9,7 +9,7 @@ using ..CoreModule:
     MaybeTrace,
     create_expression,
     batch,
-    _get_batch_size,
+    get_batch_size,
     batching_required,
     on_cycle_start!,
     on_cycle_end!
@@ -39,7 +39,7 @@ function s_r_cycle(
     num_evals = 0.0
 
     batched_dataset = if batching_required(options, dataset)
-        batch(dataset, _get_batch_size(options, dataset.n))
+        batch(dataset, get_batch_size(options, dataset.n))
     else
         dataset
     end
@@ -81,7 +81,7 @@ function optimize_and_simplify_population(
     should_thread = !(options.deterministic) && !(isa(options.autodiff_backend, AutoEnzyme))
 
     batched_dataset = if batching_required(options, dataset)
-        batch(dataset, _get_batch_size(options, dataset.n))
+        batch(dataset, get_batch_size(options, dataset.n))
     else
         dataset
     end
