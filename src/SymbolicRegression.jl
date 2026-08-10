@@ -1384,7 +1384,7 @@ end
         dataset, out_pop, options, cur_maxsize, trace
     )
     num_evals += evals_from_optimize
-    if _use_batching(options, dataset.n)
+    if _use_batching(options, dataset)
         for i_member in 1:(options.maxsize)
             if best_seen.exists[i_member]
                 cost, result_loss = eval_cost(dataset, best_seen.members[i_member], options)

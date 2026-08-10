@@ -9,8 +9,8 @@ using ..CoreModule:
     MaybeTrace,
     create_expression,
     batch,
-    _use_batching,
     _get_batch_size,
+    _batching_required,
     on_cycle_start!,
     on_cycle_end!
 using ..PopMemberModule: generate_reference
@@ -38,7 +38,7 @@ function s_r_cycle(
     best_examples_seen = HallOfFame(options, dataset)
     num_evals = 0.0
 
-    batched_dataset = if _use_batching(options, dataset.n)
+    batched_dataset = if _batching_required(options, dataset)
         batch(dataset, _get_batch_size(options, dataset.n))
     else
         dataset
@@ -80,7 +80,7 @@ function optimize_and_simplify_population(
     # to manually allocate a new task with a larger stack for Enzyme.
     should_thread = !(options.deterministic) && !(isa(options.autodiff_backend, AutoEnzyme))
 
-    batched_dataset = if _use_batching(options, dataset.n)
+    batched_dataset = if _batching_required(options, dataset)
         batch(dataset, _get_batch_size(options, dataset.n))
     else
         dataset

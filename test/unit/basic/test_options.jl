@@ -68,29 +68,47 @@ end
 
 @testitem "Test automatic batching options" begin
     using SymbolicRegression
-    using SymbolicRegression.CoreModule: _get_batch_size, _use_batching
+    using SymbolicRegression.CoreModule:
+        _batching_required, _get_batch_size, _use_batching, batch
+
+    struct UnbatchableDataset <: Dataset{Float64,Float64}
+        n::Int
+    end
 
     options = Options()
+    dataset_1000 = Dataset(zeros(1, 1000), zeros(1000))
+    dataset_1001 = Dataset(zeros(1, 1001), zeros(1001))
     @test options.batching === :auto
     @test options.batch_size === nothing
-    @test !_use_batching(options, 1000)
-    @test _use_batching(options, 1001)
+    @test !_use_batching(options, dataset_1000)
+    @test _use_batching(options, dataset_1001)
     @test map(n -> _get_batch_size(options, n), (1000, 1001, 4999, 5000, 49999, 50000)) ==
         (1000, 128, 128, 256, 256, 512)
-    @test @inferred(_use_batching(options, 1001))
+    @test @inferred(_use_batching(options, dataset_1001))
     @test @inferred(_get_batch_size(options, 5000)) == 256
+    @test !(@inferred(_batching_required(options, dataset_1000)))
+
+    custom_dataset = UnbatchableDataset(1001)
+    @test !_use_batching(options, custom_dataset)
+    @test !_batching_required(options, custom_dataset)
 
     forced = Options(; batching=true)
-    @test _use_batching(forced, 1000)
+    @test _use_batching(forced, dataset_1000)
     @test _get_batch_size(forced, 1000) == 1000
+    @test !_batching_required(forced, dataset_1000)
+    @test _batching_required(forced, custom_dataset)
+    @test_throws MethodError batch(
+        custom_dataset, _get_batch_size(forced, custom_dataset.n)
+    )
 
     disabled = Options(; batching=false, batch_size=64)
-    @test !_use_batching(disabled, 50000)
+    @test !_use_batching(disabled, dataset_1001)
     @test _get_batch_size(disabled, 50000) == 64
 
     explicit_size = Options(; batching=true, batch_size=2000)
     @test _get_batch_size(explicit_size, 1000) == 1000
     @test _get_batch_size(explicit_size, 5000) == 2000
+    @test !_batching_required(explicit_size, dataset_1000)
     @test Options(; batch_size=Int32(64)).batch_size === 64
 
     @test_throws ArgumentError Options(; batching=:sometimes)

@@ -220,7 +220,7 @@ end
 function finalize_costs(
     dataset::Dataset{T,L}, pop::P, options::AbstractOptions
 )::Tuple{P,Float64} where {T,L,P<:Population{T,L}}
-    need_recalculate = _use_batching(options, dataset.n)
+    need_recalculate = _use_batching(options, dataset)
     num_evals = 0.0
     if need_recalculate
         for member in 1:(pop.n)

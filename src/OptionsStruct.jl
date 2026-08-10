@@ -6,6 +6,7 @@ using DynamicExpressions:
     AbstractOperatorEnum, AbstractExpressionNode, AbstractExpression, OperatorEnum
 using LossFunctions: SupervisedLoss
 
+using ..DatasetModule: Dataset, batch
 using ..MutationsModule: AbstractMutation
 using ..CrossoversModule: AbstractCrossover
 
@@ -264,8 +265,12 @@ struct Options{
     plugins::PT
 end
 
-@inline function _use_batching(options::AbstractOptions, n::Integer)
-    return options.batching === true || (options.batching === :auto && n > 1000)
+@inline function _use_batching(options::AbstractOptions, dataset::Dataset)
+    return options.batching === true || (
+        options.batching === :auto &&
+        dataset.n > 1000 &&
+        hasmethod(batch, Tuple{typeof(dataset),Int})
+    )
 end
 
 @inline function _get_batch_size(options::AbstractOptions, n::Integer)
@@ -274,6 +279,11 @@ end
     n < 5000 && return 128
     n < 50000 && return 256
     return 512
+end
+
+@inline function _batching_required(options::AbstractOptions, dataset::Dataset)
+    return _use_batching(options, dataset) &&
+           _get_batch_size(options, dataset.n) < dataset.n
 end
 
 function Base.print(io::IO, @nospecialize(options::Options))
