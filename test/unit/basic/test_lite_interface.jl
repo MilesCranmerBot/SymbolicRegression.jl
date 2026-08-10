@@ -147,3 +147,29 @@ end
     @test any(s -> occursin("alpha", s), report(mach).equation_strings)
     @test length(predict(mach, Xnt)) == n
 end
+
+@testitem "lite machine interface - row table (Vector of NamedTuples)" begin
+    using SymbolicRegression
+    using SymbolicRegression: machine, fit!, predict, report
+    using Test
+
+    @test !any(m -> nameof(m) === :MLJBase, values(Base.loaded_modules))
+
+    n = 60
+    rows = [(alpha=randn(), beta=randn()) for _ in 1:n]
+    y = [2 * r.alpha + r.beta for r in rows]
+    model = SRRegressor(;
+        binary_operators=[+, *],
+        niterations=2,
+        populations=4,
+        population_size=20,
+        parallelism=:serial,
+        progress=false,
+        deterministic=true,
+        seed=0,
+    )
+    mach = machine(model, rows, y)
+    fit!(mach; verbosity=0)
+    @test any(s -> occursin("alpha", s), report(mach).equation_strings)
+    @test length(predict(mach, rows)) == n
+end

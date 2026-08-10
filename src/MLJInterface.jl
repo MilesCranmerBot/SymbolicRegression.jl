@@ -334,13 +334,19 @@ end
 # MLJBase is loaded. Arrays and NamedTuple tables are handled here so the
 # interface works without MLJBase; other table types fall through to MMI.
 _istable(::AbstractArray) = false
+_istable(::AbstractVector{<:NamedTuple}) = true  # row table
 _istable(X::NamedTuple) = all(Base.Fix2(isa, AbstractVector), values(X))
 _istable(X) = MMI.istable(X)
 
 _colnames(X::NamedTuple) = collect(keys(X))
+_colnames(X::AbstractVector{<:NamedTuple}) = collect(keys(first(X)))
 _colnames(X) = collect(MMI.schema(X).names)
 
 function _matrix(X; transpose::Bool=false)
+    if X isa AbstractVector{<:NamedTuple}
+        Xm_t = stack(collect ∘ values, X)  # features x rows
+        return transpose ? Xm_t : permutedims(Xm_t)
+    end
     Xm = if X isa AbstractVecOrMat
         X
     elseif X isa NamedTuple && _istable(X)
