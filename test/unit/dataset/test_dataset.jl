@@ -41,16 +41,13 @@ end
     using SymbolicRegression: Dataset, Options, test_dataset_configuration
 
     options = Options()
-    disabled_options = Options(; batching=false)
     dataset_50000 = Dataset(zeros(1, 50000), zeros(50000))
     dataset_50001 = Dataset(zeros(1, 50001), zeros(50001))
 
-    @test_logs test_dataset_configuration(dataset_50000, options, 0)
-    @test_logs test_dataset_configuration(dataset_50000, disabled_options, 0)
-    @test_logs (:warn, r"more than 50,000") test_dataset_configuration(
-        dataset_50001, options, 0
-    )
-    @test_logs (:warn, r"more than 50,000") test_dataset_configuration(
-        dataset_50001, disabled_options, 0
-    )
+    @test_logs test_dataset_configuration(dataset_50000, options, 1)
+    @test_logs test_dataset_configuration(dataset_50001, options, 0)
+    @test_logs (:warn, r"more than 50,000") begin
+        test_dataset_configuration(dataset_50001, options, 1)
+        test_dataset_configuration(dataset_50001, options, 1)
+    end
 end

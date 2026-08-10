@@ -109,8 +109,9 @@ function test_dataset_configuration(
         )
     end
 
-    if n > 50000
-        @warn "You are using a dataset with more than 50,000 datapoints. Symbolic regression rarely benefits from this many points; consider subsampling to 10,000 points or fewer. If you have high noise, denoise the data first rather than using more points."
+    if n > 50000 && verbosity > 0
+        @warn "You are using a dataset with more than 50,000 datapoints. Symbolic regression rarely benefits from this many points; consider subsampling to 10,000 points or fewer. If you have high noise, denoise the data first rather than using more points." maxlog =
+            1
     end
 
     if size(dataset.X, 2) > 10000 && !_use_batching(options, dataset.n) && verbosity > 0
