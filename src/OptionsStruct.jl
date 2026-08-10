@@ -282,8 +282,7 @@ end
 end
 
 @inline function batching_required(options::AbstractOptions, dataset::Dataset)
-    return use_batching(options, dataset) &&
-           _get_batch_size(options, dataset.n) < dataset.n
+    return use_batching(options, dataset) && _get_batch_size(options, dataset.n) < dataset.n
 end
 
 function Base.print(io::IO, @nospecialize(options::Options))
