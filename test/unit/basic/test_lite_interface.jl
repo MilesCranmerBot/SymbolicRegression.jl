@@ -173,3 +173,32 @@ end
     @test any(s -> occursin("alpha", s), report(mach).equation_strings)
     @test length(predict(mach, rows)) == n
 end
+
+@testitem "lite machine interface - force refit after incompatible change" begin
+    using SymbolicRegression
+    using SymbolicRegression: machine, fit!, report, WarmStartIncompatibleError
+    using Test
+
+    @test !any(m -> nameof(m) === :MLJBase, values(Base.loaded_modules))
+
+    n = 60
+    X = randn(n, 2)
+    y = @. 2 * X[:, 1] + X[:, 2]
+    model = SRRegressor(;
+        binary_operators=[+, *],
+        niterations=2,
+        populations=4,
+        population_size=20,
+        parallelism=:serial,
+        progress=false,
+        deterministic=true,
+        seed=0,
+    )
+    mach = machine(model, X, y)
+    fit!(mach; verbosity=0)
+
+    mach.model.maxsize = 12
+    @test_throws WarmStartIncompatibleError fit!(mach; verbosity=0)
+    fit!(mach; verbosity=0, force=true)
+    @test report(mach).equations isa Vector
+end

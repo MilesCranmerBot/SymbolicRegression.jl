@@ -598,15 +598,18 @@ function machine(model::AbstractSymbolicRegressor, X, y, w=nothing)
 end
 
 """
-    fit!(mach::Machine; verbosity=1)
+    fit!(mach::Machine; verbosity=1, force=false)
 
 Run the search. On an already-fitted machine, warm-starts from the stored
-search state (like MLJ's `fit!` after increasing `niterations`). Returns `mach`.
+search state (like MLJ's `fit!` after increasing `niterations`). Pass
+`force=true` to discard the stored state and fit from scratch, which is
+required after changing options that are incompatible with warm starts.
+Returns `mach`.
 """
-function fit!(mach::Machine; verbosity::Integer=1)
+function fit!(mach::Machine; verbosity::Integer=1, force::Bool=false)
     X, y = mach.args[1], mach.args[2]
     w = length(mach.args) == 3 ? mach.args[3] : nothing
-    (fitresult, cache, rep) = if mach.fitresult === nothing
+    (fitresult, cache, rep) = if force || mach.fitresult === nothing
         MMI.fit(mach.model, verbosity, X, y, w)
     else
         MMI.update(mach.model, verbosity, mach.fitresult, mach.cache, X, y, w)
