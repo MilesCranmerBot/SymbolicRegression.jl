@@ -510,11 +510,11 @@ Default returns `nothing`.
     return nothing
 end
 
-# Forward-declared per kwarg→plugin migration. Plugin modules (loaded above
-# Core) provide the only method. Each returns either a plugin instance or
-# `nothing` (when the legacy kwarg is off).
+# Forward declarations for factories implemented by concrete plugin modules.
+# Legacy-kwarg factories may return `nothing` when the kwarg disables them.
 function default_adaptive_parsimony_plugin end
 function default_simulated_annealing_plugin end
+function default_adaptive_mutation_weights_plugin end
 
 # Append defaults whose type isn't already in the user tuple. Each default
 # may be `nothing` (auto-injected plugin disabled by the legacy kwarg) and
