@@ -72,6 +72,22 @@ Let's see an example:
 ```julia
 import SymbolicRegression: SRRegressor
 import MLJ: machine, fit!, predict, report
+```
+
+If you do not want to install MLJ, the same workflow runs with
+SymbolicRegression alone: it provides unexported `machine`, `fit!`,
+`predict`, and `report` functions that mirror the MLJ verbs, so you can
+instead write:
+
+```julia
+import SymbolicRegression: SRRegressor, machine, fit!, predict, report
+```
+
+This lightweight interface supports matrices and `NamedTuple`s of vectors
+as input; for other table types (such as `DataFrame`s), or to compose with
+MLJ pipelines and tuning, load MLJ or MLJBase.
+
+```julia
 
 # Dataset with two named features:
 X = (a = rand(500), b = rand(500))
