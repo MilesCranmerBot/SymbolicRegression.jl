@@ -46,7 +46,7 @@ a Python frontend.
 **Contents**:
 
 - [Quickstart](#quickstart)
-  - [MLJ Interface](#mlj-interface)
+  - [Fit and Predict](#fit-and-predict)
   - [Low-Level Interface](#low-level-interface)
 - [Constructing expressions](#constructing-expressions)
 - [Exporting to SymbolicUtils.jl](#exporting-to-symbolicutilsjl)
@@ -63,31 +63,12 @@ using Pkg
 Pkg.add("SymbolicRegression")
 ```
 
-### MLJ Interface
+### Fit and Predict
 
-The easiest way to use SymbolicRegression.jl
-is with [MLJ](https://github.com/alan-turing-institute/MLJ.jl).
 Let's see an example:
 
 ```julia
-import SymbolicRegression: SRRegressor
-import MLJ: machine, fit!, predict, report
-```
-
-If you do not want to install MLJ, the same workflow runs with
-SymbolicRegression alone: it provides unexported `machine`, `fit!`,
-`predict`, and `report` functions that mirror the MLJ verbs, so you can
-instead write:
-
-```julia
 import SymbolicRegression: SRRegressor, machine, fit!, predict, report
-```
-
-This lightweight interface supports matrices and `NamedTuple`s of vectors
-as input; for other table types (such as `DataFrame`s), or to compose with
-MLJ pipelines and tuning, load MLJ or MLJBase.
-
-```julia
 
 # Dataset with two named features:
 X = (a = rand(500), b = rand(500))
@@ -151,13 +132,19 @@ For fitting multiple outputs, one can use `MultitargetSRRegressor`
 (and pass an array of indices to `idx` in `predict` for selecting specific equations).
 For a full list of options available to each regressor, see the [API page](https://ai.damtp.cam.ac.uk/symbolicregression/dev/api/).
 
+These same functions are also available from
+[MLJ](https://github.com/alan-turing-institute/MLJ.jl), via
+`import MLJ: machine, fit!, predict, report`, which is useful if you want
+compatibility with the broader MLJ ecosystem (pipelines, tuning, etc.) or
+support for arbitrary Tables.jl tables such as `DataFrame`s.
+
 ### Low-Level Interface
 
 The heart of SymbolicRegression.jl is the
 `equation_search` function.
 This takes a 2D array and attempts
 to model a 1D array using analytic functional forms.
-**Note:** unlike the MLJ interface,
+**Note:** unlike the interface above,
 this assumes column-major input of shape [features, rows].
 
 ```julia
