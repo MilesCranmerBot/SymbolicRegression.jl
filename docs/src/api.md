@@ -1,6 +1,6 @@
 # API
 
-## MLJ interface
+## Regressor interface
 
 ```@docs
 SRRegressor
