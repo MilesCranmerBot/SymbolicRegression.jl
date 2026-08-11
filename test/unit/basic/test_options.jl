@@ -50,6 +50,9 @@ end
         if field == :crossover_probability
             @test v1_value == 0.0259
             @test v2_value == 0.20
+        elseif field == :adaptive_parsimony_scaling
+            @test v1_value == 1040.0
+            @test v2_value == 20.0
         elseif field == :batching
             @test v1_value === false
             @test v2_value === :auto
@@ -63,7 +66,7 @@ end
 
     @test Options().crossover_probability == 0.20
     @test Options(; defaults=v"1.0.0").crossover_probability == 0.0259
-    @test Options(; defaults=v"2.0.0-alpha").adaptive_parsimony_scaling == 1040.0
+    @test Options(; defaults=v"2.0.0-alpha").adaptive_parsimony_scaling == 20.0
 end
 
 @testitem "Test automatic batching options" begin

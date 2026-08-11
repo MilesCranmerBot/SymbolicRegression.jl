@@ -1381,7 +1381,11 @@ function default_options(@nospecialize(version::Union{VersionNumber,Nothing} = n
 
     if isnothing(version) || version >= v"2.0.0-"
         defaults = (;
-            defaults..., crossover_probability=0.20, batching=:auto, batch_size=nothing
+            defaults...,
+            adaptive_parsimony_scaling=20.0,
+            crossover_probability=0.20,
+            batching=:auto,
+            batch_size=nothing,
         )
     end
 
