@@ -6,6 +6,7 @@ using DynamicExpressions:
     copy_into!,
     get_tree,
     preserve_sharing,
+    count_constant_nodes,
     count_scalar_constants,
     simplify_tree!,
     combine_operators,
@@ -224,7 +225,9 @@ function condition_mutate_constant!(
     options::AbstractOptions,
     curmaxsize::Int,
 )
-    n_constants = count_scalar_constants(member.tree)
+    n_constants = max(
+        count_constant_nodes(member.tree), count_scalar_constants(member.tree)
+    )
     _scale_weight!(weights, ConstantMutation, min(8, n_constants) / 8.0)
     return nothing
 end

@@ -42,7 +42,8 @@
 end
 
 @testitem "Testing error handling in InterfaceDataTypesModule" begin
-    using SymbolicRegression: init_value, sample_value, mutate_value
+    using SymbolicRegression:
+        ConstantMutation, Options, init_value, sample_value, mutate_value
     using Random
 
     struct CustomTestType end
@@ -54,11 +55,11 @@ end
         rng, CustomTestType, options
     )
     @test_throws "No `mutate_value` method defined for type" mutate_value(
-        rng, CustomTestType(), 0.5, options
+        rng, CustomTestType(), 0.5, ConstantMutation()
     )
 end
 
-@testitem "Custom value mutation keeps the public temperature contract" begin
+@testitem "Custom value mutation receives the selected mutation" begin
     using SymbolicRegression
     using SymbolicRegression.MutationFunctionsModule: _mutate_value
     using Random
@@ -66,21 +67,25 @@ end
 
     struct TemperatureAwareValue
         temperature::Float64
+        perturbation_factor::Float64
+        probability_negate::Float64
     end
 
     function SymbolicRegression.mutate_value(
         rng::AbstractRNG,
         value::TemperatureAwareValue,
         temperature::Real,
-        options::SymbolicRegression.AbstractOptions,
+        mutation::ConstantMutation,
     )
-        return TemperatureAwareValue(Float64(temperature))
+        return TemperatureAwareValue(
+            Float64(temperature), mutation.perturbation_factor, mutation.probability_negate
+        )
     end
 
     options = Options()
     mutation = ConstantMutation(; perturbation_factor=0.2)
     result = _mutate_value(
-        Random.default_rng(), TemperatureAwareValue(1.0), 0.25, mutation, options
+        Random.default_rng(), TemperatureAwareValue(1.0, 0.0, 0.0), 0.25, mutation, options
     )
-    @test result.temperature == 0.25
+    @test result == TemperatureAwareValue(0.25, 0.2, 0.01)
 end

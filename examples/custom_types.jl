@@ -143,6 +143,7 @@ into any other constant value.
 
 The `temperature` argument reflects per-call mutation scaling, including
 simulated annealing. You can use it as you see fit, or ignore it.
+The `mutation` argument contains the selected [`ConstantMutation`](@ref) configuration.
 =#
 
 using SymbolicRegression.UtilsModule: poisson_sample
@@ -151,7 +152,7 @@ import SymbolicRegression: mutate_value
 
 sample_alphabet(rng::AbstractRNG) = rand(rng, 'a':'z')
 
-function mutate_value(rng::AbstractRNG, val::String, temperature, options)
+function mutate_value(rng::AbstractRNG, val::String, temperature, mutation::ConstantMutation)
     max_length = 10
     lambda_max = 5.0
     λ = max(nextfloat(0.0), lambda_max * clamp(temperature, 0, 1))

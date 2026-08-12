@@ -159,9 +159,9 @@ function _mutate_value(
 end
 
 function _mutate_value(
-    rng::AbstractRNG, val, temperature, m::ConstantMutation, options::AbstractOptions
+    rng::AbstractRNG, val, temperature, m::ConstantMutation, ::AbstractOptions
 )
-    return mutate_value(rng, val, temperature, options)
+    return mutate_value(rng, val, temperature, m)
 end
 
 function mutate_value(

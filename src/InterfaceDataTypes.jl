@@ -1,6 +1,7 @@
 module InterfaceDataTypesModule
 
 using Random: AbstractRNG
+using ..MutationsModule: ConstantMutation
 
 """
     init_value(::Type)
@@ -23,11 +24,11 @@ function sample_value(::AbstractRNG, ::Type{T}, _) where {T}
 end
 
 """
-    mutate_value(rng::AbstractRNG, val, temperature, options)
+    mutate_value(rng::AbstractRNG, val, temperature, mutation::ConstantMutation)
 
 Return a mutated value of the given type.
 """
-function mutate_value(::AbstractRNG, ::T, _, _) where {T}
+function mutate_value(::AbstractRNG, ::T, _, ::ConstantMutation) where {T}
     return error("No `mutate_value` method defined for type $T. Please define one.")
 end
 
