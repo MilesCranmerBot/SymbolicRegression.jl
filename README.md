@@ -132,11 +132,13 @@ For fitting multiple outputs, one can use `MultitargetSRRegressor`
 (and pass an array of indices to `idx` in `predict` for selecting specific equations).
 For a full list of options available to each regressor, see the [API page](https://ai.damtp.cam.ac.uk/symbolicregression/dev/api/).
 
+Inputs can be matrices, `NamedTuple`s of vectors, or any Tables.jl-compatible
+table (such as a `DataFrame`).
+
 These same functions are also available from
 [MLJ](https://github.com/alan-turing-institute/MLJ.jl), via
 `import MLJ: machine, fit!, predict, report`, which is useful if you want
-compatibility with the broader MLJ ecosystem (pipelines, tuning, etc.) or
-support for arbitrary Tables.jl tables such as `DataFrame`s.
+compatibility with the broader MLJ ecosystem (pipelines, tuning, etc.).
 
 ### Low-Level Interface
 
