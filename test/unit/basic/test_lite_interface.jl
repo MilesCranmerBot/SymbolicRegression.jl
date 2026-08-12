@@ -259,3 +259,33 @@ end
     @test any(s -> occursin("Column1", s), report(mach).equation_strings)
     @test length(predict(mach, Xtab)) == n
 end
+
+@testitem "lite machine interface - multitarget with Tables.jl y" begin
+    using SymbolicRegression
+    using SymbolicRegression: machine, fit!, predict, report
+    using Tables: Tables
+    using Test
+
+    @test !any(m -> nameof(m) === :MLJBase, values(Base.loaded_modules))
+
+    n = 60
+    X = randn(n, 2)
+    ym = hcat(2 .* X[:, 1], X[:, 2] .+ 1)
+    ytab = Tables.table(ym)  # exotic Tables.jl table as target
+    model = MultitargetSRRegressor(;
+        binary_operators=[+, *],
+        niterations=2,
+        populations=4,
+        population_size=20,
+        parallelism=:serial,
+        progress=false,
+        deterministic=true,
+        seed=0,
+    )
+    mach = machine(model, X, ytab)
+    fit!(mach; verbosity=0)
+    pred = predict(mach, X)
+    @test Tables.istable(pred)
+    @test Tables.columnnames(Tables.columns(pred)) == (:Column1, :Column2)
+    @test length(Tables.getcolumn(pred, :Column1)) == n
+end
