@@ -26,7 +26,7 @@ We will define some unary and binary operators on strings:
 
 using SymbolicRegression
 using DynamicExpressions: GenericOperatorEnum
-using MLJBase: machine, fit!, report, MLJBase
+using SymbolicRegression: machine, fit!, report
 using Random
 
 """Returns the first half of the string."""
@@ -80,7 +80,7 @@ dataset = let rng = Random.MersenneTwister(0)
 end
 
 #=
-We'll get them in the right format for MLJ:
+We'll separate the features and targets:
 =#
 
 X = [d.X for d in dataset]
@@ -244,11 +244,10 @@ model = SRRegressor(;
     hparams...,
 );
 
-mach = machine(model, X, y; scitype_check_level=0)
+mach = machine(model, X, y)
 
 #=
 At this point, you would run `fit!(mach)` as usual.
-Ignore the MLJ warnings about `scitype`s.
 ```julia
 fit!(mach)
 ```
@@ -260,7 +259,7 @@ using Test
 
 fit!(mach)
 
-ŷ = report(mach).equations[end](MLJBase.matrix(X; transpose=true))
+ŷ = report(mach).equations[end](stack(collect ∘ values, X))
 mean_loss = sum(map(edit_distance, y, ŷ)) / length(y)
 @test mean_loss <= test_loss_threshold
 #! format: on

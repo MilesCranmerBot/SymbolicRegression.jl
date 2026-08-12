@@ -2,7 +2,7 @@
 
 ```julia
 using SymbolicRegression
-using MLJ
+using SymbolicRegression: machine, fit!, predict, report
 ```
 
 ## 1. Simple search
@@ -134,8 +134,7 @@ println(typeof(best))
 # Expression{Float32,Node{Float32},...}
 ```
 
-We can also use `Complex` numbers (ignore the warning
-from MLJ):
+We can also use `Complex` numbers:
 
 ```julia
 cos_re(x::Complex{T}) where {T} = cos(abs(x)) + 0im
@@ -178,7 +177,7 @@ F = @. (G * M * m / r^2)
 (Note that the `u` macro from `DynamicQuantities` will automatically convert to SI units. To avoid this,
 use the `us` macro.)
 
-Now, let's ready the data for MLJ:
+Now, let's put the data in a named-column format:
 
 ```julia
 X = (; M=M, m=m, r=r)
@@ -279,7 +278,7 @@ First, let's set up our basic configuration:
 ```julia
 using SymbolicRegression
 using Random: rand, MersenneTwister
-using MLJBase: machine, fit!, report
+using SymbolicRegression: machine, fit!, report
 ```
 
 The key part is defining our template structure. This determines how different parts of the expression combine:
@@ -380,8 +379,8 @@ You can track the progress of symbolic regression searches using TensorBoard or 
 
 ```julia
 using SymbolicRegression
+using SymbolicRegression: machine, fit!, report
 using TensorBoardLogger
-using MLJ
 
 logger = SRLogger(TBLogger("logs/sr_run"))
 
@@ -440,7 +439,7 @@ end
 We can now set up the model to find the symbolic expression for the integral:
 
 ```julia
-using MLJ
+using SymbolicRegression: machine, fit!, report
 
 model = SRRegressor(
     binary_operators=(+, -, *, /),
@@ -477,7 +476,8 @@ In this example, let's look for the following function:
 ```
 
 ```julia
-using SymbolicRegression, MLJ
+using SymbolicRegression
+using SymbolicRegression: machine, fit!, predict, report
 
 X = randn(Float32, 6, 2048)
 y = @. sin(X[1, :] * X[2, :] + 0.1f0) + cos(X[3, :]) * X[4, :] + X[5, :] / (X[6, :] * X[6, :] + 1)
@@ -518,7 +518,8 @@ This operator allows you to declare arbitrary arities by passing them in a `arit
 Here's an example using a ternary conditional operator:
 
 ```julia
-using SymbolicRegression, MLJ
+using SymbolicRegression
+using SymbolicRegression: machine, fit!, predict, report
 
 scalar_ifelse(a, b, c) = a > 0 ? b : c
 
@@ -551,7 +552,7 @@ the rate of constant perturbation:
 
 ```julia
 using SymbolicRegression
-using MLJ
+using SymbolicRegression: machine, fit!, report
 
 X = 2randn(100, 5)
 y = @. 2.7182 * X[:, 1] + 3.1415 * X[:, 2]
