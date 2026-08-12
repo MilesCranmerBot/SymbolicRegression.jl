@@ -302,7 +302,11 @@ end
 
     n = 60
     rows = NamedTuple[
-        isodd(i) ? (alpha=Float64(i), beta=Float64(100 + i)) : (beta=Float64(100 + i), alpha=Float64(i)) for i in 1:n
+        if isodd(i)
+            (alpha=Float64(i), beta=Float64(100 + i))
+        else
+            (beta=Float64(100 + i), alpha=Float64(i))
+        end for i in 1:n
     ]
     y = [2 * r.alpha + r.beta for r in rows]
     Xm = SymbolicRegression.MLJInterfaceModule._matrix(rows; transpose=true)
