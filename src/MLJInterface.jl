@@ -349,8 +349,6 @@ function _istable(X::AbstractArray)
     _has_tables_ext() && return _tables_istable(X)
     return false
 end
-_istable(::AbstractMatrix{<:Number}) = false
-_istable(::AbstractVector{<:Number}) = false
 _istable(::AbstractVector{<:NamedTuple}) = true  # row table
 _istable(X::NamedTuple) = all(Base.Fix2(isa, AbstractVector), values(X))
 function _istable(X)
