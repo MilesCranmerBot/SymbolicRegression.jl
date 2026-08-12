@@ -104,6 +104,8 @@ The `Kp` parameter is used to specify the symbols representing the parameters, i
     `num_features = (; f=2, g=1)`.
 - `num_parameters`: Optional `NamedTuple` of parameter keys => integers representing the number of
     parameters required for each parameter vector.
+- `prototype`: Optional example dataset element used as dummy data when inferring `num_features`.
+    This is useful when `combine` only accepts a custom element type. Defaults to `1.0`.
 """
 struct TemplateStructure{K,Kp,E<:Function,NF<:NamedTuple{K},NP<:NamedTuple{Kp}} <: Function
     combine::E
@@ -116,9 +118,10 @@ function TemplateStructure{K}(
     _deprecated_num_features=nothing;
     num_features=nothing,
     num_parameters=nothing,
+    prototype=nothing,
 ) where {K,E<:Function}
     return TemplateStructure{K,()}(
-        combine, _deprecated_num_features; num_features, num_parameters
+        combine, _deprecated_num_features; num_features, num_parameters, prototype
     )
 end
 function TemplateStructure{K,Kp}(
@@ -126,6 +129,7 @@ function TemplateStructure{K,Kp}(
     _deprecated_num_features=nothing;
     num_features::Union{NamedTuple{K},Nothing}=nothing,
     num_parameters::Union{NamedTuple{Kp},Nothing}=nothing,
+    prototype=nothing,
 ) where {K,Kp,E<:Function}
     if _deprecated_num_features !== nothing
         Base.depwarn(
@@ -143,7 +147,7 @@ function TemplateStructure{K,Kp}(
     num_features = @something(
         num_features,
         _deprecated_num_features,
-        infer_variable_constraints(Val(K), num_parameters, combine)
+        infer_variable_constraints(Val(K), num_parameters, combine, prototype)
     )
     return TemplateStructure{K,Kp,E,typeof(num_features),typeof(num_parameters)}(
         combine, num_features, num_parameters
@@ -161,14 +165,16 @@ get_parameter_keys(::TemplateStructure{<:Any,Kp}) where {Kp} = Kp
 has_params(s::TemplateStructure) = !isempty(get_parameter_keys(s))
 # COV_EXCL_STOP
 
-function _record_composable_expression!(variable_constraints, ::Val{k}, args...) where {k}
+function _record_composable_expression!(
+    variable_constraints, zero_arg_result, ::Val{k}, args...
+) where {k}
     vc = variable_constraints[k][]
     if vc == -1
         variable_constraints[k][] = length(args)
     elseif vc != length(args)
         throw(ArgumentError("Inconsistent number of arguments passed to $k"))
     end
-    return isempty(args) ? 0.0 : first(args)
+    return isempty(args) ? zero_arg_result : first(args)
 end
 
 struct ArgumentRecorder{F} <: Function
@@ -213,14 +219,21 @@ end
 
 """Infers number of features used by each subexpression, by passing in test data."""
 function infer_variable_constraints(
-    ::Val{K}, @nospecialize(num_parameters::NamedTuple), @nospecialize(combiner)
+    ::Val{K},
+    @nospecialize(num_parameters::NamedTuple),
+    @nospecialize(combiner),
+    @nospecialize(prototype = nothing),
 ) where {K}
+    proto = @something(prototype, 1.0)
+    zero_arg_result = @something(prototype, 0.0)
     variable_constraints = NamedTuple{K}(map(_ -> Ref(-1), K))
-    inner = Fix{1}(_record_composable_expression!, variable_constraints)
+    inner = Fix{1}(
+        Fix{1}(_record_composable_expression!, variable_constraints), zero_arg_result
+    )
     dummy_expressions = NamedTuple{K}(map(k -> ArgumentRecorder(Fix{1}(inner, Val(k))), K))
-    dummy_valid_vectors = Base.Iterators.repeated(ValidVector(ones(Float64, 1), true))
+    dummy_valid_vectors = Base.Iterators.repeated(ValidVector([proto], true))
     dummy_params = NamedTuple{keys(num_parameters)}(
-        map(n -> ParamVector(ones(Float64, n)), values(num_parameters))
+        map(n -> ParamVector(fill(proto, n)), values(num_parameters))
     )
 
     check_combiner_applicability(
