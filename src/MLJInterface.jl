@@ -333,24 +333,49 @@ end
 # Native replacements for MMI's data utilities, which are stubs unless
 # MLJBase is loaded. Arrays and NamedTuple tables are handled here so the
 # interface works without MLJBase; other table types fall through to MMI.
-_istable(::AbstractArray) = false
+# Hooks extended by SymbolicRegressionTablesExt. Any third-party table type
+# (DataFrames, StructArrays, ...) comes from a package that itself depends
+# on Tables.jl, so the extension is guaranteed active whenever such an
+# object can exist.
+function _tables_istable end
+function _tables_colnames end
+function _tables_matrix end
+function _tables_table end
+
+_has_tables_ext() = hasmethod(_tables_istable, Tuple{Any})
+
+function _istable(X::AbstractArray)
+    # Exotic array types (e.g. StructArrays) can still be Tables.jl tables.
+    _has_tables_ext() && return _tables_istable(X)
+    return false
+end
+_istable(::AbstractMatrix{<:Number}) = false
+_istable(::AbstractVector{<:Number}) = false
 _istable(::AbstractVector{<:NamedTuple}) = true  # row table
 _istable(X::NamedTuple) = all(Base.Fix2(isa, AbstractVector), values(X))
-_istable(X) = MMI.istable(X)
+function _istable(X)
+    _has_tables_ext() && return _tables_istable(X)
+    return MMI.istable(X)
+end
 
 _colnames(X::NamedTuple) = collect(keys(X))
 _colnames(X::AbstractVector{<:NamedTuple}) = collect(keys(first(X)))
-_colnames(X) = collect(MMI.schema(X).names)
+function _colnames(X)
+    _has_tables_ext() && return _tables_colnames(X)
+    return collect(MMI.schema(X).names)
+end
 
 function _matrix(X; transpose::Bool=false)
     if X isa AbstractVector{<:NamedTuple}
         Xm_t = stack(collect ∘ values, X)  # features x rows
         return transpose ? Xm_t : permutedims(Xm_t)
     end
-    Xm = if X isa AbstractVecOrMat
-        X
-    elseif X isa NamedTuple && _istable(X)
+    Xm = if X isa NamedTuple && _istable(X)
         reduce(hcat, collect(values(X)))
+    elseif X isa AbstractVecOrMat && !_istable(X)
+        X
+    elseif _has_tables_ext()
+        return _tables_matrix(X; transpose)
     else
         return MMI.matrix(X; transpose)
     end
@@ -363,6 +388,11 @@ function _table(out_matrix::AbstractMatrix; names, prototype)
         # table when no prototype is given.
         syms = Tuple(Symbol.(names))
         return NamedTuple{syms}(Tuple(collect(col) for col in eachcol(out_matrix)))
+    elseif prototype isa AbstractVector{<:NamedTuple}
+        syms = Tuple(Symbol.(names))
+        return [NamedTuple{syms}(Tuple(row)) for row in eachrow(out_matrix)]
+    elseif _has_tables_ext()
+        return _tables_table(out_matrix; names, prototype)
     else
         return MMI.table(out_matrix; names, prototype)
     end

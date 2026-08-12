@@ -202,3 +202,60 @@ end
     fit!(mach; verbosity=0, force=true)
     @test report(mach).equations isa Vector
 end
+
+@testitem "lite machine interface - multitarget predict with row-table Xnew" begin
+    using SymbolicRegression
+    using SymbolicRegression: machine, fit!, predict, report
+    using Test
+
+    @test !any(m -> nameof(m) === :MLJBase, values(Base.loaded_modules))
+
+    n = 60
+    rows = [(alpha=randn(), beta=randn()) for _ in 1:n]
+    ynt = (p=[2 * r.alpha for r in rows], q=[r.beta + 1 for r in rows])
+    model = MultitargetSRRegressor(;
+        binary_operators=[+, *],
+        niterations=2,
+        populations=4,
+        population_size=20,
+        parallelism=:serial,
+        progress=false,
+        deterministic=true,
+        seed=0,
+    )
+    mach = machine(model, rows, ynt)
+    fit!(mach; verbosity=0)
+    pred = predict(mach, rows)
+    @test pred isa AbstractVector{<:NamedTuple}
+    @test keys(first(pred)) == (:p, :q)
+    @test length(pred) == n
+end
+
+@testitem "lite machine interface - Tables extension" begin
+    using SymbolicRegression
+    using SymbolicRegression: machine, fit!, predict, report
+    using Tables: Tables
+    using Test
+
+    @test !any(m -> nameof(m) === :MLJBase, values(Base.loaded_modules))
+    @test Base.get_extension(SymbolicRegression, :SymbolicRegressionTablesExt) !== nothing
+
+    n = 60
+    Xm = randn(n, 3)
+    Xtab = Tables.table(Xm)  # a genuine Tables.jl table, not a Matrix/NamedTuple
+    y = @. 2 * Xm[:, 1] + Xm[:, 2]
+    model = SRRegressor(;
+        binary_operators=[+, *],
+        niterations=2,
+        populations=4,
+        population_size=20,
+        parallelism=:serial,
+        progress=false,
+        deterministic=true,
+        seed=0,
+    )
+    mach = machine(model, Xtab, y)
+    fit!(mach; verbosity=0)
+    @test any(s -> occursin("Column1", s), report(mach).equation_strings)
+    @test length(predict(mach, Xtab)) == n
+end
