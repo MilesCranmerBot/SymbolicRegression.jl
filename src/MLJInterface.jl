@@ -339,10 +339,12 @@ end
 # object can exist.
 function _tables_istable end
 function _tables_colnames end
+function _tables_columns end
 function _tables_matrix end
 function _tables_table end
 
-_has_tables_ext() = hasmethod(_tables_istable, Tuple{Any})
+is_extension_loaded(::Val) = false
+_has_tables_ext() = is_extension_loaded(Val(:Tables))
 
 function _istable(X::AbstractArray)
     # Exotic array types (e.g. StructArrays) can still be Tables.jl tables.
@@ -363,9 +365,19 @@ function _colnames(X)
     return collect(MMI.schema(X).names)
 end
 
+# Materialize a table's columns once, so sources that can only be
+# traversed a single time survive the separate `_matrix`/`_colnames` calls.
+function _columns(X)
+    (X isa NamedTuple || X isa AbstractVector{<:NamedTuple}) && return X
+    _has_tables_ext() && return _tables_columns(X)
+    return X
+end
+
 function _matrix(X; transpose::Bool=false)
     if X isa AbstractVector{<:NamedTuple}
-        Xm_t = stack(collect ∘ values, X)  # features x rows
+        # Fetch by name: rows may order their fields differently.
+        names = keys(first(X))
+        Xm_t = stack(row -> collect(map(Base.Fix1(getproperty, row), names)), X)  # features x rows
         return transpose ? Xm_t : permutedims(Xm_t)
     end
     Xm = if X isa NamedTuple && _istable(X)
@@ -381,16 +393,17 @@ function _matrix(X; transpose::Bool=false)
 end
 
 function _table(out_matrix::AbstractMatrix; names, prototype)
-    if prototype isa Union{NamedTuple,Nothing}
-        # Matches MLJBase's `table`, which returns a named-tuple column
-        # table when no prototype is given.
-        syms = Tuple(Symbol.(names))
+    syms = Tuple(Symbol.(names))
+    if prototype isa NamedTuple
+        return NamedTuple{syms}(Tuple(collect(col) for col in eachcol(out_matrix)))
+    elseif _has_tables_ext()
+        # Mirrors MLJBase's `table` exactly (MatrixTable when `prototype` is
+        # `nothing`, else the prototype's materializer).
+        return _tables_table(out_matrix; names, prototype)
+    elseif prototype === nothing
         return NamedTuple{syms}(Tuple(collect(col) for col in eachcol(out_matrix)))
     elseif prototype isa AbstractVector{<:NamedTuple}
-        syms = Tuple(Symbol.(names))
         return [NamedTuple{syms}(Tuple(row)) for row in eachrow(out_matrix)]
-    elseif _has_tables_ext()
-        return _tables_table(out_matrix; names, prototype)
     else
         return MMI.table(out_matrix; names, prototype)
     end
@@ -398,6 +411,7 @@ end
 
 function get_matrix_and_info(X, ::Type{D}) where {D}
     is_table = _istable(X)
+    X = is_table ? _columns(X) : X
     Xm_t = _matrix(X; transpose=true)
     colnames, display_colnames = if !is_table
         (

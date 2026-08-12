@@ -54,6 +54,7 @@ end
 @testitem "MMI.fit/predict without MLJBase - multitarget NamedTuple y" begin
     using SymbolicRegression
     const MMI = SymbolicRegression.MLJInterfaceModule.MMI
+    using Tables: Tables
     using Test
 
     @test !any(m -> nameof(m) === :MLJBase, values(Base.loaded_modules))
@@ -74,9 +75,11 @@ end
     fitresult, _, rep = MMI.fit(model, 0, X, ynt)
     @test length(rep.equations) == 2
     pred = MMI.predict(model, fitresult, X)
-    @test pred isa NamedTuple
-    @test keys(pred) == (:p, :q)
-    @test length(pred.p) == n
+    # Tables is loaded in the test env, so this matches MLJBase's behavior
+    # for a table-fitted y and non-table Xnew: a Tables.jl MatrixTable.
+    @test Tables.istable(pred)
+    @test collect(Tables.columnnames(Tables.columns(pred))) == [:p, :q]
+    @test length(Tables.getcolumn(pred, :p)) == n
 end
 
 @testitem "lite machine interface without MLJBase" begin
@@ -286,6 +289,37 @@ end
     fit!(mach; verbosity=0)
     pred = predict(mach, X)
     @test Tables.istable(pred)
-    @test Tables.columnnames(Tables.columns(pred)) == (:Column1, :Column2)
+    @test collect(Tables.columnnames(Tables.columns(pred))) == [:Column1, :Column2]
     @test length(Tables.getcolumn(pred, :Column1)) == n
+end
+
+@testitem "lite machine interface - row table with inconsistent field order" begin
+    using SymbolicRegression
+    using SymbolicRegression: machine, fit!, predict, report
+    using Test
+
+    @test !any(m -> nameof(m) === :MLJBase, values(Base.loaded_modules))
+
+    n = 60
+    rows = NamedTuple[
+        isodd(i) ? (alpha=Float64(i), beta=Float64(100 + i)) : (beta=Float64(100 + i), alpha=Float64(i)) for i in 1:n
+    ]
+    y = [2 * r.alpha + r.beta for r in rows]
+    Xm = SymbolicRegression.MLJInterfaceModule._matrix(rows; transpose=true)
+    @test Xm[1, :] == [Float64(i) for i in 1:n]      # alpha, by name
+    @test Xm[2, :] == [Float64(100 + i) for i in 1:n] # beta, by name
+
+    model = SRRegressor(;
+        binary_operators=[+, *],
+        niterations=2,
+        populations=4,
+        population_size=20,
+        parallelism=:serial,
+        progress=false,
+        deterministic=true,
+        seed=0,
+    )
+    mach = machine(model, rows, y)
+    fit!(mach; verbosity=0)
+    @test length(predict(mach, rows)) == n
 end
