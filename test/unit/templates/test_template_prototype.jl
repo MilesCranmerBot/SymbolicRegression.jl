@@ -57,3 +57,15 @@ end
     )
     @test structure3.num_features == (; f=1)
 end
+
+@testitem "TemplateStructure keyword order is irrelevant" begin
+    using SymbolicRegression
+
+    structure = TemplateStructure{(:f, :g),(:p, :q)}(
+        ((; f, g), (; p, q), (x, y)) -> f(x, p) + g(y, q);
+        num_features=(; g=1, f=2),
+        num_parameters=(; q=4, p=3),
+    )
+    @test structure.num_features == (; f=2, g=1)
+    @test structure.num_parameters == (; p=3, q=4)
+end

@@ -127,8 +127,8 @@ end
 function TemplateStructure{K,Kp}(
     combine::E,
     _deprecated_num_features=nothing;
-    num_features::Union{NamedTuple{K},Nothing}=nothing,
-    num_parameters::Union{NamedTuple{Kp},Nothing}=nothing,
+    num_features::Union{NamedTuple,Nothing}=nothing,
+    num_parameters::Union{NamedTuple,Nothing}=nothing,
     prototype=nothing,
 ) where {K,Kp,E<:Function}
     if _deprecated_num_features !== nothing
@@ -144,11 +144,17 @@ function TemplateStructure{K,Kp}(
         )
     end
     num_parameters = @something(num_parameters, NamedTuple(),)
+    issetequal(keys(num_parameters), Kp) ||
+        throw(ArgumentError("`num_parameters` keys must match `$Kp`"))
+    num_parameters = NamedTuple{Kp}(map(k -> getproperty(num_parameters, k), Kp))
     num_features = @something(
         num_features,
         _deprecated_num_features,
         infer_variable_constraints(Val(K), num_parameters, combine, prototype)
     )
+    issetequal(keys(num_features), K) ||
+        throw(ArgumentError("`num_features` keys must match `$K`"))
+    num_features = NamedTuple{K}(map(k -> getproperty(num_features, k), K))
     return TemplateStructure{K,Kp,E,typeof(num_features),typeof(num_parameters)}(
         combine, num_features, num_parameters
     )
