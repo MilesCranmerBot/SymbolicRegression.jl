@@ -414,13 +414,29 @@ function DE.get_variable_names(
         nothing
     end
 end
+function _pack_parameters(p::ParamVector{T}) where {T}
+    buffer = Vector{DE.get_number_type(T)}(undef, DE.count_scalar_constants(p))
+    idx = firstindex(buffer)
+    for value in p._data
+        idx = DE.pack_scalar_constants!(buffer, idx, value)
+    end
+    return buffer
+end
+function _unpack_parameters!(p::ParamVector, constants, idx::Int)
+    for i in eachindex(p._data)
+        (idx, p._data[i]) = DE.unpack_scalar_constants(constants, idx, p._data[i])
+    end
+    return idx
+end
 function DE.get_scalar_constants(e::TemplateExpression)
     # Get constants for each inner expression
     consts_and_refs = map(DE.get_scalar_constants, values(get_contents(e)))
-    parameters = get_metadata(e).parameters
-    flat_constants = vcat(
-        map(first, consts_and_refs)..., (has_params(e) ? values(parameters) : ())...
-    )
+    parameter_chunks = if has_params(e)
+        map(_pack_parameters, values(get_metadata(e).parameters))
+    else
+        ()
+    end
+    flat_constants = vcat(map(first, consts_and_refs)..., parameter_chunks...)
     # Collect info so we can put them back in the right place,
     # like the indexes of the constants in the flattened array
     refs = map(c_ref -> (; n=length(first(c_ref)), ref=last(c_ref)), consts_and_refs)
@@ -436,13 +452,9 @@ function DE.set_scalar_constants!(e::TemplateExpression, constants, refs)
         cursor[] = i + n
     end
     if has_params(e)
-        num_parameters = get_metadata(e).structure.num_parameters
         parameters = get_metadata(e).parameters
-        for k in keys(num_parameters)
-            n = num_parameters[k]
-            i = cursor[]
-            parameters[k]._data[:] = constants[i:(i + n - 1)]
-            cursor[] = i + n
+        for k in keys(parameters)
+            cursor[] = _unpack_parameters!(parameters[k], constants, cursor[])
         end
     end
     return e
@@ -602,6 +614,7 @@ function EB.extra_init_params(
                 T,
                 num_parameters,
                 options.expression_options.parameter_initializer,
+                options,
             )
         else
             _copy(get_metadata(prototype).parameters::NamedTuple)
@@ -613,14 +626,24 @@ function EB.extra_init_params(
 end
 
 function _initialize_template_parameters(
-    rng::AbstractRNG, ::Type{T}, num_parameters::NamedTuple, parameter_initializer::Nothing
+    rng::AbstractRNG,
+    ::Type{T},
+    num_parameters::NamedTuple,
+    parameter_initializer::Nothing,
+    options::AbstractOptions,
 ) where {T}
     return NamedTuple{keys(num_parameters)}(
-        map(n -> ParamVector(randn(rng, T, (n,))), values(num_parameters))
+        map(values(num_parameters)) do n
+            ParamVector(T[CM.sample_value(rng, T, options) for _ in 1:n])
+        end,
     )
 end
 function _initialize_template_parameters(
-    rng::AbstractRNG, ::Type{T}, num_parameters::NamedTuple, parameter_initializer
+    rng::AbstractRNG,
+    ::Type{T},
+    num_parameters::NamedTuple,
+    parameter_initializer,
+    ::AbstractOptions,
 ) where {T}
     initialized = parameter_initializer(rng, T, num_parameters)
     initialized isa NamedTuple || throw(
@@ -1052,9 +1075,10 @@ function MF.mutate_constant(
             rng, 1:num_params, num_params_to_mutate; replace=false
         )
         parameters = get_metadata(ex).parameters[key_to_mutate]::ParamVector
-        factors = [MF.mutate_factor(T, temperature, m, rng) for _ in idx_to_mutate]
-        @inbounds for (i, f) in zip(idx_to_mutate, factors)
-            parameters._data[i] *= f
+        @inbounds for i in idx_to_mutate
+            parameters._data[i] = MF._mutate_value(
+                rng, parameters._data[i], temperature, m, options
+            )
         end
         return ex
     end
@@ -1072,9 +1096,7 @@ function DE.count_scalar_constants(ex::TemplateExpression)
     )
 end
 function DE.count_scalar_constants(p::ParamVector)
-    # TODO: This is not general enough; we should be using `get_scalar_constants`
-    # on the parameters themselves.
-    return length(p._data)
+    return sum(DE.count_scalar_constants, p._data; init=0)
 end
 
 function CC.check_constraints(
@@ -1141,7 +1163,8 @@ end
 - `parameter_initializer`: **Experimental** optional function called as
     `parameter_initializer(rng, T, num_parameters)` when creating a new candidate.
     It must return a `NamedTuple` with the same keys and vector lengths as
-    `num_parameters`. By default, template parameters are initialized with `randn`.
+    `num_parameters`. By default, template parameters are sampled with
+    [`sample_value`](@ref).
 """
 struct TemplateExpressionSpec{ST<:TemplateStructure,IET,IEO<:NamedTuple,PI} <:
        AbstractExpressionSpec
