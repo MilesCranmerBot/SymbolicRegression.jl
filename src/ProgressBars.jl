@@ -1,7 +1,7 @@
 module ProgressBarsModule
 
 using Compat: Fix
-using ProgressMeter: ProgressMeter, Progress, next!
+using ProgressMeter: ProgressMeter, Progress
 using StyledStrings: @styled_str, annotatedstring
 using ..UtilsModule: AnnotatedString
 
@@ -31,11 +31,11 @@ function ProgressMeter.finish!(pbar::WrappedProgressBar)
     return nothing
 end
 
-"""Iterate a progress bar."""
-function manually_iterate!(pbar::WrappedProgressBar)
+"""Set a progress bar to a given value."""
+function manually_iterate!(pbar::WrappedProgressBar, value::Int)
     width = barlen(pbar)
     postfix = map(Fix{2}(format_for_meter, width), pbar.postfix)
-    next!(pbar.bar; showvalues=postfix, valuecolor=:none)
+    ProgressMeter.update!(pbar.bar, value; showvalues=postfix, valuecolor=:none)
     return nothing
 end
 

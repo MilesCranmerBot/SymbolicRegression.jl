@@ -1058,9 +1058,8 @@ function _main_search_loop!(
     start_time = time()
     progress_bar = if ropt.progress
         #TODO: need to iterate this on the max cycles remaining!
-        sum_cycle_remaining = sum(state.cycles_remaining)
         WrappedProgressBar(
-            sum_cycle_remaining, ropt.niterations; barlen=options.terminal_width
+            ropt.niterations * nout, ropt.niterations; barlen=options.terminal_width
         )
     else
         nothing
@@ -1231,8 +1230,11 @@ function _main_search_loop!(
                 )
                 if !isnothing(progress_bar)
                     head_node_occupation = estimate_work_fraction(resource_monitor)
+                    cycles_elapsed = total_cycles * nout - sum(state.cycles_remaining)
+                    iterations_elapsed = cld(cycles_elapsed, options.populations)
                     update_progress_bar!(
                         progress_bar,
+                        iterations_elapsed,
                         only(state.halls_of_fame),
                         only(datasets),
                         options,
