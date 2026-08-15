@@ -552,3 +552,34 @@ end
         return false
     end
 end
+
+@testitem "Hall of fame CSV escapes equation quotes" begin
+    using SymbolicRegression
+    using SymbolicRegression.SearchUtilsModule: RuntimeOptions, save_to_file
+    using Test
+
+    X = reshape([1.0, 2.0], 1, :)
+    y = vec(X)
+    dataset = Dataset(X, y; variable_names=["x\"quoted"])
+    tmpdir = mktempdir()
+    options = Options(;
+        binary_operators=(+,), unary_operators=(), output_directory=tmpdir
+    )
+    expression = Expression(
+        Node{Float64}(; feature=1); operators=nothing, variable_names=nothing
+    )
+    member = PopMember(dataset, expression, options; deterministic=true)
+
+    save_to_file(
+        [member], 1, 1, dataset, options, RuntimeOptions(; run_id="quoted")
+    )
+
+    csv_file = joinpath(tmpdir, "quoted", "hall_of_fame.csv")
+    data_line = only(
+        filter(
+            line -> !startswith(line, "Complexity") && !isempty(line),
+            split(read(csv_file, String), '\n'),
+        ),
+    )
+    @test data_line == "1,0.0,\"x\"\"quoted\""
+end
