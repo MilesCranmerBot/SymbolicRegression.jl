@@ -562,17 +562,13 @@ end
     y = vec(X)
     dataset = Dataset(X, y; variable_names=["x\"quoted"])
     tmpdir = mktempdir()
-    options = Options(;
-        binary_operators=(+,), unary_operators=(), output_directory=tmpdir
-    )
+    options = Options(; binary_operators=(+,), unary_operators=(), output_directory=tmpdir)
     expression = Expression(
         Node{Float64}(; feature=1); operators=nothing, variable_names=nothing
     )
     member = PopMember(dataset, expression, options; deterministic=true)
 
-    save_to_file(
-        [member], 1, 1, dataset, options, RuntimeOptions(; run_id="quoted")
-    )
+    save_to_file([member], 1, 1, dataset, options, RuntimeOptions(; run_id="quoted"))
 
     csv_file = joinpath(tmpdir, "quoted", "hall_of_fame.csv")
     data_line = only(

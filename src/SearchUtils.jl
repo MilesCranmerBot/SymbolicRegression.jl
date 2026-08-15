@@ -706,7 +706,10 @@ function save_to_file(
 
         println(tmp_io, "Complexity,Loss,Equation")
         for i in 1:dominating_n
-            println(tmp_io, "$(complexities[i]),$(losses[i]),\"$(replace(strings[i], '"' => "\"\""))\"")
+            println(
+                tmp_io,
+                "$(complexities[i]),$(losses[i]),\"$(replace(strings[i], '"' => "\"\""))\"",
+            )
         end
 
         String(take!(tmp_io))
