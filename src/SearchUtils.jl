@@ -511,6 +511,7 @@ end
 
 function update_progress_bar!(
     progress_bar::WrappedProgressBar,
+    iterations_elapsed::Int,
     hall_of_fame::HallOfFame{T,L},
     dataset::Dataset{T,L},
     options::AbstractOptions,
@@ -539,7 +540,7 @@ function update_progress_bar!(
         (styled"{italic:Info}", styled"{italic:$load_string}"),
         (styled"{italic:Hall of Fame}", equation_strings),
     ]
-    manually_iterate!(progress_bar)
+    manually_iterate!(progress_bar, iterations_elapsed)
     return nothing
 end
 
@@ -563,11 +564,13 @@ function print_search_state(
     load_string = get_load_string(; head_node_occupation, parallelism)
     print(load_string)
     cycles_elapsed = total_cycles * nout - sum(cycles_remaining)
+    iterations_elapsed = cycles_elapsed ÷ options.populations
+    total_iterations = (total_cycles * nout) ÷ options.populations
     @printf(
         "Progress: %d / %d total iterations (%.3f%%)\n",
-        cycles_elapsed,
-        total_cycles * nout,
-        100.0 * cycles_elapsed / total_cycles / nout
+        iterations_elapsed,
+        total_iterations,
+        100.0 * cycles_elapsed / (total_cycles * nout)
     )
 
     print("═"^twidth * "\n")
