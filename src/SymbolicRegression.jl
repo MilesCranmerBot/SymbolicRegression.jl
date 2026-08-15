@@ -1231,7 +1231,7 @@ function _main_search_loop!(
                 if !isnothing(progress_bar)
                     head_node_occupation = estimate_work_fraction(resource_monitor)
                     cycles_elapsed = total_cycles * nout - sum(state.cycles_remaining)
-                    iterations_elapsed = cld(cycles_elapsed, options.populations)
+                    iterations_elapsed = cycles_elapsed ÷ options.populations
                     update_progress_bar!(
                         progress_bar,
                         iterations_elapsed,

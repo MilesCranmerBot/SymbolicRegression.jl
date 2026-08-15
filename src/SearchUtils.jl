@@ -564,7 +564,7 @@ function print_search_state(
     load_string = get_load_string(; head_node_occupation, parallelism)
     print(load_string)
     cycles_elapsed = total_cycles * nout - sum(cycles_remaining)
-    iterations_elapsed = cld(cycles_elapsed, options.populations)
+    iterations_elapsed = cycles_elapsed ÷ options.populations
     total_iterations = (total_cycles * nout) ÷ options.populations
     @printf(
         "Progress: %d / %d total iterations (%.3f%%)\n",
