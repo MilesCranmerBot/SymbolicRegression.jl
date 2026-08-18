@@ -43,8 +43,9 @@ struct Weights{S<:Real,T<:Real,V<:AbstractVector{T}}
         return new{S,T,V}(values, sum)
     end
 end
-Weights(values::AbstractVector{T}, sum::S) where {S<:Real,T<:Real} =
-    Weights{S,T,typeof(values)}(values, sum)
+function Weights(values::AbstractVector{T}, sum::S) where {S<:Real,T<:Real}
+    return Weights{S,T,typeof(values)}(values, sum)
+end
 Weights(values::AbstractVector{<:Real}) = Weights(values, sum(values))
 
 Base.length(wv::Weights) = length(wv.values)
@@ -96,8 +97,9 @@ function fisher_yates_sample!(rng::AbstractRNG, a::AbstractArray, x::AbstractArr
     end
     return x
 end
-fisher_yates_sample!(a::AbstractArray, x::AbstractArray) =
-    fisher_yates_sample!(default_rng(), a, x)
+function fisher_yates_sample!(a::AbstractArray, x::AbstractArray)
+    return fisher_yates_sample!(default_rng(), a, x)
+end
 
 function self_avoid_sample!(rng::AbstractRNG, a::AbstractArray, x::AbstractArray)
     1 == firstindex(a) == firstindex(x) ||
@@ -128,8 +130,9 @@ function self_avoid_sample!(rng::AbstractRNG, a::AbstractArray, x::AbstractArray
     end
     return x
 end
-self_avoid_sample!(a::AbstractArray, x::AbstractArray) =
-    self_avoid_sample!(default_rng(), a, x)
+function self_avoid_sample!(a::AbstractArray, x::AbstractArray)
+    return self_avoid_sample!(default_rng(), a, x)
+end
 
 ### Interface functions (poly-algorithms)
 
@@ -150,12 +153,16 @@ end
 
 # `ordered=true` (sequential sampling) is not ported, as SymbolicRegression
 # never uses it.
-function sample!(rng::AbstractRNG, a::AbstractArray, x::AbstractArray;
-                 replace::Bool=true, ordered::Bool=false)
+function sample!(
+    rng::AbstractRNG,
+    a::AbstractArray,
+    x::AbstractArray;
+    replace::Bool=true,
+    ordered::Bool=false,
+)
     1 == firstindex(a) == firstindex(x) ||
         throw(ArgumentError("non 1-based arrays are not supported"))
-    ordered &&
-        throw(ArgumentError("ordered sampling is not supported by StatsBaseLite"))
+    ordered && throw(ArgumentError("ordered sampling is not supported by StatsBaseLite"))
     n = length(a)
     k = length(x)
     k == 0 && return x
@@ -176,15 +183,24 @@ function sample!(rng::AbstractRNG, a::AbstractArray, x::AbstractArray;
     end
     return x
 end
-sample!(a::AbstractArray, x::AbstractArray; replace::Bool=true, ordered::Bool=false) =
-    sample!(default_rng(), a, x; replace=replace, ordered=ordered)
-
-function sample(rng::AbstractRNG, a::AbstractArray{T}, n::Integer;
-                replace::Bool=true, ordered::Bool=false) where {T}
-    sample!(rng, a, Vector{T}(undef, n); replace=replace, ordered=ordered)
+function sample!(
+    a::AbstractArray, x::AbstractArray; replace::Bool=true, ordered::Bool=false
+)
+    return sample!(default_rng(), a, x; replace=replace, ordered=ordered)
 end
-sample(a::AbstractArray, n::Integer; replace::Bool=true, ordered::Bool=false) =
-    sample(default_rng(), a, n; replace=replace, ordered=ordered)
+
+function sample(
+    rng::AbstractRNG,
+    a::AbstractArray{T},
+    n::Integer;
+    replace::Bool=true,
+    ordered::Bool=false,
+) where {T}
+    return sample!(rng, a, Vector{T}(undef, n); replace=replace, ordered=ordered)
+end
+function sample(a::AbstractArray, n::Integer; replace::Bool=true, ordered::Bool=false)
+    return sample(default_rng(), a, n; replace=replace, ordered=ordered)
+end
 
 ################################################################
 #
@@ -194,8 +210,7 @@ sample(a::AbstractArray, n::Integer; replace::Bool=true, ordered::Bool=false) =
 ################################################################
 
 function sample(rng::AbstractRNG, wv::Weights)
-    1 == firstindex(wv) ||
-        throw(ArgumentError("non 1-based arrays are not supported"))
+    1 == firstindex(wv) || throw(ArgumentError("non 1-based arrays are not supported"))
     wsum = sum(wv)
     isfinite(wsum) || throw(ArgumentError("only finite weights are supported"))
     t = rand(rng) * wsum

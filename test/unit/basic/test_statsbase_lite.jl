@@ -21,20 +21,20 @@
         )
             a = collect(1:n)
             @test StatsBaseLite.sample(StableRNG(42), a, k; replace=false) ==
-                  StatsBase.sample(StableRNG(42), a, k; replace=false)
+                StatsBase.sample(StableRNG(42), a, k; replace=false)
         end
 
         # UnitRange input (used for parameter index mutation)
         @test StatsBaseLite.sample(StableRNG(1), 1:97, 9; replace=false) ==
-              StatsBase.sample(StableRNG(1), 1:97, 9; replace=false)
+            StatsBase.sample(StableRNG(1), 1:97, 9; replace=false)
 
         # With replacement
         @test StatsBaseLite.sample(StableRNG(7), [3.5, 2.5, 1.5], 12) ==
-              StatsBase.sample(StableRNG(7), [3.5, 2.5, 1.5], 12)
+            StatsBase.sample(StableRNG(7), [3.5, 2.5, 1.5], 12)
 
         # Single draw
         @test StatsBaseLite.sample(StableRNG(3), ['a', 'b', 'c']) ==
-              StatsBase.sample(StableRNG(3), ['a', 'b', 'c'])
+            StatsBase.sample(StableRNG(3), ['a', 'b', 'c'])
 
         # Weighted single draws, including zero-weight entries
         w = [0.1, 0.0, 5.0, 2.0, 0.0, 0.3, 1.0]
@@ -46,7 +46,7 @@
 
         # Weighted draw from a collection
         @test StatsBaseLite.sample(StableRNG(5), 'a':'g', StatsBaseLite.Weights(w)) ==
-              StatsBase.sample(StableRNG(5), 'a':'g', StatsBase.Weights(w))
+            StatsBase.sample(StableRNG(5), 'a':'g', StatsBase.Weights(w))
     end
 
     @testset "contracts" begin
