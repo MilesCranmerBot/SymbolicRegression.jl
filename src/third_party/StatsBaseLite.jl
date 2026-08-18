@@ -1,9 +1,4 @@
-# StatsBaseLite: a minimal vendored subset of StatsBase.jl (v0.34),
-# covering only the functionality used by SymbolicRegression:
-# `Weights`, single weighted draws, and `sample` with/without replacement.
-#
-# The code below is ported verbatim (reduced to the used API surface) from
-# StatsBase.jl, which is licensed under the MIT License:
+# StatsBaseLite.jl — vendored subset of StatsBase.jl v0.34 (MIT license below)
 #
 # > Copyright (c) 2012-2016: Dahua Lin, Simon Byrne, Andreas Noack,
 # > Douglas Bates, John Myles White, Simon Kornblith, and other contributors.
@@ -31,8 +26,7 @@ module StatsBaseLite
 using Random: AbstractRNG, Sampler, default_rng
 
 #####
-##### Ported from StatsBase.jl src/weights.jl (`@weights Weights`),
-##### reduced to an immutable struct (SR never mutates weights in place).
+##### Ported from StatsBase.jl src/weights.jl; made immutable (upstream: mutable)
 #####
 
 struct Weights{S<:Real,T<:Real,V<:AbstractVector{T}}
@@ -151,8 +145,6 @@ function direct_sample!(rng::AbstractRNG, a::AbstractArray, x::AbstractArray)
     return x
 end
 
-# `ordered=true` (sequential sampling) is not ported, as SymbolicRegression
-# never uses it.
 function sample!(
     rng::AbstractRNG,
     a::AbstractArray,
@@ -203,10 +195,7 @@ function sample(a::AbstractArray, n::Integer; replace::Bool=true, ordered::Bool=
 end
 
 ################################################################
-#
-#  Weighted sampling (single draws only; multi-draw weighted sampling
-#  and AliasTables-based sampling are not used by SymbolicRegression)
-#
+#  Weighted sampling
 ################################################################
 
 function sample(rng::AbstractRNG, wv::Weights)

@@ -235,7 +235,6 @@ end
 using DispatchDoctor: @stable, @unstable
 
 @stable default_mode = "disable" begin
-    # Minified in-house packages (see src/third_party/)
     include("third_party/StatsBaseLite.jl")
 
     include("Utils.jl")
@@ -1200,7 +1199,7 @@ function _main_search_loop!(
                 worker_plugin_states = strictmap(
                     options.plugins, returned_plugin_states, state.plugin_states[j]
                 ) do plugin, worker_state, latest_head_state
-                    refresh_worker_plugin_state(
+                    return refresh_worker_plugin_state(
                         worker_state, latest_head_state, plugin, dataset
                     )
                 end
