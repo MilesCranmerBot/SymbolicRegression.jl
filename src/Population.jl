@@ -1,6 +1,6 @@
 module PopulationModule
 
-using StatsBase: StatsBase
+using ..StatsBaseLite: StatsBaseLite as StatsBase
 using DispatchDoctor: @unstable
 using DynamicExpressions: AbstractExpression, constructorof
 using ..CoreModule:

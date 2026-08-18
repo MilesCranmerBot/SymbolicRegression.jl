@@ -6,7 +6,7 @@ module SearchUtilsModule
 using Printf: @printf, @sprintf
 using Dates: Dates
 using Distributed: Distributed, @spawnat, Future, procs, addprocs
-using StatsBase: mean
+using Statistics: mean
 using StyledStrings: @styled_str
 using DispatchDoctor: @unstable
 using Logging: AbstractLogger

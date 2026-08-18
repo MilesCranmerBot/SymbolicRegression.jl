@@ -234,6 +234,9 @@ end
 
 using DispatchDoctor: @stable, @unstable
 
+# Minified in-house packages (see src/third_party/)
+include("third_party/StatsBaseLite.jl")
+
 @stable default_mode = "disable" begin
     include("Utils.jl")
     include("InterfaceDynamicQuantities.jl")

@@ -19,7 +19,7 @@ import ..MutationsModule:
     DoNothingMutation,
     default_mutations
 
-using StatsBase: StatsBase
+using ...StatsBaseLite: StatsBaseLite as StatsBase
 
 """
     MutationWeights(;kws...)

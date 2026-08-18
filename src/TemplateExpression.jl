@@ -1,7 +1,7 @@
 module TemplateExpressionModule
 
 using Random: AbstractRNG
-using StatsBase: StatsBase
+using ..StatsBaseLite: StatsBaseLite as StatsBase
 using Compat: Fix
 using Random: default_rng
 using DynamicDiff: DynamicDiff
