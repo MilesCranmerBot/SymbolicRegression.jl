@@ -304,14 +304,14 @@ Build a basis library from seed terms and population subtrees.
 - `BasisLibrary`: Basis terms and their evaluated values
 """
 function build_basis_library(
-    tree_prototype::AbstractExpressionNode{T},
+    tree_prototype::N,
     dataset::Dataset{T},
     options::AbstractOptions,
     nfeatures::Int,
     population;
     max_library_size::Int=200,
     top_k::Int=10,
-) where {T<:DATA_TYPE}
+)::BasisLibrary{T,N} where {T<:DATA_TYPE,N<:AbstractExpressionNode{T}}
     min_library_size = 1 + nfeatures
     if max_library_size < min_library_size
         throw(
@@ -477,14 +477,14 @@ and per-term complexity costs.
     version increments.
 """
 function prepare_backsolve_setup(
-    tree_prototype::AbstractExpressionNode{T},
+    tree_prototype::N,
     dataset::Dataset{T},
     options::AbstractOptions,
     nfeatures::Int,
     population;
     max_library_size::Int=200,
     top_k::Int=10,
-) where {T<:DATA_TYPE}
+)::BacksolveSetup{T,N} where {T<:DATA_TYPE,N<:AbstractExpressionNode{T}}
     basis = build_basis_library(
         tree_prototype,
         dataset,
@@ -646,7 +646,8 @@ operator set, since the output is structurally a weighted sum.
         if extra_values === nothing
             (setup.term_costs, setup.join_cost)
         else
-            extra_cost = compute_complexity(extra_term, options) + setup.addend_overhead
+            extra_node = extra_term::AbstractExpressionNode{T}
+            extra_cost = compute_complexity(extra_node, options) + setup.addend_overhead
             ([setup.term_costs; extra_cost], setup.join_cost)
         end
     end

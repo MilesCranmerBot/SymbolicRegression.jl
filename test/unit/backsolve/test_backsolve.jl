@@ -147,9 +147,7 @@ end
         binary_operators=(+, *),
         unary_operators=(sin, cos),
         default_mutations=(),
-        mutations=(
-            BacksolveMutation(; max_library_size=500, kws...) => 1.0,
-        ),
+        mutations=(BacksolveMutation(; max_library_size=500, kws...) => 1.0,),
     )
     options = make_options()
 
@@ -281,9 +279,7 @@ end
         binary_operators=(+, *),
         unary_operators=(sin, cos),
         default_mutations=(),
-        mutations=(
-            BacksolveMutation(; max_library_size=500) => 1.0,
-        ),
+        mutations=(BacksolveMutation(; max_library_size=500) => 1.0,),
     )
 
     X = Float64[1.0 2.0 3.0 4.0; 0.5 1.0 1.5 2.0]  # 2 features x 4 samples
@@ -324,9 +320,7 @@ end
         binary_operators=(+, *, -),
         unary_operators=(sin, cos),
         default_mutations=(),
-        mutations=(
-            BacksolveMutation(; max_library_size=500) => 1.0,
-        ),
+        mutations=(BacksolveMutation(; max_library_size=500) => 1.0,),
     )
 
     X = Float64[1.0 2.0 3.0 4.0; 0.5 1.0 1.5 2.0]  # 2 features x 4 samples
