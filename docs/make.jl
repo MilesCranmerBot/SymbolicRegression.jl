@@ -355,6 +355,7 @@ makedocs(;
     ),
     pages=[
         "Home" => "index.md",
+        "Migrating from v1" => "migration.md",
         "Examples" => [
             "Short Examples" => "examples.md",
             "Template Expressions" => "examples/template_expression.md",
