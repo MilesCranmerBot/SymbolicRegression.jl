@@ -119,7 +119,7 @@ function mutate_operator(
     return tree
 end
 
-"""Randomly perturb a constant"""
+"""Randomly perturb a constant."""
 function mutate_constant(
     ex::AbstractExpression{T},
     temperature,
@@ -133,15 +133,6 @@ function mutate_constant(
     )
     return ex
 end
-Base.@noinline function mutate_constant(
-    ex::AbstractExpression{T}, temperature, options::AbstractOptions, rng::AbstractRNG
-) where {T<:DATA_TYPE}
-    Base.depwarn(
-        "Passing `rng` as the fourth positional argument to `mutate_constant` is deprecated. Pass `ConstantMutation()` before `rng`.",
-        :mutate_constant,
-    )
-    return mutate_constant(ex, temperature, options, ConstantMutation(), rng)
-end
 function mutate_constant(
     tree::AbstractExpressionNode{T},
     temperature,
@@ -153,17 +144,24 @@ function mutate_constant(
         return tree
     end
     node = rand(rng, NodeSampler(; tree, filter=t -> (t.degree == 0 && t.constant)))
-    node.val = mutate_value(rng, node.val, temperature, m)
+    node.val = _mutate_value(rng, node.val, temperature, m, options)
     return tree
 end
-Base.@noinline function mutate_constant(
-    tree::AbstractExpressionNode{T}, temperature, options::AbstractOptions, rng::AbstractRNG
-) where {T<:DATA_TYPE}
-    Base.depwarn(
-        "Passing `rng` as the fourth positional argument to `mutate_constant` is deprecated. Pass `ConstantMutation()` before `rng`.",
-        :mutate_constant,
-    )
-    return mutate_constant(tree, temperature, options, ConstantMutation(), rng)
+
+function _mutate_value(
+    rng::AbstractRNG,
+    val::Number,
+    temperature,
+    m::ConstantMutation,
+    options::AbstractOptions,
+)
+    return mutate_value(rng, val, temperature, m)
+end
+
+function _mutate_value(
+    rng::AbstractRNG, val, temperature, m::ConstantMutation, ::AbstractOptions
+)
+    return mutate_value(rng, val, temperature, m)
 end
 
 function mutate_value(

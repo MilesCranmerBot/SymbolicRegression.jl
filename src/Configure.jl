@@ -109,8 +109,9 @@ function test_dataset_configuration(
         )
     end
 
-    if size(dataset.X, 2) > 10000 && !options.batching && verbosity > 0
-        @info "Note: you are running with more than 10,000 datapoints. You should consider turning on batching (`options.batching`), and also if you need that many datapoints. Unless you have a large amount of noise (in which case you should smooth your dataset first), generally < 10,000 datapoints is enough to find a functional form."
+    if n > 50000 && verbosity > 0
+        @warn "You are using a dataset with more than 50,000 datapoints. Symbolic regression rarely benefits from this many points; consider subsampling to 10,000 points or fewer. If you have high noise, denoise the data first rather than using more points." maxlog =
+            1
     end
 
     if !(typeof(options.elementwise_loss) <: SupervisedLoss) &&
@@ -126,8 +127,8 @@ end
 
 """ Move custom operators and loss functions to workers, if undefined """
 function move_functions_to_workers(
-    procs, options::AbstractOptions, dataset::Dataset{T}, verbosity
-) where {T}
+    procs, options::AbstractOptions, dataset::Dataset{T,L}, verbosity
+) where {T,L}
     # All the types of functions we need to move to workers:
     function_sets = (
         :unaops,
@@ -162,7 +163,7 @@ function move_functions_to_workers(
                 continue
             end
             ops = (options.early_stop_condition,)
-            example_inputs = (zero(T), 0)
+            example_inputs = (zero(L), 0)
         elseif function_set == :expression_type
             # Needs to run _before_ using TemplateExpression anywhere, such
             # as in `loss_function_expression`!
@@ -321,7 +322,12 @@ function test_module_on_workers(procs, options::AbstractOptions, verbosity)
 end
 
 function test_entire_pipeline(
-    procs, dataset::Dataset{T}, options::AbstractOptions, verbosity
+    procs,
+    dataset::Dataset{T},
+    options::AbstractOptions,
+    verbosity,
+    head_plugin_states::Tuple,
+    worker_plugin_states::Tuple,
 ) where {T<:DATA_TYPE}
     futures = []
     verbosity > 0 && @info "Testing entire pipeline on workers..."
@@ -335,6 +341,7 @@ function test_entire_pipeline(
                     nlength=3,
                     options=options,
                     nfeatures=max_features(dataset, options),
+                    plugin_states=head_plugin_states,
                 )
                 tmp_pop = s_r_cycle(
                     dataset,
@@ -343,10 +350,12 @@ function test_entire_pipeline(
                     5;
                     verbosity=verbosity,
                     options=options,
-                    record=RecordType(),
+                    trace=new_trace(options),
+                    # TODO: Use isolated states so this smoke test does not emit synthetic lifecycle events to shared plugin resources.
+                    plugin_states=worker_plugin_states,
                 )[1]
                 tmp_pop = optimize_and_simplify_population(
-                    dataset, tmp_pop, options, options.maxsize, RecordType()
+                    dataset, tmp_pop, options, options.maxsize, nothing
                 )
             end
         )
@@ -371,10 +380,12 @@ function configure_workers(;
     verbosity,
     example_dataset::Dataset,
     runtests::Bool,
+    test_head_plugin_states::Tuple,
+    test_worker_plugin_states::Tuple,
 )
     (procs, we_created_procs) = if procs === nothing
         withenv("JULIA_WORKER_TIMEOUT" => string(worker_timeout)) do
-            (addprocs_function(numprocs; lazy=false, exeflags), true)
+            return (addprocs_function(numprocs; lazy=false, exeflags), true)
         end
     else
         (procs, false)
@@ -388,7 +399,14 @@ function configure_workers(;
 
     if runtests
         test_module_on_workers(procs, options, verbosity)
-        test_entire_pipeline(procs, example_dataset, options, verbosity)
+        test_entire_pipeline(
+            procs,
+            example_dataset,
+            options,
+            verbosity,
+            test_head_plugin_states,
+            test_worker_plugin_states,
+        )
     end
 
     return (procs, we_created_procs)

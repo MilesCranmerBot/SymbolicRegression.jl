@@ -38,9 +38,16 @@ using ..OperatorsModule:
     safe_atanh
 using ..MutationWeightsModule: MutationWeightsModule, MutationWeights, _mutation_weights
 using ..MutationsModule: MutationsModule
+using ..CrossoversModule: CrossoversModule
 import ..OptionsStructModule: Options
 using ..OptionsStructModule: ComplexityMapping, operator_specialization
-using ..PluginModule: default_adaptive_parsimony_plugin, _merge_with_default_plugins
+using ..PluginModule:
+    default_adaptive_parsimony_plugin,
+    default_simulated_annealing_plugin,
+    default_adaptive_mutation_weights_plugin,
+    _merge_with_default_plugins,
+    plugin_mutations,
+    plugin_crossovers
 using ..UtilsModule: @save_kwargs, @ignore
 using ..ExpressionSpecModule:
     AbstractExpressionSpec,
@@ -268,6 +275,8 @@ const deprecated_options_mapping = Base.ImmutableDict(
     :enable_autodiff => :deprecated_enable_autodiff,
     :ns => :tournament_selection_n,
     :loss => :elementwise_loss,
+    :use_recorder => :use_tracing,
+    :recorder_file => :tracing_file,
 )
 
 # For static analysis tools:
@@ -300,8 +309,12 @@ const OPTION_DESCRIPTIONS = """- `defaults`: What set of defaults to use for `Op
     but a maximum size of `3` in its right argument. Default is
     no constraints.
 - `batching`: Whether to evolve based on small mini-batches of data,
-    rather than the entire dataset.
-- `batch_size`: What batch size to use if using batching.
+    rather than the entire dataset. The default, `:auto`, enables batching
+    for datasets with more than 1,000 rows. Pass `true` or `false` to override it.
+- `batch_size`: What batch size to use if using batching. By default, this uses
+    the full dataset for up to 1,000 rows, 128 rows for fewer than 5,000 rows,
+    256 rows for fewer than 50,000 rows, and 512 rows otherwise. An explicit
+    value is capped at the dataset size.
 - `elementwise_loss`: What elementwise loss function to use. Can be one of
     the following losses, or any other loss of type
     `SupervisedLoss`. You can also pass a function that takes
@@ -358,8 +371,8 @@ const OPTION_DESCRIPTIONS = """- `defaults`: What set of defaults to use for `Op
     - `:linear`: Uses direct differences between losses. This mode handles any loss values (including negative)
         and is useful for custom loss functions, especially those based on likelihoods.
 - `expression_spec::AbstractExpressionSpec`: A specification of what types of expressions to use in the
-    search. For example, `ExpressionSpec()` (default). You can also see `TemplateExpressionSpec` and
-    `ParametricExpressionSpec` for specialized cases.
+    search. For example, `ExpressionSpec()` (default). See `TemplateExpressionSpec` for structured
+    expressions and learnable parameters.
 - `populations`: How many populations of equations to use.
 - `population_size`: How many equations in each population.
 - `ncycles_per_iteration`: How many generations to consider per iteration.
@@ -385,7 +398,7 @@ const OPTION_DESCRIPTIONS = """- `defaults`: What set of defaults to use for `Op
     and returns an integer.
 - `alpha`: The probability of accepting an equation mutation
     during regularized evolution is given by exp(-delta_loss/(alpha * T)),
-    where T goes from 1 to 0. Thus, alpha=infinite is the same as no annealing.
+    where T goes from 1 to 0. Set `annealing=false` to disable annealing.
 - `maxsize`: Maximum size of equations during the search.
 - `maxdepth`: Maximum depth of equations during the search, by default
     this is set equal to the maxsize.
@@ -402,7 +415,9 @@ const OPTION_DESCRIPTIONS = """- `defaults`: What set of defaults to use for `Op
 - `use_frequency_in_tournament`: Whether to use the adaptive parsimony described
     above inside the score, rather than just at the mutation accept/reject stage.
 - `plugins`: Plugin instances to run, as a tuple or vector. Vectors are converted
-    to tuples when the options are constructed.
+    to tuples when the options are constructed. Plugins may also contribute
+    weighted mutation and crossover defaults via [`plugin_mutations`](@ref) and
+    [`plugin_crossovers`](@ref).
 - `default_plugins`: Default plugin instances appended after `plugins`. Set this
     to `()` to disable automatic defaults. An explicit plugin takes precedence
     over a default plugin of the same type.
@@ -453,13 +468,39 @@ const OPTION_DESCRIPTIONS = """- `defaults`: What set of defaults to use for `Op
     multiply or divide by (1+perturbation_factor)^(rand()+1).
 - `probability_negate_constant`: Probability of negating a constant in the equation
     when mutating it.
-- `mutation_weights`: Deprecated built-in mutation weights, converted to
-    `default_mutations`.
-- `mutations`: Explicit weighted mutations. An entry replaces a default mutation
-    of the same type; new mutation types are added.
+- `mutations`: Override or extend the default mutation weights, as a vector of
+    `MutationType() => weight` pairs. All of the defaults listed below are active
+    unless you change them. An entry here replaces the default weight for that
+    mutation type; new (custom) mutation types are added alongside the defaults.
+    For example, `mutations=[OptimizeMutation() => 0.1, ConstantMutation() => 0.5]`
+    keeps all defaults but enables constant optimization and increases the constant
+    perturbation rate. The defaults are:
+    - `ConstantMutation() => 0.0353`: Perturb a random constant.
+    - `OperatorMutation() => 3.63`: Swap an operator for another of the same arity.
+    - `FeatureMutation() => 0.1`: Replace a variable with a different one.
+    - `SwapOperandsMutation() => 0.00608`: Swap the arguments of a binary operator.
+    - `RotateTreeMutation() => 1.42`: Rotate a subtree (swap parent/child).
+    - `AddNodeMutation() => 0.0771`: Grow the tree by adding a node.
+    - `InsertNodeMutation() => 2.44`: Insert an operator above an existing node.
+    - `DeleteNodeMutation() => 0.369`: Remove a node, replacing it with a child.
+    - `SimplifyMutation() => 0.00148`: Algebraic simplification.
+    - `RandomizeMutation() => 0.00695`: Replace a subtree with a random one.
+    - `DoNothingMutation() => 0.431`: No-op (allows crossover to dominate).
+    - `OptimizeMutation() => 0.0`: Optimize constants via gradient descent (off by default).
+    - `BacksolveMutation() => 0.0`: Solve for a constant analytically (off by default).
+    - `FormConnectionMutation() => 0.5`: Form a shared subtree connection.
+    - `BreakConnectionMutation() => 0.1`: Break a shared subtree connection.
 - `default_mutations`: Default weighted mutations considered after `mutations`.
     Pass `()` to disable every automatic default.
 - `crossover_probability`: Probability of performing crossover.
+- `crossovers`: Override or extend the default crossover weights, as a vector of
+    `CrossoverType() => weight` pairs, sampled from whenever crossover is selected
+    via `crossover_probability`. An entry here replaces the default weight for that
+    crossover type; new (custom) crossover types are added alongside the defaults.
+    The default is `SubtreeCrossover() => 1.0`, which swaps a random subtree of one
+    parent with a random subtree of the other.
+- `default_crossovers`: Default weighted crossovers considered after `crossovers`.
+    Pass `()` to disable every automatic default.
 - `annealing`: Whether to use simulated annealing.
 - `warmup_maxsize_by`: Whether to slowly increase the max size from 5 up to
     `maxsize`. If nonzero, specifies the fraction through the search
@@ -554,6 +595,8 @@ $(OPTION_DESCRIPTIONS)
     @nospecialize(mutation_weights::Union{MutationWeights,NamedTuple,Nothing} = nothing),
     @nospecialize(default_mutations::Union{AbstractVector,Tuple,Nothing} = nothing),
     @nospecialize(mutations::Union{AbstractVector,Tuple,Nothing} = nothing),
+    @nospecialize(default_crossovers::Union{AbstractVector,Tuple,Nothing} = nothing),
+    @nospecialize(crossovers::Union{AbstractVector,Tuple,Nothing} = nothing),
     @nospecialize(crossover_probability::Union{Real,Nothing} = nothing),
     @nospecialize(annealing::Union{Bool,Nothing} = nothing),
     @nospecialize(alpha::Union{Nothing,Real} = nothing),
@@ -585,8 +628,8 @@ $(OPTION_DESCRIPTIONS)
     @nospecialize(early_stop_condition::Union{Function,Real,Nothing} = nothing),
     ## 11. Performance and Parallelization:
     ###           [others, passed to `equation_search`]
-    @nospecialize(batching::Union{Bool,Nothing} = nothing),
-    @nospecialize(batch_size::Union{Nothing,Integer} = nothing),
+    ###           batching
+    ###           batch_size
     ###           turbo
     ###           bumper
     ###           autodiff_backend
@@ -644,6 +687,8 @@ $(OPTION_DESCRIPTIONS)
     max_evals::Union{Nothing,Integer}=nothing,
     input_stream::IO=stdin,
     ## 11. Performance and Parallelization:
+    batching::Union{Bool,Symbol,Nothing}=nothing,
+    batch_size::Union{Nothing,Integer}=nothing,
     turbo::Bool=false,
     bumper::Bool=false,
     autodiff_backend::Union{AbstractADType,Symbol,Nothing}=nothing,
@@ -662,8 +707,8 @@ $(OPTION_DESCRIPTIONS)
     bin_constraints=nothing,
     una_constraints=nothing,
     terminal_width::Union{Nothing,Integer}=nothing,
-    use_recorder::Bool=false,
-    recorder_file::AbstractString="pysr_recorder.json",
+    use_tracing::Bool=false,
+    tracing_file::AbstractString="pysr_trace.jsonl",
     popmember_type::Type=default_popmember_type(),
     plugins::Union{Tuple,AbstractVector}=(),
     default_plugins::Union{Nothing,Tuple,AbstractVector}=nothing,
@@ -721,6 +766,8 @@ $(OPTION_DESCRIPTIONS)
         k == :enable_autodiff && continue
         k == :ns && (tournament_selection_n = kws[k]; true) && continue
         k == :loss && (elementwise_loss = kws[k]; true) && continue
+        k == :use_recorder && (use_tracing = kws[k]; true) && continue
+        k == :recorder_file && (tracing_file = kws[k]; true) && continue
         if k == :mutationWeights
             if typeof(kws[k]) <: AbstractVector
                 _mutation_weights = kws[k]
@@ -819,7 +866,7 @@ $(OPTION_DESCRIPTIONS)
     fraction_replaced_guesses = something(fraction_replaced_guesses, _default_options.fraction_replaced_guesses)
     topn = something(topn, _default_options.topn)
     batching = something(batching, _default_options.batching)
-    batch_size = something(batch_size, _default_options.batch_size)
+    batch_size = something(batch_size, Some(_default_options.batch_size))
     if !user_provided_operators
         binary_operators = something(binary_operators, _default_options.operators.ops[2])
         unary_operators = something(unary_operators, _default_options.operators.ops[1])
@@ -830,6 +877,7 @@ $(OPTION_DESCRIPTIONS)
     if should_simplify === nothing
         should_simplify = (
             loss_function === nothing &&
+            loss_function_expression === nothing &&
             nested_constraints === nothing &&
             constraints === nothing &&
             bin_constraints === nothing &&
@@ -1019,6 +1067,18 @@ $(OPTION_DESCRIPTIONS)
         @warn "Optimizer warnings are turned on. This might result in a lot of warnings being printed from NaNs, as these are common during symbolic regression"
     end
 
+    user_plugin_tuple = Tuple(plugins)
+    default_plugin_tuple = if default_plugins === nothing
+        (
+            default_simulated_annealing_plugin(; annealing, alpha),
+            default_adaptive_parsimony_plugin(; use_frequency, use_frequency_in_tournament),
+            default_adaptive_mutation_weights_plugin(),
+        )
+    else
+        Tuple(default_plugins)
+    end
+    plugin_tuple = _merge_with_default_plugins(user_plugin_tuple, default_plugin_tuple...)
+
     set_mutation_weights = create_mutation_weights(mutation_weights)
     if mutation_weights_were_provided && default_mutations !== nothing
         throw(
@@ -1047,20 +1107,63 @@ $(OPTION_DESCRIPTIONS)
     _explicit_mutations = Pair{MutationsModule.AbstractMutation,Float64}[
         p.first => Float64(p.second) for p in something(mutations, ())
     ]
+    _plugin_mutations = if default_mutations === nothing
+        Pair{MutationsModule.AbstractMutation,Float64}[
+            p.first => Float64(p.second) for plugin in plugin_tuple for
+            p in plugin_mutations(plugin)
+        ]
+    else
+        Pair{MutationsModule.AbstractMutation,Float64}[]
+    end
+    _defaults_with_plugin_mutations = vcat(
+        _plugin_mutations,
+        filter(
+            default ->
+                !any(plugin -> plugin.first isa typeof(default.first), _plugin_mutations),
+            _default_mutations,
+        ),
+    )
     _remaining_defaults = filter(
         default ->
             !any(explicit -> explicit.first isa typeof(default.first), _explicit_mutations),
-        _default_mutations,
+        _defaults_with_plugin_mutations,
     )
     _resolved_mutations = vcat(_explicit_mutations, _remaining_defaults)
 
-    user_plugin_tuple = Tuple(plugins)
-    default_plugin_tuple = if default_plugins === nothing
-        (default_adaptive_parsimony_plugin(; use_frequency, use_frequency_in_tournament),)
+    _default_crossovers = if default_crossovers === nothing
+        CrossoversModule.default_crossovers()
     else
-        Tuple(default_plugins)
+        Pair{CrossoversModule.AbstractCrossover,Float64}[
+            p.first => Float64(p.second) for p in default_crossovers
+        ]
     end
-    plugin_tuple = _merge_with_default_plugins(user_plugin_tuple, default_plugin_tuple...)
+    _explicit_crossovers = Pair{CrossoversModule.AbstractCrossover,Float64}[
+        p.first => Float64(p.second) for p in something(crossovers, ())
+    ]
+    _plugin_crossovers = if default_crossovers === nothing
+        Pair{CrossoversModule.AbstractCrossover,Float64}[
+            p.first => Float64(p.second) for plugin in plugin_tuple for
+            p in plugin_crossovers(plugin)
+        ]
+    else
+        Pair{CrossoversModule.AbstractCrossover,Float64}[]
+    end
+    _defaults_with_plugin_crossovers = vcat(
+        _plugin_crossovers,
+        filter(
+            default ->
+                !any(plugin -> plugin.first isa typeof(default.first), _plugin_crossovers),
+            _default_crossovers,
+        ),
+    )
+    _remaining_default_crossovers = filter(
+        default ->
+            !any(
+                explicit -> explicit.first isa typeof(default.first), _explicit_crossovers
+            ),
+        _defaults_with_plugin_crossovers,
+    )
+    _resolved_crossovers = vcat(_explicit_crossovers, _remaining_default_crossovers)
 
     @assert print_precision > 0
 
@@ -1077,6 +1180,12 @@ $(OPTION_DESCRIPTIONS)
         else
             output_directory
         end
+
+    batching in (true, false, :auto) ||
+        throw(ArgumentError("`batching` must be `true`, `false`, or `:auto`."))
+    (batch_size === nothing || batch_size >= 1) ||
+        throw(ArgumentError("`batch_size` must be at least 1."))
+    batch_size = batch_size === nothing ? nothing : Int(batch_size)
 
     nops = map(length, operators.ops)
 
@@ -1095,6 +1204,9 @@ $(OPTION_DESCRIPTIONS)
         deprecated_return_state::Union{Bool,Nothing},
         typeof(_autodiff_backend),
         print_precision,
+        use_tracing,
+        typeof(batching),
+        typeof(batch_size),
     }(
         operators,
         op_constraints,
@@ -1105,7 +1217,6 @@ $(OPTION_DESCRIPTIONS)
         parsimony,
         dimensional_constraint_penalty,
         dimensionless_constants_only,
-        alpha,
         maxsize,
         maxdepth,
         Val(turbo),
@@ -1117,10 +1228,10 @@ $(OPTION_DESCRIPTIONS)
         _output_directory,
         populations,
         perturbation_factor,
-        annealing,
         batching,
         batch_size,
         _resolved_mutations,
+        _resolved_crossovers,
         crossover_probability,
         warmup_maxsize_by,
         use_frequency,
@@ -1152,7 +1263,7 @@ $(OPTION_DESCRIPTIONS)
         optimizer_nrestarts,
         optimizer_options,
         _autodiff_backend,
-        recorder_file,
+        tracing_file,
         tournament_selection_p,
         early_stop_condition,
         Val(deprecated_return_state),
@@ -1162,7 +1273,7 @@ $(OPTION_DESCRIPTIONS)
         skip_mutation_failures,
         deterministic,
         define_helper_functions,
-        use_recorder,
+        Val(use_tracing),
         popmember_type,
         plugin_tuple,
     )
@@ -1268,8 +1379,10 @@ function default_options(@nospecialize(version::Union{VersionNumber,Nothing} = n
         batch_size=50,
     )
 
-    if version isa VersionNumber && version >= v"2.0.0-"
-        defaults = (; defaults..., adaptive_parsimony_scaling=20.0)
+    if isnothing(version) || version >= v"2.0.0-"
+        defaults = (;
+            defaults..., crossover_probability=0.20, batching=:auto, batch_size=nothing
+        )
     end
 
     return defaults

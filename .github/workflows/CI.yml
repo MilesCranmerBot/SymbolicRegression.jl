@@ -52,6 +52,7 @@ jobs:
           - precompile
           - backsolve
           - misc
+          - plugins
         exclude:
           # Only run Julia 1.10 on ubuntu
           - os: macOS-latest
@@ -123,9 +124,12 @@ jobs:
           - ext/mlj/templates
           - ext/mlj/parametric_search
           - ext/symbolicutils
-          - ext/json3_recorder
+          - ext/json3_tracing
           - ext/dynamicquantities_units
           - ext/loopvectorization
+          - examples/readme
+          - examples/parameterized_function
+          - examples/custom_types
         exclude:
           - julia-version: "1"
             group: ad/mooncake
@@ -146,6 +150,9 @@ jobs:
         uses: julia-actions/cache@v3
         with:
           cache-name: julia-cache;workflow=${{ github.workflow }};job=${{ github.job }};group=integration-${{ steps.sanitize_integration_group.outputs.group }};julia=${{ matrix.julia-version }};project=${{ hashFiles(format('test/integration/{0}/Project.toml', matrix.group)) }}
+          # LoopVectorization codegen is CPU-sensitive; cached compiled code
+          # from a different runner CPU can be invalid.
+          cache-compiled: ${{ matrix.group != 'ext/loopvectorization' }}
       - name: "Run integration test"
         env:
           TEST_GROUP: integration/${{ matrix.group }}
@@ -160,6 +167,31 @@ jobs:
           name: coverage-integration-${{ steps.sanitize_integration_group.outputs.group }}-${{ matrix.julia-version }}
           path: lcov.info
           retention-days: 1
+
+  repl-stdin-monitoring:
+    name: u/repl-stdin-monitoring-1.10-ubuntu-latest
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - name: "Set up Julia"
+        uses: julia-actions/setup-julia@v3
+        with:
+          version: "1.10"
+      - name: "Cache dependencies"
+        uses: julia-actions/cache@v3
+        with:
+          cache-name: julia-cache;workflow=${{ github.workflow }};job=${{ github.job }};group=repl-stdin-monitoring;project=${{ hashFiles('Project.toml') }}
+      - name: "Build package"
+        uses: julia-actions/julia-buildpkg@v1
+      - name: "Install expect"
+        run: sudo apt-get update && sudo apt-get install -y expect
+        shell: bash
+      - name: "Run REPL stdin monitoring test"
+        run: |
+          julia --project=. --startup-file=no --history-file=no --color=no -q -e 'using SymbolicRegression'
+          expect test/repl/test_repl_stdin_nonblocking.exp
+        shell: bash
 
   upload-coverage:
     name: Upload Coverage to Codecov

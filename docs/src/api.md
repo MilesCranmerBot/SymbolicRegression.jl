@@ -1,6 +1,6 @@
 # API
 
-## MLJ interface
+## Regressor interface
 
 ```@docs
 SRRegressor
@@ -36,7 +36,7 @@ string_tree
 
 ```@docs
 eval_tree_array
-EvalOptions
+EvalContext
 ```
 
 ## Derivatives

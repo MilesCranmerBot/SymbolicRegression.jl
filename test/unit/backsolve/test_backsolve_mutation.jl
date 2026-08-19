@@ -304,24 +304,22 @@
             backsolve_rewrite_random_node(int_tree, int_dataset, int_options, rng)
         )
 
-        template_dataset = Dataset(reshape(Float64[1.0, 2.0], 1, 2), Float64[1.0, 2.0])
+        template_dataset = Dataset(reshape(Float32[1.0, 2.0], 1, 2), Float32[1.0, 2.0])
 
-        parametric_options = options_with_backsolve(;
-            binary_operators=(*,), unary_operators=()
+        template_spec = @template_spec(expressions=(f,)) do x1
+            f(x1)
+        end
+        template_options = options_with_backsolve(;
+            binary_operators=(*,), unary_operators=(), expression_spec=template_spec
         )
-        parametric_expr = parse_expression(
-            :(x1 * p1);
-            expression_type=ParametricExpression,
-            operators=parametric_options.operators,
-            variable_names=["x1"],
-            parameters=ones(1, 1),
-            parameter_names=["p1"],
+        template_expr = parse_expression(
+            (; f="#1"); expression_spec=template_spec, operators=template_options.operators
         )
 
         @test_throws(
             "expression wrapper types must opt in explicitly",
             backsolve_rewrite_random_node(
-                parametric_expr, template_dataset, parametric_options, rng
+                template_expr, template_dataset, template_options, rng
             )
         )
     end
@@ -347,7 +345,7 @@
             member,
             BacksolveMutation(),
             options;
-            recorder=Dict{String,Any}(),
+            trace=Dict{String,Any}(),
             dataset=dataset,
         )
 

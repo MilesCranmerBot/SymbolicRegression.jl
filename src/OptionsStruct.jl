@@ -6,7 +6,9 @@ using DynamicExpressions:
     AbstractOperatorEnum, AbstractExpressionNode, AbstractExpression, OperatorEnum
 using LossFunctions: SupervisedLoss
 
+using ..DatasetModule: Dataset, batch
 using ..MutationsModule: AbstractMutation
+using ..CrossoversModule: AbstractCrossover
 
 """
 This struct defines how complexity is calculated.
@@ -189,6 +191,9 @@ struct Options{
     _return_state,
     AD,
     print_precision,
+    _use_tracing,
+    B<:Union{Bool,Symbol},
+    BS<:Union{Nothing,Int},
 } <: AbstractOptions
     operators::OP
     op_constraints::OP_CONSTRAINTS
@@ -199,7 +204,6 @@ struct Options{
     parsimony::Float64
     dimensional_constraint_penalty::Union{Float64,Nothing}
     dimensionless_constants_only::Bool
-    alpha::Float64
     maxsize::Int
     maxdepth::Int
     turbo::Val{_turbo}
@@ -211,10 +215,10 @@ struct Options{
     output_directory::Union{String,Nothing}
     populations::Int
     perturbation_factor::Float64
-    annealing::Bool
-    batching::Bool
-    batch_size::Int
+    batching::B
+    batch_size::BS
     mutations::Vector{Pair{AbstractMutation,Float64}}
+    crossovers::Vector{Pair{AbstractCrossover,Float64}}
     crossover_probability::Float64
     warmup_maxsize_by::Float64
     use_frequency::Bool
@@ -246,7 +250,7 @@ struct Options{
     optimizer_nrestarts::Int
     optimizer_options::Optim.Options
     autodiff_backend::AD
-    recorder_file::String
+    tracing_file::String
     prob_pick_first::Float64
     early_stop_condition::Union{Function,Nothing}
     return_state::Val{_return_state}
@@ -256,9 +260,29 @@ struct Options{
     skip_mutation_failures::Bool
     deterministic::Bool
     define_helper_functions::Bool
-    use_recorder::Bool
+    use_tracing::Val{_use_tracing}
     popmember_type::Type{PM}
     plugins::PT
+end
+
+@inline function use_batching(options::AbstractOptions, dataset::Dataset)
+    return options.batching === true || (
+        options.batching === :auto &&
+        dataset.n > 1000 &&
+        hasmethod(batch, Tuple{typeof(dataset),Int})
+    )
+end
+
+@inline function get_batch_size(options::AbstractOptions, n::Integer)
+    options.batch_size !== nothing && return min(options.batch_size, n)
+    n <= 1000 && return n
+    n < 5000 && return 128
+    n < 50000 && return 256
+    return 512
+end
+
+@inline function batching_required(options::AbstractOptions, dataset::Dataset)
+    return use_batching(options, dataset) && get_batch_size(options, dataset.n) < dataset.n
 end
 
 function Base.print(io::IO, @nospecialize(options::Options))

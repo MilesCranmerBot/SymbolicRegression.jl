@@ -34,13 +34,30 @@ abstract type AbstractMutation end
 """
     ConstantMutation(; perturbation_factor=0.086, probability_negate=0.01)
 
-Perturb a random constant. `perturbation_factor` scales the magnitude
-(modulated by temperature); `probability_negate` is the chance of
-flipping the constant's sign.
+Perturb a random constant. `perturbation_factor` scales the magnitude;
+`probability_negate` is the chance of flipping the constant's sign.
+
+Plugins can scale the perturbation magnitude per call by mutating
+[`ConstantMutationContext`](@ref) inside `condition_mutation!`.
 """
 Base.@kwdef struct ConstantMutation <: AbstractMutation
     perturbation_factor::Float64 = 0.086
     probability_negate::Float64 = 0.01
+end
+
+"""
+    ConstantMutationContext(; scale=1.0)
+
+Per-call mutable companion of [`ConstantMutation`](@ref), built by
+`prepare_mutation_context` and conditioned by plugins via
+`condition_mutation!`. `scale` multiplies the mutation's
+`perturbation_factor` for this call only; plugins compose by multiplying
+in tuple order.
+
+!!! warning "Experimental"
+"""
+Base.@kwdef mutable struct ConstantMutationContext
+    scale::Float64 = 1.0
 end
 
 """Swap a random operator for another of the same arity."""

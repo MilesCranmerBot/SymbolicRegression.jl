@@ -17,6 +17,8 @@
 
     for reverse in [false, true]
         T = Float32
+        dataset = Dataset(zeros(T, 1, n), zeros(T, n))
+        plugin_states = SymbolicRegression.init_plugin_states(options, dataset)
 
         # Generate members with scores from 0 to 1:
         members = [
@@ -36,7 +38,8 @@
         pop = Population(members)
 
         best_pop_member = [
-            SymbolicRegression.best_of_sample(pop, options).cost for j in 1:100
+            SymbolicRegression.best_of_sample(pop, options; plugin_states).cost for
+            j in 1:100
         ]
 
         mean_value = sum(best_pop_member) / length(best_pop_member)

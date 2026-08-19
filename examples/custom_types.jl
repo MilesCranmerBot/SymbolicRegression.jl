@@ -26,7 +26,7 @@ We will define some unary and binary operators on strings:
 
 using SymbolicRegression
 using DynamicExpressions: GenericOperatorEnum
-using MLJBase: machine, fit!, report, MLJBase
+using SymbolicRegression: machine, fit!, report
 using Random
 
 """Returns the first half of the string."""
@@ -80,7 +80,7 @@ dataset = let rng = Random.MersenneTwister(0)
 end
 
 #=
-We'll get them in the right format for MLJ:
+We'll separate the features and targets:
 =#
 
 X = [d.X for d in dataset]
@@ -141,8 +141,9 @@ Finally, the most complicated overload for `String` is `mutate_value`,
 which we need to define so that any constant value can be iteratively mutated
 into any other constant value.
 
-We also typically want this to depend on the temperature --- lower temperatures
-mean a smaller rate of change. You can use temperature as you see fit, or ignore it.
+The `temperature` argument reflects per-call mutation scaling, including
+simulated annealing. You can use it as you see fit, or ignore it.
+The `mutation` argument contains the selected [`ConstantMutation`](@ref) configuration.
 =#
 
 using SymbolicRegression.UtilsModule: poisson_sample
@@ -151,10 +152,10 @@ import SymbolicRegression: mutate_value
 
 sample_alphabet(rng::AbstractRNG) = rand(rng, 'a':'z')
 
-function mutate_value(rng::AbstractRNG, val::String, T, options)
+function mutate_value(rng::AbstractRNG, val::String, temperature, mutation::ConstantMutation)
     max_length = 10
     lambda_max = 5.0
-    λ = max(nextfloat(0.0), lambda_max * clamp(float(T), 0, 1))
+    λ = max(nextfloat(0.0), lambda_max * clamp(temperature, 0, 1))
     n_edits = clamp(poisson_sample(rng, λ), 0, 10)
     chars = collect(val)
     ops = rand(rng, (:insert, :delete, :replace, :swap), n_edits)
@@ -224,6 +225,7 @@ We also need to manually define the `loss_type`, since it's not inferrable from
 =#
 binary_operators = (concat, interleave)
 unary_operators = (head, tail, reverse)
+test_loss_threshold = 8.0  #src
 hparams = (;
     batching=true,
     batch_size=32,
@@ -231,7 +233,7 @@ hparams = (;
     parsimony=0.1,
     adaptive_parsimony_scaling=20.0,
     mutation_weights=MutationWeights(; mutate_constant=1.0),
-    early_stop_condition=(l, c) -> l < 1.0 && c <= 15,  #src
+    early_stop_condition=(l, _) -> l <= test_loss_threshold,  #src
 )
 model = SRRegressor(;
     binary_operators,
@@ -242,11 +244,10 @@ model = SRRegressor(;
     hparams...,
 );
 
-mach = machine(model, X, y; scitype_check_level=0)
+mach = machine(model, X, y)
 
 #=
 At this point, you would run `fit!(mach)` as usual.
-Ignore the MLJ warnings about `scitype`s.
 ```julia
 fit!(mach)
 ```
@@ -258,7 +259,7 @@ using Test
 
 fit!(mach)
 
-ŷ = report(mach).equations[end](MLJBase.matrix(X; transpose=true))
+ŷ = report(mach).equations[end](stack(collect ∘ values, X))
 mean_loss = sum(map(edit_distance, y, ŷ)) / length(y)
-@test mean_loss <= 8.0
+@test mean_loss <= test_loss_threshold
 #! format: on

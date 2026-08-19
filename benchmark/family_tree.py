@@ -3,11 +3,11 @@ import networkx as nx
 from tqdm import tqdm
 
 
-def load_pysr_graph(json_path, progress=True):
-    """Load a PySR recorder JSON file into a NetworkX directed graph.
+def load_pysr_graph(jsonl_path, progress=True):
+    """Load a PySR trace JSONL file into a NetworkX directed graph.
 
     Args:
-        json_path: Path to pysr_recorder.json
+        jsonl_path: Path to pysr_trace.jsonl
         progress: Show progress bars
 
     Returns:
@@ -15,148 +15,101 @@ def load_pysr_graph(json_path, progress=True):
         - Node attributes: tree, cost, loss, parent
         - Edge attributes: type, time, mutation_details
     """
-    # Load JSON data
-    with open(json_path) as f:
-        data = json.load(f)
-
     G = nx.DiGraph()
-
-    # First pass: Create all nodes with their attributes
-    mutations = data.get("mutations", {})
-    for member_id, member_data in tqdm(
-        mutations.items(),
-        desc="Adding nodes" if progress else None,
-        disable=not progress,
-    ):
-        # Convert string ID to int
-        member_id = int(member_id)
-        G.add_node(member_id, **member_data)
-
-    # Debug print - check a sample member's data
-    sample_id = next(iter(mutations))
-    print("\nSample member data:")
-    print(f"ID: {sample_id}")
-    print(f"Parent: {mutations[sample_id].get('parent')}")
-    print(f"Events: {len(mutations[sample_id].get('events', []))}")
-    if mutations[sample_id].get("events"):
-        print("First event:", mutations[sample_id]["events"][0])
-
-    # Count event types
     event_counts = {"mutate": 0, "crossover": 0, "tuning": 0, "other": 0}
     edge_counts = {"parent": 0, "mutate": 0, "crossover": 0, "tuning": 0}
+    sample = None
 
-    # Second pass: Create edges based on relationships
-    for member_id_str, member_data in tqdm(
-        mutations.items(),
-        desc="Processing edges" if progress else None,
-        disable=not progress,
-    ):
-        member_id = int(member_id_str)
+    with open(jsonl_path) as trace_file:
+        records = tqdm(
+            trace_file,
+            desc="Processing trace records" if progress else None,
+            disable=not progress,
+        )
+        for line in records:
+            record = json.loads(line)
+            if record.get("record_type") != "iteration":
+                continue
 
-        # Add parent edge if exists
-        parent_id = member_data.get("parent")
-        if parent_id:
-            parent_id = int(parent_id)
-            if parent_id in G:
-                G.add_edge(parent_id, member_id, type="parent")
-                edge_counts["parent"] += 1
+            for member_id_str, member_data in record.get("mutations", {}).items():
+                member_id = int(member_id_str)
+                previous_events = (
+                    G.nodes[member_id].get("events", []) if member_id in G else []
+                )
+                node_data = dict(member_data)
+                node_data["events"] = previous_events + member_data.get("events", [])
+                G.add_node(member_id, **node_data)
+                sample = sample or (member_id, member_data)
 
-        # Process all events
-        for event in member_data.get("events", []):
-            event_type = event.get("type")
-            event_counts[event_type if event_type in event_counts else "other"] += 1
+                parent_id = member_data.get("parent")
+                if parent_id is not None:
+                    parent_id = int(parent_id)
+                    if parent_id in G and not G.has_edge(parent_id, member_id):
+                        G.add_edge(parent_id, member_id, type="parent")
+                        edge_counts["parent"] += 1
 
-            # Mutation events
-            if event_type == "mutate":
-                child_id = event.get("child")
-                if child_id:
-                    child_id = int(child_id)
-                    if child_id in G:
+                for event in member_data.get("events", []):
+                    event_type = event.get("type")
+                    event_counts[event_type if event_type in event_counts else "other"] += 1
+
+                    if event_type == "mutate":
+                        child_id = event.get("child")
+                        if child_id is None:
+                            continue
                         G.add_edge(
                             member_id,
-                            child_id,
+                            int(child_id),
                             type="mutate",
                             time=event.get("time"),
                             details=event.get("mutation", {}),
                         )
                         edge_counts["mutate"] += 1
 
-            # Crossover events
-            elif event_type == "crossover":
-                parent1 = event.get("parent1")
-                parent2 = event.get("parent2")
-                child1 = event.get("child1")
-                child2 = event.get("child2")
+                    elif event_type == "crossover":
+                        parent1 = event.get("parent1")
+                        parent2 = event.get("parent2")
+                        child1 = event.get("child1")
+                        child2 = event.get("child2")
+                        parent1 = int(parent1) if parent1 is not None else None
+                        parent2 = int(parent2) if parent2 is not None else None
 
-                # Convert IDs to integers
-                if parent1:
-                    parent1 = int(parent1)
-                if parent2:
-                    parent2 = int(parent2)
-                if child1:
-                    child1 = int(child1)
-                if child2:
-                    child2 = int(child2)
+                        for parent, partner in ((parent1, parent2), (parent2, parent1)):
+                            if parent is None:
+                                continue
+                            for child in (child1, child2):
+                                if child is None:
+                                    continue
+                                G.add_edge(
+                                    parent,
+                                    int(child),
+                                    type="crossover",
+                                    time=event.get("time"),
+                                    partner=partner,
+                                    details=event.get("details", {}),
+                                )
+                                edge_counts["crossover"] += 1
 
-                # Crossover events - connect both parents to both children
-                # For child1:
-                if parent1 and child1 and child1 in G:
-                    G.add_edge(
-                        parent1,
-                        child1,
-                        type="crossover",
-                        time=event.get("time"),
-                        partner=parent2,
-                        details=event.get("details", {}),
-                    )
-                    edge_counts["crossover"] += 1
-                if parent2 and child1 and child1 in G:
-                    G.add_edge(
-                        parent2,
-                        child1,
-                        type="crossover",
-                        time=event.get("time"),
-                        partner=parent1,
-                        details=event.get("details", {}),
-                    )
-                    edge_counts["crossover"] += 1
-
-                # For child2:
-                if parent1 and child2 and child2 in G:
-                    G.add_edge(
-                        parent1,
-                        child2,
-                        type="crossover",
-                        time=event.get("time"),
-                        partner=parent2,
-                        details=event.get("details", {}),
-                    )
-                    edge_counts["crossover"] += 1
-                if parent2 and child2 and child2 in G:
-                    G.add_edge(
-                        parent2,
-                        child2,
-                        type="crossover",
-                        time=event.get("time"),
-                        partner=parent1,
-                        details=event.get("details", {}),
-                    )
-                    edge_counts["crossover"] += 1
-
-            # Tuning events
-            elif event_type == "tuning":
-                child_id = event.get("child")
-                if child_id:
-                    child_id = int(child_id)
-                    if child_id in G:
+                    elif event_type == "tuning":
+                        child_id = event.get("child")
+                        if child_id is None:
+                            continue
                         G.add_edge(
                             member_id,
-                            child_id,
+                            int(child_id),
                             type="tuning",
                             time=event.get("time"),
                             details=event.get("mutation", {}),
                         )
                         edge_counts["tuning"] += 1
+
+    if sample is not None:
+        sample_id, sample_data = sample
+        print("\nSample member data:")
+        print(f"ID: {sample_id}")
+        print(f"Parent: {sample_data.get('parent')}")
+        print(f"Events: {len(sample_data.get('events', []))}")
+        if sample_data.get("events"):
+            print("First event:", sample_data["events"][0])
 
     print("\nEvent counts:", event_counts)
     print("Edge counts:", edge_counts)
@@ -190,7 +143,7 @@ def simplify_graph(G):
 
 if __name__ == "__main__":
     # Example usage
-    G = load_pysr_graph("pysr_recorder.json")
+    G = load_pysr_graph("pysr_trace.jsonl")
 
     # Basic stats
     print(f"Loaded graph with {len(G)} nodes and {G.size()} edges")

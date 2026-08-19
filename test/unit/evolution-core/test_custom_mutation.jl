@@ -1,6 +1,6 @@
 @testitem "Custom mutation dispatch" begin
     using SymbolicRegression
-    using SymbolicRegression: Dataset, MutationResult, RecordType, mutate!, sample_mutation
+    using SymbolicRegression: Dataset, MutationResult, TraceType, mutate!, sample_mutation
     using SymbolicRegression.MutateModule: _sample_mutation, next_generation
     using Random: seed!
 
@@ -22,10 +22,11 @@
         mutations=(CustomMutation(calls) => 1.0,),
     )
     dataset = Dataset(randn(2, 16), randn(16))
+    plugin_states = SymbolicRegression.init_plugin_states(options, dataset)
     member = PopMember(dataset, Node(Float64; feature=1), options; deterministic=false)
 
     next_generation(
-        dataset, member, 1.0, options.maxsize, options; tmp_recorder=RecordType()
+        dataset, member, options.maxsize, options; tmp_trace=TraceType(), plugin_states
     )
 
     @test calls[] == 1
@@ -39,5 +40,5 @@
     @test sample_mutation(weighted_mutations) isa DoNothingMutation
 
     seed!(4)
-    @test _sample_mutation([DoNothingMutation() => nextfloat(0.0)]) isa DoNothingMutation
+    @test _sample_mutation([DoNothingMutation() => nextfloat(0.0)]) == 1
 end

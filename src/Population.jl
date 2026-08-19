@@ -2,23 +2,22 @@ module PopulationModule
 
 using StatsBase: StatsBase
 using DispatchDoctor: @unstable
-using DynamicExpressions: AbstractExpression, string_tree, constructorof
+using DynamicExpressions: AbstractExpression, constructorof
 using ..CoreModule:
     AbstractOptions,
     Options,
     Dataset,
-    RecordType,
     DATA_TYPE,
     LOSS_TYPE,
     init_member,
     resolve_init_member,
-    tournament_cost_multiplier
-using ..ComplexityModule: compute_complexity
+    tournament_cost_multiplier,
+    use_batching
 using ..LossFunctionsModule: eval_cost, update_baseline_loss!
 using ..MutationFunctionsModule: gen_random_tree
 using ..PopMemberModule: AbstractPopMember, PopMember
 import ..PopMemberModule: popmember_type
-using ..UtilsModule: bottomk_fast, argmin_fast, PerTaskCache
+using ..UtilsModule: bottomk_fast, argmin_fast, PerTaskCache, strictmap
 # A list of members of the population, with easy constructors,
 #  which allow for random generation of new populations
 struct Population{
@@ -44,26 +43,20 @@ Initialize a tree for a new population member. Asks every plugin via
 expression (two or more providers throw). If all plugins return `nothing`
 (the common case — no plugin overrides `init_member`), falls back to
 `gen_random_tree`.
-
-The empty-tuple specialisation keeps the no-plugin path fully type-stable.
 """
-function _init_tree(
-    dataset, options, nlength::Int, nfeatures::Int, ::Type{T}, ::Tuple{}
-) where {T}
-    return gen_random_tree(nlength, options, nfeatures, T)
-end
 function _init_tree(
     dataset, options, nlength::Int, nfeatures::Int, ::Type{T}, plugin_states::Tuple
 ) where {T}
-    fallback = gen_random_tree(nlength, options, nfeatures, T)
-    candidate = resolve_init_member(plugin_states, options.plugins, dataset, options)
-    return isnothing(candidate) ? fallback : candidate::typeof(fallback)
+    return @something(
+        resolve_init_member(plugin_states, options.plugins, dataset, options),
+        gen_random_tree(nlength, options, nfeatures, T),
+    )
 end
 
 """
     Population(dataset::Dataset{T,L};
                population_size, nlength::Int=3, options::AbstractOptions,
-               nfeatures::Int, plugin_states=())
+               nfeatures::Int, plugin_states::Tuple)
 
 Create random population and evaluate them on the dataset.
 """
@@ -74,7 +67,7 @@ function Population(
     nlength::Int=3,
     nfeatures::Int,
     npop=nothing,
-    plugin_states::Tuple=(),
+    plugin_states::Tuple,
 ) where {T,L}
     @assert (population_size !== nothing) ⊻ (npop !== nothing)
     population_size = something(population_size, npop)
@@ -106,11 +99,26 @@ function Population(
 
     return Population(members, population_size)
 end
+
+function _population_without_plugins(
+    dataset::Dataset{T,L}; options::AbstractOptions, nlength::Int=3, nfeatures::Int
+) where {T,L}
+    PM = options.popmember_type
+    member = constructorof(PM)(
+        dataset,
+        gen_random_tree(nlength, options, nfeatures, T),
+        options;
+        parent=-1,
+        deterministic=options.deterministic,
+    )
+    return Population([member])
+end
+
 """
     Population(X::AbstractMatrix{T}, y::AbstractVector{T};
                population_size, nlength::Int=3,
                options::AbstractOptions, nfeatures::Int,
-               loss_type::Type=Nothing)
+               loss_type::Type=Nothing, plugin_states::Tuple)
 
 Create random population and score them on the dataset.
 """
@@ -123,6 +131,7 @@ Create random population and score them on the dataset.
     nfeatures::Int,
     loss_type::Type{L}=Nothing,
     npop=nothing,
+    plugin_states::Tuple,
 ) where {T<:DATA_TYPE,L}
     @assert (population_size !== nothing) ⊻ (npop !== nothing)
     population_size = if npop === nothing
@@ -132,9 +141,7 @@ Create random population and score them on the dataset.
     end
     dataset = Dataset(X, y, L)
     update_baseline_loss!(dataset, options)
-    return Population(
-        dataset; population_size=population_size, options=options, nfeatures=nfeatures
-    )
+    return Population(dataset; population_size, options, nfeatures, plugin_states)
 end
 
 function Base.copy(pop::P)::P where {T,L,N,PM,P<:Population{T,L,N,PM}}
@@ -154,24 +161,23 @@ end
 
 # Sample the population, and get the best member from that sample
 function best_of_sample(
-    pop::Population{T,L,N}, options::AbstractOptions; plugin_states::Tuple=()
+    pop::Population{T,L,N}, options::AbstractOptions; plugin_states::Tuple
 ) where {T,L,N}
     sample = sample_pop(pop, options)
     return copy(_best_of_sample(sample.members, options; plugin_states))
 end
 function _best_of_sample(
-    members::Vector{P}, options::AbstractOptions; plugin_states::Tuple=()
+    members::Vector{P}, options::AbstractOptions; plugin_states::Tuple
 ) where {T,L,N,P<:AbstractPopMember{T,L,N}}
     p = options.tournament_selection_p
     n = length(members)  # == tournament_selection_n
     adjusted_costs = Vector{L}(undef, n)
     for i in eachindex(members, adjusted_costs)
         member = members[i]
-        cost = L(member.cost)
-        for (plugin, pstate) in zip(options.plugins, plugin_states)
-            cost *= L(tournament_cost_multiplier(pstate, plugin, member, options))
+        multipliers = strictmap(options.plugins, plugin_states) do plugin, pstate
+            return L(tournament_cost_multiplier(pstate, plugin, member, options))
         end
-        adjusted_costs[i] = cost
+        adjusted_costs[i] = L(member.cost) * prod(multipliers)
     end
 
     chosen_idx = if p == 1.0
@@ -214,7 +220,7 @@ end
 function finalize_costs(
     dataset::Dataset{T,L}, pop::P, options::AbstractOptions
 )::Tuple{P,Float64} where {T,L,P<:Population{T,L}}
-    need_recalculate = options.batching
+    need_recalculate = use_batching(options, dataset)
     num_evals = 0.0
     if need_recalculate
         for member in 1:(pop.n)
@@ -233,23 +239,6 @@ function best_sub_pop(pop::P; topn::Int=10)::P where {P<:Population}
     # Ensure we don't try to access more elements than exist in the population
     actual_topn = min(topn, pop.n)
     return Population(pop.members[best_idx[1:actual_topn]])
-end
-
-function record_population(pop::Population, options::AbstractOptions)::RecordType
-    return RecordType(
-        "population" => [
-            RecordType(
-                "tree" => string_tree(member.tree, options; pretty=false),
-                "loss" => member.loss,
-                "cost" => member.cost,
-                "complexity" => compute_complexity(member, options),
-                "birth" => member.birth,
-                "ref" => member.ref,
-                "parent" => member.parent,
-            ) for member in pop.members
-        ],
-        "time" => time(),
-    )
 end
 
 # Type accessor for Population

@@ -1,6 +1,6 @@
 using SymbolicRegression
 using Random: rand
-using MLJBase: machine, fit!, report, predict
+using SymbolicRegression: machine, fit!, report, predict
 using Test: @test
 
 expression_spec = @template_spec(expressions = (f, g1, g2)) do x1, x2, x3
