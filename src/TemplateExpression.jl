@@ -1272,6 +1272,7 @@ parse_expression((; f="cos(#1) - 1.5", g="exp(#2) - #1"); expression_type=Templa
     expression_spec::Union{ES.AbstractExpressionSpec,Nothing}=nothing,
     expression_options::Union{NamedTuple,Nothing}=nothing,
     eval_context::Union{EvalContext,Nothing}=nothing,
+    eval_module::Union{Module,Nothing}=nothing,
     operators::Union{AbstractOperatorEnum,Nothing}=nothing,
     binary_operators::Union{Vector{<:Function},Nothing}=nothing,
     unary_operators::Union{Vector{<:Function},Nothing}=nothing,
@@ -1341,6 +1342,7 @@ parse_expression((; f="cos(#1) - 1.5", g="exp(#2) - #1"); expression_type=Templa
                 variable_names=placeholder_variable_names,
                 expression_type=DE.Expression,
                 node_type=resolved_node_type,
+                eval_module,
                 kws...,
             )
 

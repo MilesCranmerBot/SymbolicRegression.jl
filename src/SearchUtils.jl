@@ -26,7 +26,8 @@ using ..CoreModule:
     MaybeTrace,
     max_features,
     create_expression,
-    init_value
+    init_value,
+    parse_scope
 using ..ComplexityModule: compute_complexity
 using ..PopulationModule: Population, _population_without_plugins
 using ..PopMemberModule: PopMember, AbstractPopMember
@@ -820,6 +821,7 @@ end
         operators=options.operators,
         variable_names=nothing,  # Don't pass dataset variable names - let custom parse_expression handle #N placeholders
         node_type=with_type_parameters(options.node_type, T),
+        eval_module=parse_scope(T),
         expression_options=options.expression_options,
         eval_context_kws...,
     )
@@ -834,6 +836,7 @@ end
         variable_names=dataset.variable_names,
         node_type=with_type_parameters(options.node_type, T),
         expression_type=options.expression_type,
+        eval_module=parse_scope(T),
     )
 end
 
