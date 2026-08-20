@@ -130,9 +130,6 @@ jobs:
           - examples/readme
           - examples/parameterized_function
           - examples/custom_types
-        exclude:
-          - julia-version: "1"
-            group: ad/mooncake
     steps:
       - uses: actions/checkout@v7
       - name: "Set up Julia"
