@@ -569,6 +569,25 @@ which is useful for debugging and profiling.
     is given in `.loss`. The array of `PopMember` objects
     is enumerated by size from `1` to `options.maxsize`.
 """
+# Set to `true` to request that a running search stop gracefully
+# at the next cycle boundary, returning the equations found so far.
+const stop_requested = Ref{Bool}(false)
+
+# Set to a readable file descriptor (e.g., the read end of a pipe) to stop
+# the search gracefully once that descriptor is readable. Checked with a
+# zero-timeout poll at every cycle-boundary check, so no background task
+# is required.
+const stop_fd = Ref{Cint}(-1)
+
+function check_stop_fd(fd::Cint)
+    fd < 0 && return false
+    pfd = zeros(UInt8, 8)
+    unsafe_store!(reinterpret(Ptr{Cint}, pointer(pfd)), fd)
+    unsafe_store!(reinterpret(Ptr{Cshort}, pointer(pfd) + 4), Cshort(1))  # POLLIN
+    unsafe_store!(reinterpret(Ptr{Cshort}, pointer(pfd) + 6), Cshort(0))
+    return ccall(:poll, Cint, (Ptr{UInt8}, Cuint, Cint), pfd, 1, 0) == 1
+end
+
 function equation_search(
     X::AbstractMatrix{T},
     y::AbstractMatrix;
@@ -690,6 +709,7 @@ end
     guesses,
 ) where {D<:Dataset}
     _validate_options(datasets, ropt, options)
+    stop_requested[] = false
     state = _create_workers(datasets, ropt, options)
     _initialize_search!(state, datasets, ropt, options, saved_state, guesses)
     _warmup_search!(state, datasets, ropt, options)
@@ -1300,6 +1320,8 @@ function _main_search_loop!(
             check_for_user_quit(state.stdin_reader),
             check_for_timeout(start_time, options),
             check_max_evals(state.num_evals, options),
+            stop_requested[],
+            check_stop_fd(stop_fd[]),
         ))
             break
         end
