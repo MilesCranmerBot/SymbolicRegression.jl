@@ -423,7 +423,7 @@ using .SearchUtilsModule:
     check_max_evals,
     stop_requested,
     stop_fd,
-    check_stop_fd,
+    check_external_stop,
     ResourceMonitor,
     record_channel_state!,
     estimate_work_fraction,
@@ -692,8 +692,8 @@ end
     saved_state,
     guesses,
 ) where {D<:Dataset}
-    _validate_options(datasets, ropt, options)
     stop_requested[] = false
+    _validate_options(datasets, ropt, options)
     state = _create_workers(datasets, ropt, options)
     _initialize_search!(state, datasets, ropt, options, saved_state, guesses)
     _warmup_search!(state, datasets, ropt, options)
@@ -1004,7 +1004,7 @@ function _warmup_search!(
 
     nout = length(datasets)
     for j in 1:nout, i in 1:(options.populations)
-        (stop_requested[] || check_stop_fd(stop_fd[])) && break
+        check_external_stop() && break
         dataset = datasets[j]
         cur_maxsize = state.cur_maxsizes[j]
         worker_idx = assign_next_worker!(
@@ -1093,8 +1093,6 @@ function _main_search_loop!(
         window_size=(options.populations * 2 * nout),
     )
     while sum(state.cycles_remaining) > 0
-        # Check before dispatching: serial cycles run synchronously in this loop.
-        (stop_requested[] || check_stop_fd(stop_fd[])) && break
         kappa += 1
         if kappa > options.populations * nout
             kappa = 1
@@ -1190,7 +1188,7 @@ function _main_search_loop!(
             ###################################################################
 
             state.cycles_remaining[j] -= 1
-            if state.cycles_remaining[j] > 0
+            if state.cycles_remaining[j] > 0 && !check_external_stop()
                 worker_idx = assign_next_worker!(
                     state.worker_assignment;
                     out=j,
@@ -1307,7 +1305,7 @@ function _main_search_loop!(
             check_for_user_quit(state.stdin_reader),
             check_for_timeout(start_time, options),
             check_max_evals(state.num_evals, options),
-            stop_requested[],
+            check_external_stop(),
         ))
             break
         end

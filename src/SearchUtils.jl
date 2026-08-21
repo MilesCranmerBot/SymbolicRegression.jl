@@ -491,6 +491,15 @@ function check_stop_fd(fd::Cint)::Bool
     end
 end
 
+"""Check for an external stop request, latching pipe notifications into `stop_requested`."""
+function check_external_stop()::Bool
+    stop_requested[] && return true
+    if check_stop_fd(stop_fd[])
+        stop_requested[] = true
+    end
+    return stop_requested[]
+end
+
 """
 This struct is used to monitor resources.
 
