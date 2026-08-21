@@ -473,7 +473,13 @@ struct PollFD
     revents::Cshort
 end
 
+# Only bytes with this value request a stop; 0x00 means any byte does.
+# Lets hosts using `signal.set_wakeup_fd`-style mechanisms, which write the
+# signal number for every handled signal, filter for SIGINT alone.
+const stop_fd_trigger = Ref{UInt8}(0x00)
+
 const _stop_poll_fd = Ref(PollFD(Cint(-1), Cshort(0x0001), Cshort(0)))  # POLLIN
+const _stop_read_buf = Ref{UInt8}(0)
 
 function check_stop_fd(fd::Cint)::Bool
     fd < 0 && return false
@@ -481,13 +487,20 @@ function check_stop_fd(fd::Cint)::Bool
         # No POSIX poll on Windows; hosts only register fds on POSIX.
         return false
     else
-        _stop_poll_fd[] = PollFD(fd, Cshort(0x0001), Cshort(0))
-        ccall(:poll, Cint, (Ref{PollFD}, Cuint, Cint), _stop_poll_fd, 1, 0) == 1 ||
-            return false
-        # Consume the byte: the pipe is level-triggered.
-        buf = Ref{UInt8}(0)
-        ccall(:read, Cssize_t, (Cint, Ref{UInt8}, Csize_t), fd, buf, 1)
-        return true
+        trigger = stop_fd_trigger[]
+        stop = false
+        # Drain everything queued so stale bytes never stop a later search.
+        while true
+            _stop_poll_fd[] = PollFD(fd, Cshort(0x0001), Cshort(0))
+            ccall(:poll, Cint, (Ref{PollFD}, Cuint, Cint), _stop_poll_fd, 1, 0) == 1 ||
+                break
+            n = ccall(:read, Cssize_t, (Cint, Ref{UInt8}, Csize_t), fd, _stop_read_buf, 1)
+            n == 1 || break
+            if trigger == 0x00 || _stop_read_buf[] == trigger
+                stop = true
+            end
+        end
+        return stop
     end
 end
 

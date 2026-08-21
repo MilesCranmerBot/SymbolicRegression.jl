@@ -423,6 +423,7 @@ using .SearchUtilsModule:
     check_max_evals,
     stop_requested,
     stop_fd,
+    stop_fd_trigger,
     check_external_stop,
     ResourceMonitor,
     record_channel_state!,
