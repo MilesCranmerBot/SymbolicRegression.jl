@@ -506,7 +506,8 @@ end
 
 """Check for an external stop request, latching pipe notifications into `stop_requested`."""
 function check_external_stop()::Bool
-    stop_requested[] && return true
+    # Keep draining even once latched so notifications arriving after the
+    # first stop (e.g., a second Ctrl-C) cannot leak into a later search.
     if check_stop_fd(stop_fd[])
         stop_requested[] = true
     end

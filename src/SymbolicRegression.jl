@@ -424,6 +424,7 @@ using .SearchUtilsModule:
     stop_requested,
     stop_fd,
     stop_fd_trigger,
+    check_stop_fd,
     check_external_stop,
     ResourceMonitor,
     record_channel_state!,
@@ -694,6 +695,9 @@ end
     guesses,
 ) where {D<:Dataset}
     stop_requested[] = false
+    # Discard notifications queued before this search began (e.g., written
+    # after the previous search's final check).
+    check_stop_fd(stop_fd[])
     _validate_options(datasets, ropt, options)
     state = _create_workers(datasets, ropt, options)
     _initialize_search!(state, datasets, ropt, options, saved_state, guesses)
