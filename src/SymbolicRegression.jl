@@ -581,11 +581,22 @@ const stop_fd = Ref{Cint}(-1)
 
 function check_stop_fd(fd::Cint)
     fd < 0 && return false
-    pfd = zeros(UInt8, 8)
-    unsafe_store!(reinterpret(Ptr{Cint}, pointer(pfd)), fd)
-    unsafe_store!(reinterpret(Ptr{Cshort}, pointer(pfd) + 4), Cshort(1))  # POLLIN
-    unsafe_store!(reinterpret(Ptr{Cshort}, pointer(pfd) + 6), Cshort(0))
-    return ccall(:poll, Cint, (Ptr{UInt8}, Cuint, Cint), pfd, 1, 0) == 1
+    @static if Sys.iswindows()
+        # POSIX `poll` is unavailable on Windows; the file-descriptor
+        # mechanism is only wired up by hosts on POSIX platforms.
+        return false
+    else
+        pfd = zeros(UInt8, 8)
+        unsafe_store!(reinterpret(Ptr{Cint}, pointer(pfd)), fd)
+        unsafe_store!(reinterpret(Ptr{Cshort}, pointer(pfd) + 4), Cshort(1))  # POLLIN
+        unsafe_store!(reinterpret(Ptr{Cshort}, pointer(pfd) + 6), Cshort(0))
+        ccall(:poll, Cint, (Ptr{UInt8}, Cuint, Cint), pfd, 1, 0) == 1 || return false
+        # Consume the notification: the pipe stays level-triggered readable
+        # otherwise, which would stop every later search reusing the fd.
+        buf = Ref{Cchar}(0)
+        ccall(:read, Cssize_t, (Cint, Ref{Cchar}, Csize_t), fd, buf, 1)
+        return true
+    end
 end
 
 function equation_search(
@@ -1108,6 +1119,9 @@ function _main_search_loop!(
         window_size=(options.populations * 2 * nout),
     )
     while sum(state.cycles_remaining) > 0
+        # Honor stop requests before dispatching further work; in serial mode
+        # the next cycle runs synchronously inside this loop.
+        (stop_requested[] || check_stop_fd(stop_fd[])) && break
         kappa += 1
         if kappa > options.populations * nout
             kappa = 1
