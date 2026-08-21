@@ -1004,6 +1004,7 @@ function _warmup_search!(
 
     nout = length(datasets)
     for j in 1:nout, i in 1:(options.populations)
+        (stop_requested[] || check_stop_fd(stop_fd[])) && break
         dataset = datasets[j]
         cur_maxsize = state.cur_maxsizes[j]
         worker_idx = assign_next_worker!(
@@ -1307,7 +1308,6 @@ function _main_search_loop!(
             check_for_timeout(start_time, options),
             check_max_evals(state.num_evals, options),
             stop_requested[],
-            check_stop_fd(stop_fd[]),
         ))
             break
         end

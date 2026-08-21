@@ -473,15 +473,17 @@ struct PollFD
     revents::Cshort
 end
 
+const _stop_poll_fd = Ref(PollFD(Cint(-1), Cshort(0x0001), Cshort(0)))  # POLLIN
+
 function check_stop_fd(fd::Cint)::Bool
     fd < 0 && return false
     @static if Sys.iswindows()
         # No POSIX poll on Windows; hosts only register fds on POSIX.
         return false
     else
-        pollin = Cshort(0x0001)
-        pfd = Ref(PollFD(fd, pollin, Cshort(0)))
-        ccall(:poll, Cint, (Ref{PollFD}, Cuint, Cint), pfd, 1, 0) == 1 || return false
+        _stop_poll_fd[] = PollFD(fd, Cshort(0x0001), Cshort(0))
+        ccall(:poll, Cint, (Ref{PollFD}, Cuint, Cint), _stop_poll_fd, 1, 0) == 1 ||
+            return false
         # Consume the byte: the pipe is level-triggered.
         buf = Ref{UInt8}(0)
         ccall(:read, Cssize_t, (Cint, Ref{UInt8}, Csize_t), fd, buf, 1)
