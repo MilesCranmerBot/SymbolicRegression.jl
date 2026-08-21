@@ -461,6 +461,34 @@ function check_max_evals(num_evals, options::AbstractOptions)::Bool
     return options.max_evals !== nothing && options.max_evals::Int <= sum(sum, num_evals)
 end
 
+# Request a graceful stop at the next cycle boundary.
+const stop_requested = Ref{Bool}(false)
+
+# Readable pipe fd that triggers a graceful stop once readable.
+const stop_fd = Ref{Cint}(-1)
+
+struct PollFD
+    fd::Cint
+    events::Cshort
+    revents::Cshort
+end
+
+function check_stop_fd(fd::Cint)::Bool
+    fd < 0 && return false
+    @static if Sys.iswindows()
+        # No POSIX poll on Windows; hosts only register fds on POSIX.
+        return false
+    else
+        pollin = Cshort(0x0001)
+        pfd = Ref(PollFD(fd, pollin, Cshort(0)))
+        ccall(:poll, Cint, (Ref{PollFD}, Cuint, Cint), pfd, 1, 0) == 1 || return false
+        # Consume the byte: the pipe is level-triggered.
+        buf = Ref{UInt8}(0)
+        ccall(:read, Cssize_t, (Cint, Ref{UInt8}, Csize_t), fd, buf, 1)
+        return true
+    end
+end
+
 """
 This struct is used to monitor resources.
 

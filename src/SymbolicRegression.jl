@@ -421,6 +421,9 @@ using .SearchUtilsModule:
     check_for_loss_threshold,
     check_for_timeout,
     check_max_evals,
+    stop_requested,
+    stop_fd,
+    check_stop_fd,
     ResourceMonitor,
     record_channel_state!,
     estimate_work_fraction,
@@ -569,30 +572,6 @@ which is useful for debugging and profiling.
     is given in `.loss`. The array of `PopMember` objects
     is enumerated by size from `1` to `options.maxsize`.
 """
-# Request a graceful stop at the next cycle boundary.
-const stop_requested = Ref{Bool}(false)
-
-# Readable pipe fd that triggers a graceful stop once readable.
-const stop_fd = Ref{Cint}(-1)
-
-function check_stop_fd(fd::Cint)
-    fd < 0 && return false
-    @static if Sys.iswindows()
-        # No POSIX poll on Windows; hosts only register fds on POSIX.
-        return false
-    else
-        pfd = zeros(UInt8, 8)
-        unsafe_store!(reinterpret(Ptr{Cint}, pointer(pfd)), fd)
-        unsafe_store!(reinterpret(Ptr{Cshort}, pointer(pfd) + 4), Cshort(1))  # POLLIN
-        unsafe_store!(reinterpret(Ptr{Cshort}, pointer(pfd) + 6), Cshort(0))
-        ccall(:poll, Cint, (Ptr{UInt8}, Cuint, Cint), pfd, 1, 0) == 1 || return false
-        # Consume the byte: the pipe is level-triggered.
-        buf = Ref{Cchar}(0)
-        ccall(:read, Cssize_t, (Cint, Ref{Cchar}, Csize_t), fd, buf, 1)
-        return true
-    end
-end
-
 function equation_search(
     X::AbstractMatrix{T},
     y::AbstractMatrix;
