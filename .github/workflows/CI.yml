@@ -117,6 +117,7 @@ jobs:
           - ad/zygote
           - ad/enzyme
           - ad/mooncake
+          - ad/mooncakev1
           - aqua
           - jet
           - ext/mlj/core
@@ -164,42 +165,6 @@ jobs:
           name: coverage-integration-${{ steps.sanitize_integration_group.outputs.group }}-${{ matrix.julia-version }}
           path: lcov.info
           retention-days: 1
-
-  integration-optim-v1:
-    name: i/ad/mooncake-optim-v1-1-ubuntu-latest
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@v7
-      - name: "Set up Julia"
-        uses: julia-actions/setup-julia@v3
-        with:
-          version: "1"
-      - name: "Cache dependencies"
-        uses: julia-actions/cache@v3
-        with:
-          cache-name: julia-cache;workflow=${{ github.workflow }};job=${{ github.job }};project=${{ hashFiles('test/integration/ad/mooncake/Project.toml') }}
-      - name: "Pin Optim v1 in the mooncake environment"
-        run: |
-          julia --color=yes --project=test/integration/ad/mooncake -e '
-            import Pkg
-            Pkg.develop(; path=".")
-            Pkg.add(; name="Optim", version="1")
-            Pkg.pin(; name="Optim")'
-        shell: bash
-      - name: "Run integration test"
-        env:
-          TEST_GROUP: integration/ad/mooncake
-        run: julia --color=yes --project=. --threads=auto --check-bounds=yes -e 'import Pkg; Pkg.test()'
-        shell: bash
-      - name: "Confirm the tests ran against Optim v1"
-        run: |
-          julia --color=yes --project=test/integration/ad/mooncake -e '
-            import Optim
-            version = Base.pkgversion(Optim)
-            @info "Optim version used by the mooncake group" version
-            version < v"2" || error("expected Optim 1.x, got $(version)")'
-        shell: bash
 
   repl-stdin-monitoring:
     name: u/repl-stdin-monitoring-1.10-ubuntu-latest
