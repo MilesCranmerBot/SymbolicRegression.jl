@@ -694,10 +694,11 @@ end
     saved_state,
     guesses,
 ) where {D<:Dataset}
-    stop_requested[] = false
-    # Discard notifications queued before this search began (e.g., written
-    # after the previous search's final check).
-    check_stop_fd(stop_fd[])
+    # Latch any stop requested since the host registered the descriptor
+    # (e.g., during input preparation in the `X, y` overload). Hosts reusing
+    # a descriptor across searches should drain or re-register it between
+    # searches, since queued bytes are indistinguishable from fresh requests.
+    stop_requested[] = check_stop_fd(stop_fd[])
     _validate_options(datasets, ropt, options)
     state = _create_workers(datasets, ropt, options)
     _initialize_search!(state, datasets, ropt, options, saved_state, guesses)
