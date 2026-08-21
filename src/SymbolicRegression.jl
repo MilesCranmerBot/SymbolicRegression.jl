@@ -569,21 +569,16 @@ which is useful for debugging and profiling.
     is given in `.loss`. The array of `PopMember` objects
     is enumerated by size from `1` to `options.maxsize`.
 """
-# Set to `true` to request that a running search stop gracefully
-# at the next cycle boundary, returning the equations found so far.
+# Request a graceful stop at the next cycle boundary.
 const stop_requested = Ref{Bool}(false)
 
-# Set to a readable file descriptor (e.g., the read end of a pipe) to stop
-# the search gracefully once that descriptor is readable. Checked with a
-# zero-timeout poll at every cycle-boundary check, so no background task
-# is required.
+# Readable pipe fd that triggers a graceful stop once readable.
 const stop_fd = Ref{Cint}(-1)
 
 function check_stop_fd(fd::Cint)
     fd < 0 && return false
     @static if Sys.iswindows()
-        # POSIX `poll` is unavailable on Windows; the file-descriptor
-        # mechanism is only wired up by hosts on POSIX platforms.
+        # No POSIX poll on Windows; hosts only register fds on POSIX.
         return false
     else
         pfd = zeros(UInt8, 8)
@@ -591,8 +586,7 @@ function check_stop_fd(fd::Cint)
         unsafe_store!(reinterpret(Ptr{Cshort}, pointer(pfd) + 4), Cshort(1))  # POLLIN
         unsafe_store!(reinterpret(Ptr{Cshort}, pointer(pfd) + 6), Cshort(0))
         ccall(:poll, Cint, (Ptr{UInt8}, Cuint, Cint), pfd, 1, 0) == 1 || return false
-        # Consume the notification: the pipe stays level-triggered readable
-        # otherwise, which would stop every later search reusing the fd.
+        # Consume the byte: the pipe is level-triggered.
         buf = Ref{Cchar}(0)
         ccall(:read, Cssize_t, (Cint, Ref{Cchar}, Csize_t), fd, buf, 1)
         return true
@@ -1119,8 +1113,7 @@ function _main_search_loop!(
         window_size=(options.populations * 2 * nout),
     )
     while sum(state.cycles_remaining) > 0
-        # Honor stop requests before dispatching further work; in serial mode
-        # the next cycle runs synchronously inside this loop.
+        # Check before dispatching: serial cycles run synchronously in this loop.
         (stop_requested[] || check_stop_fd(stop_fd[])) && break
         kappa += 1
         if kappa > options.populations * nout
