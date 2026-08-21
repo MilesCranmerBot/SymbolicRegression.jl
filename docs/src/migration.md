@@ -50,8 +50,6 @@ These still work but emit deprecation warnings:
 
 - **`ParametricExpression`** is removed. Use `TemplateExpression` with
   optimizable parameters instead.
-- **`BacksolveOptions`** (an internal alias) is removed. Use
-  `BacksolveMutation`.
 - **`Options`, `SearchState`, and `TemplateExpressionSpec` gained type
   parameters**, which changes their concrete type arity. `SearchState`
   also replaces `all_running_search_statistics` with `plugin_states`.
