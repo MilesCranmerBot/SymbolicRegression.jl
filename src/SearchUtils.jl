@@ -462,6 +462,10 @@ function check_max_evals(num_evals, options::AbstractOptions)::Bool
 end
 
 # Request a graceful stop at the next cycle boundary.
+#
+# NOTE: this stop machinery (`stop_requested`, `stop_fd`, `stop_fd_trigger`)
+# is process-global and assumes one active search per Julia process;
+# concurrent searches would share a single stop request.
 const stop_requested = Ref{Bool}(false)
 
 # Readable pipe fd that triggers a graceful stop once readable.
@@ -504,12 +508,25 @@ function check_stop_fd(fd::Cint)::Bool
     end
 end
 
+# Minimum interval between `poll` syscalls: the scheduler loop can spin
+# thousands of times per second, and each zero-timeout poll costs ~10us.
+const STOP_POLL_INTERVAL_NS = UInt64(20_000_000)  # 20 ms
+const _last_stop_poll_ns = Ref{UInt64}(0)
+
 """Check for an external stop request, latching pipe notifications into `stop_requested`."""
 function check_external_stop()::Bool
-    # Keep draining even once latched so notifications arriving after the
-    # first stop (e.g., a second Ctrl-C) cannot leak into a later search.
-    if check_stop_fd(stop_fd[])
-        stop_requested[] = true
+    fd = stop_fd[]
+    if fd >= 0
+        now = time_ns()
+        if now - _last_stop_poll_ns[] >= STOP_POLL_INTERVAL_NS
+            _last_stop_poll_ns[] = now
+            # Keep draining even once latched so notifications arriving after
+            # the first stop (e.g., a second Ctrl-C) cannot leak into a later
+            # search.
+            if check_stop_fd(fd)
+                stop_requested[] = true
+            end
+        end
     end
     return stop_requested[]
 end
