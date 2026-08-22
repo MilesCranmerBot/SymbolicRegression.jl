@@ -230,8 +230,7 @@ function fix_vitepress_base_path()
             content = replace(content, r"base:\s*'[^']*'" => "base: '$base_path'")
             content = replace(
                 content,
-                r"__DEPLOY_ABSPATH__\s*:\s*JSON\.stringify\('[^']*'\)" =>
-                    "__DEPLOY_ABSPATH__: JSON.stringify('$deploy_abspath')",
+                r"__DEPLOY_ABSPATH__\s*:\s*JSON\.stringify\('[^']*'\)" => "__DEPLOY_ABSPATH__: JSON.stringify('$deploy_abspath')",
             )
 
             write(config_path, content)
@@ -272,7 +271,9 @@ function generate_favicons()
         output_path = joinpath(public_dir, filename)
         # Use 'convert' for ImageMagick 6.x (Ubuntu default), 'magick' for ImageMagick 7.x
         magick_cmd = Sys.which("magick") !== nothing ? "magick" : "convert"
-        run(`$(magick_cmd) $(logo_path) -resize $(size) -background none -gravity center -extent $(size) $(output_path)`)
+        run(
+            `$(magick_cmd) $(logo_path) -resize $(size) -background none -gravity center -extent $(size) $(output_path)`,
+        )
         @info "Generated: $filename"
     end
 
@@ -369,6 +370,7 @@ makedocs(;
         "Types" => "types.md",
         "Customization" => "customization.md",
         "Plugins" => "plugins.md",
+        "Migrating from v1" => "migration.md",
     ],
 )
 

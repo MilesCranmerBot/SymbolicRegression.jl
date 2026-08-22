@@ -1,5 +1,18 @@
 # Changelog
 
+## [2.0.0-beta.8](https://github.com/astroautomata/SymbolicRegression.jl/compare/v2.0.0-beta.7...v2.0.0-beta.8) (2026-08-15)
+
+### Bug Fixes
+
+- display iterations by same unit for progress=False ([#696](https://github.com/astroautomata/SymbolicRegression.jl/issues/696)) ([c1a02d5](https://github.com/astroautomata/SymbolicRegression.jl/commit/c1a02d5a1dd93d6a87d9c04836e00559393f8f99))
+- escape quotes in hall of fame CSV ([#698](https://github.com/astroautomata/SymbolicRegression.jl/issues/698)) ([7329bc8](https://github.com/astroautomata/SymbolicRegression.jl/commit/7329bc8be655861eb5eaa437a35175fe33432402))
+
+## [2.0.0-beta.7](https://github.com/astroautomata/SymbolicRegression.jl/compare/v2.0.0-beta.6...v2.0.0-beta.7) (2026-08-14)
+
+### Features
+
+- allow custom types in TemplateExpression parameters ([#693](https://github.com/astroautomata/SymbolicRegression.jl/issues/693)) ([494614b](https://github.com/astroautomata/SymbolicRegression.jl/commit/494614b8add88b833fdb9e33e001b3f3a594bb87))
+
 ## [2.0.0-beta.6](https://github.com/astroautomata/SymbolicRegression.jl/compare/v2.0.0-beta.5...v2.0.0-beta.6) (2026-08-12)
 
 ### Features

@@ -117,6 +117,7 @@ jobs:
           - ad/zygote
           - ad/enzyme
           - ad/mooncake
+          - ad/mooncakev1
           - aqua
           - jet
           - ext/mlj/core
@@ -130,9 +131,6 @@ jobs:
           - examples/readme
           - examples/parameterized_function
           - examples/custom_types
-        exclude:
-          - julia-version: "1"
-            group: ad/mooncake
     steps:
       - uses: actions/checkout@v7
       - name: "Set up Julia"

@@ -388,7 +388,6 @@ end
     using SymbolicRegression
     using SymbolicRegression: D, safe_log, ValidVector
     using DynamicExpressions: OperatorEnum
-    using ForwardDiff: DimensionMismatch
 
     operators = OperatorEnum(; binary_operators=(+, -, *, /), unary_operators=(safe_log,))
     variable_names = ["x"]
@@ -417,9 +416,13 @@ end
     @test result[2] == 0.0
     @test result[3] == 0.0
 
-    # Eventually we want to support complex numbers:
+    # Complex inputs evaluate through the derivative operator:
     X_complex = [-1.0 - 1.0im]'
-    @test_throws DimensionMismatch expr(X_complex)
+    z = only(X_complex)
+    result = only(expr(X_complex))
+    @test result[1] ≈ log(z)
+    @test result[2] ≈ 1 / z
+    @test result[3] ≈ -1 / z^2
 end
 
 @testitem "Test eval_context with turbo mode" begin
