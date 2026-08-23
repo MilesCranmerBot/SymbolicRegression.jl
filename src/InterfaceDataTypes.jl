@@ -12,6 +12,12 @@ init_value(::Type{T}) where {T<:Number} = zero(T)
 function init_value(::Type{T}) where {T}
     return error("No `init_value` method defined for type $T. Please define one.")
 end
+"""
+    parse_scope(::Type)
+
+Return the module used to evaluate parsed guesses for the given type.
+"""
+parse_scope(::Type{T}) where {T} = nothing
 
 """
     sample_value(::Type, options::AbstractOptions)
