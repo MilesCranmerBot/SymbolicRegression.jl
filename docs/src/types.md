@@ -76,18 +76,6 @@ Composable expressions are used internally by `TemplateExpression` and allow you
 ComposableExpression
 ```
 
-### Parametric Expressions
-
-Parametric expressions are a type of expression that includes parameters which can be optimized during the search.
-
-```@docs
-ParametricExpression
-ParametricNode
-ParametricExpressionSpec
-```
-
-These types allow you to define expressions with parameters that can be tuned to fit the data better. You can specify the maximum number of parameters using the `expression_options` argument in `SRRegressor`.
-
 ## Population
 
 Groups of equations are given as a population, which is

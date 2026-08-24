@@ -27,6 +27,92 @@
     @test_throws AssertionError Options(; loss_scale=:cubic)
 end
 
+@testitem "Test versioned default profile selection" begin
+    using SymbolicRegression
+    using SymbolicRegression.CoreModule.OptionsModule: default_options
+
+    v1_defaults = default_options(v"1.0.0")
+    v2_defaults = default_options(v"2.0.0-alpha")
+    current_defaults = default_options()
+
+    @test keys(v1_defaults) == keys(v2_defaults) == keys(current_defaults)
+    for field in keys(v1_defaults)
+        v1_value = getproperty(v1_defaults, field)
+        v2_value = getproperty(v2_defaults, field)
+        current_value = getproperty(current_defaults, field)
+        if field == :mutation_weights
+            v1_value = convert(Vector, v1_value)
+            v2_value = convert(Vector, v2_value)
+            current_value = convert(Vector, current_value)
+        end
+
+        @test isequal(current_value, v2_value)
+        if field == :crossover_probability
+            @test v1_value == 0.0259
+            @test v2_value == 0.20
+        elseif field == :batching
+            @test v1_value === false
+            @test v2_value === :auto
+        elseif field == :batch_size
+            @test v1_value == 50
+            @test v2_value === nothing
+        else
+            @test isequal(v1_value, v2_value)
+        end
+    end
+
+    @test Options().crossover_probability == 0.20
+    @test Options(; defaults=v"1.0.0").crossover_probability == 0.0259
+    @test Options(; defaults=v"2.0.0-alpha").adaptive_parsimony_scaling == 1040.0
+end
+
+@testitem "Test automatic batching options" begin
+    using SymbolicRegression
+    using SymbolicRegression.CoreModule:
+        batch, batching_required, get_batch_size, use_batching
+
+    struct UnbatchableDataset <: Dataset{Float64,Float64}
+        n::Int
+    end
+
+    options = Options()
+    dataset_1000 = Dataset(zeros(1, 1000), zeros(1000))
+    dataset_1001 = Dataset(zeros(1, 1001), zeros(1001))
+    @test options.batching === :auto
+    @test options.batch_size === nothing
+    @test !use_batching(options, dataset_1000)
+    @test use_batching(options, dataset_1001)
+    @test map(n -> get_batch_size(options, n), (1000, 1001, 4999, 5000, 49999, 50000)) ==
+        (1000, 128, 128, 256, 256, 512)
+    @test @inferred(use_batching(options, dataset_1001))
+    @test @inferred(get_batch_size(options, 5000)) == 256
+    @test !(@inferred(batching_required(options, dataset_1000)))
+
+    custom_dataset = UnbatchableDataset(1001)
+    @test !use_batching(options, custom_dataset)
+    @test !batching_required(options, custom_dataset)
+
+    forced = Options(; batching=true)
+    @test use_batching(forced, dataset_1000)
+    @test get_batch_size(forced, 1000) == 1000
+    @test !batching_required(forced, dataset_1000)
+    @test batching_required(forced, custom_dataset)
+    @test_throws MethodError batch(custom_dataset, get_batch_size(forced, custom_dataset.n))
+
+    disabled = Options(; batching=false, batch_size=64)
+    @test !use_batching(disabled, dataset_1001)
+    @test get_batch_size(disabled, 50000) == 64
+
+    explicit_size = Options(; batching=true, batch_size=2000)
+    @test get_batch_size(explicit_size, 1000) == 1000
+    @test get_batch_size(explicit_size, 5000) == 2000
+    @test !batching_required(explicit_size, dataset_1000)
+    @test Options(; batch_size=Int32(64)).batch_size === 64
+
+    @test_throws ArgumentError Options(; batching=:sometimes)
+    @test_throws ArgumentError Options(; batch_size=0)
+end
+
 @testitem "Test backsolve options" begin
     using SymbolicRegression
     using SymbolicRegression.BacksolveModule: configured_backsolve

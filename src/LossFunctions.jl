@@ -2,7 +2,13 @@ module LossFunctionsModule
 
 using DispatchDoctor: @stable
 using DynamicExpressions:
-    AbstractExpression, AbstractExpressionNode, get_tree, eval_tree_array
+    AbstractExpression,
+    AbstractExpressionNode,
+    ArrayBuffer,
+    EvalContext,
+    get_tree,
+    eval_tree_array
+using DynamicExpressions.EvaluateModule: reset_index!
 using LossFunctions: LossFunctions
 using LossFunctions: SupervisedLoss
 using ..CoreModule:
@@ -17,7 +23,17 @@ using ..CoreModule:
     init_value
 using ..ComplexityModule: compute_complexity
 using ..DimensionalAnalysisModule: violates_dimensional_constraints
-using ..InterfaceDynamicExpressionsModule: expected_array_type
+using ..InterfaceDynamicExpressionsModule:
+    expected_array_type, takes_eval_context, _process_eval_options
+
+function create_eval_context(dataset::Dataset, options::AbstractOptions, num_arrays::Int)
+    if options.bumper isa Val{true} || !takes_eval_context(options.operators)
+        return nothing
+    end
+    array = similar(dataset.X, axes(dataset.X, 2))
+    arrays = [similar(array) for _ in 1:num_arrays]
+    return EvalContext(; turbo=options.turbo, buffer=ArrayBuffer(arrays, Ref(0)))
+end
 
 function _loss(
     ::AbstractArray{T1}, ::AbstractArray{T2}, ::LT
@@ -62,10 +78,15 @@ end
     default_union_limit = 2,
     begin
         function eval_tree_dispatch(
-            tree::AbstractExpression, dataset::Dataset, options::AbstractOptions
+            tree::AbstractExpression,
+            dataset::Dataset,
+            options::AbstractOptions,
+            eval_context,
         )
             A = expected_array_type(dataset.X, typeof(tree))
-            out, complete = eval_tree_array(tree, dataset.X, options)
+            out, complete = eval_tree_array(
+                tree, dataset.X, options; eval_context=eval_context
+            )
             if isnothing(out)
                 return out, false
             else
@@ -73,10 +94,15 @@ end
             end
         end
         function eval_tree_dispatch(
-            tree::AbstractExpressionNode, dataset::Dataset, options::AbstractOptions
+            tree::AbstractExpressionNode,
+            dataset::Dataset,
+            options::AbstractOptions,
+            eval_context,
         )
             A = expected_array_type(dataset.X, typeof(tree))
-            out, complete = eval_tree_array(tree, dataset.X, options)
+            out, complete = eval_tree_array(
+                tree, dataset.X, options; eval_context=eval_context
+            )
             if isnothing(out)
                 return out, false
             else
@@ -92,8 +118,10 @@ function _eval_loss(
     dataset::Dataset{T,L},
     options::AbstractOptions,
     regularization::Bool,
+    eval_context,
 )::L where {T<:DATA_TYPE,L<:LOSS_TYPE}
-    (prediction, completion) = eval_tree_dispatch(tree, dataset, options)
+    eval_context === nothing || reset_index!(eval_context.buffer)
+    (prediction, completion) = eval_tree_dispatch(tree, dataset, options, eval_context)
     if !completion || isnothing(prediction)
         return L(Inf)
     end
@@ -142,7 +170,12 @@ function eval_loss(
     options::AbstractOptions;
     regularization::Bool=true,
     idx=nothing,
+    eval_context=nothing,
+    kws...,
 )::L where {T<:DATA_TYPE,L<:LOSS_TYPE}
+    eval_context = _process_eval_options(eval_context, kws, :eval_loss)
+    kws = Base.structdiff((; kws...), (; eval_options=nothing))
+    isempty(kws) || Base.kwerr(kws, eval_loss, tree, dataset, options)
     loss_val = if !isnothing(options.loss_function)
         f = options.loss_function::Function
         inner_tree = tree isa AbstractExpression ? get_tree(tree) : tree
@@ -152,7 +185,7 @@ function eval_loss(
         @assert tree isa AbstractExpression
         evaluator(f, tree, dataset, options, idx)
     else
-        _eval_loss(tree, dataset, options, regularization)
+        _eval_loss(tree, dataset, options, regularization, eval_context)
     end
 
     return loss_val
@@ -195,8 +228,13 @@ function eval_cost(
     member,
     options::AbstractOptions;
     complexity::Union{Int,Nothing}=nothing,
+    eval_context=nothing,
+    kws...,
 )::Tuple{L,L} where {T<:DATA_TYPE,L<:LOSS_TYPE}
-    result_loss = eval_loss(get_tree_from_member(member), dataset, options)
+    eval_context = _process_eval_options(eval_context, kws, :eval_cost)
+    kws = Base.structdiff((; kws...), (; eval_options=nothing))
+    isempty(kws) || Base.kwerr(kws, eval_cost, dataset, member, options)
+    result_loss = eval_loss(get_tree_from_member(member), dataset, options; eval_context)
     cost = loss_to_cost(
         result_loss,
         dataset.use_baseline,

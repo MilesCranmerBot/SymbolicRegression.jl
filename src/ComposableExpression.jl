@@ -8,7 +8,7 @@ using DynamicExpressions:
     AbstractExpressionNode,
     AbstractOperatorEnum,
     Metadata,
-    EvalOptions,
+    EvalContext,
     constructorof,
     get_metadata,
     eval_tree_array,
@@ -22,6 +22,7 @@ using DynamicExpressions.ValueInterfaceModule: is_valid_array
 
 using ..ConstantOptimizationModule: ConstantOptimizationModule as CO
 using ..CoreModule: get_safe_op
+using ..InterfaceDynamicExpressionsModule: _process_eval_options
 
 abstract type AbstractComposableExpression{T,N} <: AbstractExpression{T,N} end
 
@@ -53,8 +54,8 @@ struct ComposableExpression{
     T,
     N<:AbstractExpressionNode{T},
     D<:@NamedTuple{
-        operators::O, variable_names::V, eval_options::E
-    } where {O<:AbstractOperatorEnum,V,E<:Union{Nothing,EvalOptions}},
+        operators::O, variable_names::V, eval_context::E
+    } where {O<:AbstractOperatorEnum,V,E<:Union{Nothing,EvalContext}},
 } <: AbstractComposableExpression{T,N}
     tree::N
     metadata::Metadata{D}
@@ -64,9 +65,20 @@ end
     tree::AbstractExpressionNode{T};
     operators::Union{AbstractOperatorEnum,Nothing}=nothing,
     variable_names::Union{AbstractVector{<:AbstractString},Nothing}=nothing,
-    eval_options::Union{Nothing,EvalOptions}=nothing,
+    eval_context::Union{Nothing,EvalContext}=nothing,
+    kws...,
 ) where {T}
-    d = (; operators, variable_names, eval_options)
+    all(Base.Fix2(===, :eval_options), keys(kws)) ||
+        throw(ArgumentError("Invalid keyword argument(s): $(keys(kws))"))
+    eval_context = _process_eval_options(eval_context, kws, :ComposableExpression)
+    if eval_context !== nothing && eval_context.buffer !== nothing
+        throw(
+            ArgumentError(
+                "ComposableExpression metadata cannot contain an evaluation buffer."
+            ),
+        )
+    end
+    d = (; operators, variable_names, eval_context)
     return ComposableExpression(tree, Metadata(d))
 end
 
@@ -95,8 +107,8 @@ function DE.set_scalar_constants!(ex::AbstractComposableExpression, constants, r
     return DE.set_scalar_constants!(DE.get_contents(ex), constants, refs)
 end
 
-function Base.copy(ex::AbstractComposableExpression)
-    return ComposableExpression(copy(ex.tree), copy(ex.metadata))
+function Base.copy(ex::ComposableExpression)
+    return ComposableExpression(copy(DE.get_contents(ex)), copy(DE.get_metadata(ex)))
 end
 
 function Base.convert(::Type{E}, ex::AbstractComposableExpression) where {E<:Expression}
@@ -116,23 +128,24 @@ end
 function DE.count_scalar_constants(ex::AbstractComposableExpression)
     return DE.count_scalar_constants(convert(Expression, ex))
 end
-function CO.count_constants_for_optimization(ex::AbstractComposableExpression)
-    return CO.count_constants_for_optimization(convert(Expression, ex))
+function CO.get_optimizable_parameters(ex::ComposableExpression, _options)
+    return DE.get_scalar_constants(ex)
+end
+function CO.set_optimizable_parameters!(ex::ComposableExpression, x, refs)
+    return DE.set_scalar_constants!(ex, x, refs)
+end
+function CO.extract_optimizable_gradient(grad, ex::ComposableExpression, _refs)
+    return DE.extract_gradient(grad, ex)
 end
 
-struct PreallocatedComposableExpression{N}
-    tree::N
-end
 function DE.allocate_container(
     prototype::ComposableExpression, n::Union{Nothing,Integer}=nothing
 )
-    return PreallocatedComposableExpression(
-        DE.allocate_container(get_contents(prototype), n)
-    )
+    return (; tree=DE.allocate_container(get_contents(prototype), n))
 end
-function DE.copy_into!(dest::PreallocatedComposableExpression, src::ComposableExpression)
+function DE.copy_into!(dest::NamedTuple, src::ComposableExpression)
     new_tree = DE.copy_into!(dest.tree, get_contents(src))
-    return DE.with_contents(src, new_tree)
+    return with_contents(src, new_tree)
 end
 
 @implements(
@@ -164,8 +177,8 @@ struct ValidVector{A<:AbstractVector}
 end
 ValidVector(x::Tuple{Vararg{Any,2}}) = ValidVector(x...)
 
-function get_eval_options(ex::AbstractComposableExpression)
-    return @something(get_metadata(ex).eval_options, EvalOptions())
+function get_eval_context(ex::AbstractComposableExpression)
+    return @something(get_metadata(ex).eval_context, EvalContext())
 end
 function (ex::AbstractComposableExpression)(x)
     return error("ComposableExpression does not support input of type $(typeof(x))")
@@ -219,15 +232,15 @@ function (ex::AbstractComposableExpression)(
 
     if all(_is_valid, valid_args)
         X = stack(map(_get_value, valid_args); dims=1)
-        eval_options = get_eval_options(ex)
-        return ValidVector(eval_tree_array(ex, X; eval_options))
+        eval_context = get_eval_context(ex)
+        return ValidVector(eval_tree_array(ex, X; eval_context=eval_context))
     else
         return ValidVector(_get_value(first(valid_args)), false)
     end
 end
 function (ex::AbstractComposableExpression{T})() where {T}
     X = Matrix{T}(undef, 0, 1)  # Value is irrelevant as it won't be used
-    # TODO: We force avoid the eval_options here,
+    # TODO: We force avoid the eval_context here,
     #       to get a faster constant evaluation result...
     #       but not sure if this is a good idea.
     out, complete = eval_tree_array(ex, X)  # TODO: The valid is not used; not sure how to incorporate
@@ -260,11 +273,23 @@ end
 # Basically we want to vectorize every single operation on ValidVector,
 # so that the user can use it easily.
 
-function _apply_operator(op::F, x::Vararg{Any,N}) where {F<:Function,N}
-    vx = map(_get_value, x)
+function _apply_operator_values(op::F, vx::Vararg{Any,N}) where {F<:Function,N}
     safe_op = get_safe_op(op)
     result = safe_op.(vx...)
     return ValidVector(result, is_valid_array(result))
+end
+
+function _apply_operator(op::F, x::Vararg{Any,N}) where {F<:Function,N}
+    vx = map(_get_value, x)
+    return _apply_operator_values(op, vx...)
+end
+
+function _apply_operator(op::F, x::ValidVector, y::Number) where {F<:Function}
+    return _apply_operator_values(op, x.x, y)
+end
+
+function _apply_operator(op::F, x::Number, y::ValidVector) where {F<:Function}
+    return _apply_operator_values(op, x, y.x)
 end
 
 function apply_operator(op::F, x::Vararg{Any,N}) where {F<:Function,N}

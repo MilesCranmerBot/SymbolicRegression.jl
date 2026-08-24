@@ -2,15 +2,22 @@
     using SymbolicRegression
     using SymbolicRegression.InverseFunctionsModule: approx_inverse
     using SymbolicRegression.EvaluateInverseModule:
-        eval_inverse_tree_array, _eval_inverse_tree_array
+        eval_inverse_tree_array, eval_inverse_tree_array_masked, _eval_inverse_tree_array
     using SymbolicRegression.MutationFunctionsModule: backsolve_rewrite_random_node
-    using DynamicExpressions: Node, OperatorEnum, count_nodes, Expression, get_child
+    using DynamicExpressions:
+        Node,
+        OperatorEnum,
+        count_nodes,
+        Expression,
+        get_child,
+        eval_tree_array,
+        EvalContext,
+        ArrayBuffer
     using StableRNGs: StableRNG
 
     rng = StableRNG(0)
-    options_with_backsolve(; kws...) = Options(;
-        default_mutations=(), mutations=(BacksolveMutation() => 1.0,), kws...
-    )
+    options_with_backsolve(; kws...) =
+        Options(; default_mutations=(), mutations=(BacksolveMutation() => 1.0,), kws...)
 
     @testset "InverseFunctions - Unary operators" begin
         inverse_pairs = (
@@ -132,6 +139,31 @@
         @test success
         @test length(inverted) == 3
         @test isapprox(inverted, [1.0, 2.0, 3.0]; atol=1e-10)
+    end
+
+    @testset "EvaluateInverse - Masked sibling with evaluation buffer" begin
+        operators = OperatorEnum(; binary_operators=[+, /])
+        x_node = Node(Float64; feature=1)
+        sibling_1 = Node(2, Node(Float64; val=1.0), Node(Float64; feature=2))
+        sibling_2 = Node(2, Node(Float64; val=2.0), Node(Float64; feature=2))
+        tree = Node(1, Node(1, x_node, sibling_1), sibling_2)
+
+        X = Float64[0.0 0.0 0.0; 0.0 1.0 2.0]
+        y = fill(20.0, 3)
+        buffer = ArrayBuffer(zeros(1, length(y)), Ref(0))
+        eval_context = EvalContext(; buffer)
+
+        inverted, valid = eval_inverse_tree_array_masked(
+            tree, X, operators, x_node, y; eval_context
+        )
+
+        @test valid == BitVector([false, true, true])
+        @test inverted[2:3] ≈ [17.0, 18.5]
+
+        before_reuse = copy(inverted)
+        buffer.index[] = 0
+        eval_tree_array(sibling_1, X, operators; eval_context)
+        @test inverted == before_reuse
     end
 
     @testset "EvaluateInverse - Target node not found" begin
@@ -304,24 +336,22 @@
             backsolve_rewrite_random_node(int_tree, int_dataset, int_options, rng)
         )
 
-        template_dataset = Dataset(reshape(Float64[1.0, 2.0], 1, 2), Float64[1.0, 2.0])
+        template_dataset = Dataset(reshape(Float32[1.0, 2.0], 1, 2), Float32[1.0, 2.0])
 
-        parametric_options = options_with_backsolve(;
-            binary_operators=(*,), unary_operators=()
+        template_spec = @template_spec(expressions = (f,)) do x1
+            f(x1)
+        end
+        template_options = options_with_backsolve(;
+            binary_operators=(*,), unary_operators=(), expression_spec=template_spec
         )
-        parametric_expr = parse_expression(
-            :(x1 * p1);
-            expression_type=ParametricExpression,
-            operators=parametric_options.operators,
-            variable_names=["x1"],
-            parameters=ones(1, 1),
-            parameter_names=["p1"],
+        template_expr = parse_expression(
+            (; f="#1"); expression_spec=template_spec, operators=template_options.operators
         )
 
         @test_throws(
             "expression wrapper types must opt in explicitly",
             backsolve_rewrite_random_node(
-                parametric_expr, template_dataset, parametric_options, rng
+                template_expr, template_dataset, template_options, rng
             )
         )
     end
@@ -347,7 +377,7 @@
             member,
             BacksolveMutation(),
             options;
-            recorder=Dict{String,Any}(),
+            trace=Dict{String,Any}(),
             dataset=dataset,
         )
 

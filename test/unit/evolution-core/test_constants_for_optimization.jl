@@ -1,12 +1,13 @@
-@testitem "Optimizable parameter hooks aggregate constants and template parameters" begin
+@testitem "Generic optimizable hooks aggregate constants and template parameters" begin
     using DynamicExpressions
     using SymbolicRegression
 
     operators = OperatorEnum(; unary_operators=(), binary_operators=(+, *))
     variable_names = ["x1"]
+    options = Options(; operators)
 
     expr = parse_expression("x1 + 2.0"; operators, variable_names)
-    flat = SymbolicRegression.get_constants_for_optimization(expr)[1]
+    flat = SymbolicRegression.get_optimizable_parameters(expr, options)[1]
     @test flat == [2.0]
     @test length(flat) == 1
 
@@ -21,12 +22,86 @@
         parameters=(; p=[2.0]),
     )
 
-    params, refs = SymbolicRegression.get_constants_for_optimization(template)
+    params, refs = SymbolicRegression.get_optimizable_parameters(template, options)
     @test params == [3.0, 2.0]
     @test length(params) == 2
 
-    SymbolicRegression.set_constants_for_optimization!(template, [4.0, 5.0], refs)
-    @test SymbolicRegression.get_constants_for_optimization(template)[1] == [4.0, 5.0]
+    SymbolicRegression.set_optimizable_parameters!(template, [4.0, 5.0], refs)
+    @test SymbolicRegression.get_optimizable_parameters(template, options)[1] == [4.0, 5.0]
+    @test_throws DimensionMismatch SymbolicRegression.set_optimizable_parameters!(
+        template, [6.0], refs
+    )
+end
+
+@testitem "Template optimizable selection delegates through its combiner" begin
+    using DynamicExpressions
+    using SymbolicRegression
+
+    struct ContextAwareCombiner <: Function end
+    function (::ContextAwareCombiner)(fs, parameters, (x,))
+        return fs.f(x) + parameters.p[1]
+    end
+    struct ContextAwareRefs end
+    function SymbolicRegression.get_optimizable_parameters(
+        ::ContextAwareCombiner, ::TemplateExpression, _options
+    )
+        return [42.0], ContextAwareRefs()
+    end
+
+    operators = OperatorEnum(; binary_operators=(+,))
+    structure = TemplateStructure{(:f,),(:p,)}(
+        ContextAwareCombiner(); num_features=(; f=1), num_parameters=(; p=1)
+    )
+    ex = TemplateExpression(
+        (; f=ComposableExpression(Node{Float64}(; val=3.0); operators));
+        structure,
+        operators,
+        parameters=(; p=[2.0]),
+    )
+    options = Options(; operators)
+
+    parameters, refs = SymbolicRegression.get_optimizable_parameters(ex, options)
+    @test parameters == [42.0]
+    @test refs isa ContextAwareRefs
+end
+
+@testitem "Generic optimizable hooks are options- and refs-aware" begin
+    using SymbolicRegression
+
+    mutable struct OptimizableBox{T}
+        values::Vector{T}
+    end
+    struct OptimizableBoxRefs
+        indices::Vector{Int}
+    end
+
+    function SymbolicRegression.get_optimizable_parameters(box::OptimizableBox, options)
+        refs = OptimizableBoxRefs(findall(options.active))
+        return box.values[refs.indices], refs
+    end
+    function SymbolicRegression.set_optimizable_parameters!(
+        box::OptimizableBox, x, refs::OptimizableBoxRefs
+    )
+        box.values[refs.indices] = x
+        return box
+    end
+    function SymbolicRegression.extract_optimizable_gradient(
+        grad, ::OptimizableBox, refs::OptimizableBoxRefs
+    )
+        return grad[refs.indices]
+    end
+
+    box = OptimizableBox([1.0, 2.0, 3.0])
+    options = (; active=Bool[true, false, true])
+    params, refs = SymbolicRegression.get_optimizable_parameters(box, options)
+
+    @test params == [1.0, 3.0]
+    @test refs.indices == [1, 3]
+    @test SymbolicRegression.extract_optimizable_gradient([0.1, 0.2, 0.3], box, refs) ==
+        [0.1, 0.3]
+
+    SymbolicRegression.set_optimizable_parameters!(box, [4.0, 5.0], refs)
+    @test box.values == [4.0, 2.0, 5.0]
 end
 
 @testitem "Default optimize_constants handles custom optimizable expression state" begin
@@ -34,7 +109,7 @@ end
         DynamicExpressions,
         AbstractExpressionNode,
         AbstractOperatorEnum,
-        EvalOptions,
+        EvalContext,
         Metadata,
         Node,
         NodeTangent,
@@ -58,11 +133,11 @@ end
         tree::AbstractExpressionNode{T};
         operators::Union{AbstractOperatorEnum,Nothing}=nothing,
         variable_names::Union{AbstractVector{<:AbstractString},Nothing}=nothing,
-        eval_options::Union{EvalOptions,Nothing}=nothing,
+        eval_context::Union{EvalContext,Nothing}=nothing,
         scale::T=one(T),
     ) where {T}
         return WrappedExpression(
-            tree, Metadata((; operators, variable_names, eval_options, scale))
+            tree, Metadata((; operators, variable_names, eval_context, scale))
         )
     end
 
@@ -93,7 +168,7 @@ end
         ex.metadata = Metadata((;
             operators=metadata.operators,
             variable_names=metadata.variable_names,
-            eval_options=metadata.eval_options,
+            eval_context=metadata.eval_context,
             scale=T(x[refs.n_tree + 1]),
         ))
         return ex
@@ -111,7 +186,7 @@ end
         Node{Float64}(; val=1.0);
         operators,
         variable_names=["x1"],
-        eval_options=nothing,
+        eval_context=nothing,
         scale=-1.0,
     )
 
@@ -144,6 +219,18 @@ end
         loss_function_expression=loss,
         parsimony=0.0,
     )
+
+    generic_params, generic_refs = SymbolicRegression.get_optimizable_parameters(
+        wrapped, options
+    )
+    @test generic_params == initial_params
+    @test SymbolicRegression.extract_optimizable_gradient(
+        gradient, wrapped, generic_refs
+    ) == [-0.5, 0.75]
+    SymbolicRegression.set_optimizable_parameters!(wrapped, [1.5, -0.5], generic_refs)
+    @test SymbolicRegression.get_constants_for_optimization(wrapped)[1] == [1.5, -0.5]
+    SymbolicRegression.set_optimizable_parameters!(wrapped, initial_params, generic_refs)
+
     initial_loss = loss(wrapped, dataset, options)
     member = PopMember(wrapped, initial_loss, initial_loss, options, 1; deterministic=true)
 

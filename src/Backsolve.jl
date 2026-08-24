@@ -4,7 +4,8 @@ using LinearAlgebra: Hermitian, I, PosDefException, cholesky, diag, dot, norm
 using DispatchDoctor: @unstable
 using DynamicExpressions: AbstractExpressionNode, constructorof, eval_tree_array, get_tree
 
-using ..CoreModule: AbstractOptions, DATA_TYPE, Dataset, BacksolveMutation
+using ..CoreModule:
+    AbstractOptions, DATA_TYPE, Dataset, BacksolveMutation, specialized_options
 using ..ComplexityModule: compute_complexity
 
 const STLSQ_DATA_TYPE = Union{AbstractFloat,Complex{<:AbstractFloat}}
@@ -304,14 +305,34 @@ Build a basis library from seed terms and population subtrees.
 - `BasisLibrary`: Basis terms and their evaluated values
 """
 function build_basis_library(
-    tree_prototype::AbstractExpressionNode{T},
+    tree_prototype::N,
     dataset::Dataset{T},
     options::AbstractOptions,
     nfeatures::Int,
     population;
     max_library_size::Int=200,
     top_k::Int=10,
-) where {T<:DATA_TYPE}
+)::BasisLibrary{T,N} where {T<:DATA_TYPE,N<:AbstractExpressionNode{T}}
+    return _build_basis_library(
+        tree_prototype,
+        dataset,
+        specialized_options(options),
+        nfeatures,
+        population;
+        max_library_size,
+        top_k,
+    )
+end
+
+function _build_basis_library(
+    tree_prototype::N,
+    dataset::Dataset{T},
+    options::AbstractOptions,
+    nfeatures::Int,
+    population;
+    max_library_size::Int,
+    top_k::Int,
+)::BasisLibrary{T,N} where {T<:DATA_TYPE,N<:AbstractExpressionNode{T}}
     min_library_size = 1 + nfeatures
     if max_library_size < min_library_size
         throw(
@@ -334,7 +355,7 @@ function build_basis_library(
 
     all_subtrees = sizehint!(Vector{typeof(tree_prototype)}(), max_library_size)
     if population !== nothing
-        sorted_members = sort(population.members[1:population.n]; by=m -> m.loss)
+        sorted_members = sort(population.members[1:(population.n)]; by=m -> m.loss)
         top_members = sorted_members[1:min(top_k, length(sorted_members))]
         all_subtrees = mapreduce(
             member -> collect(get_tree(member.tree)), vcat, top_members; init=all_subtrees

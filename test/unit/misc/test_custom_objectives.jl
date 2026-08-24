@@ -44,6 +44,9 @@
 
     @test options.should_simplify == false
 
+    expression_options = Options(; loss_function_expression=(ex, dataset, options) -> 0.0)
+    @test !expression_options.should_simplify
+
     X = rand(3, 100) .* 10 .- 5
     X[1, 1:10] .= range(-0.2, 0.2; length=10)
     y = _ifelse_ternary.(X[1, :], X[2, :], X[3, :])  # y = x1 > 0 ? x2 : x3

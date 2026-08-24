@@ -15,7 +15,7 @@ using DynamicExpressions:
     AbstractExpression,
     string_tree,
     parse_expression,
-    EvalOptions,
+    EvalContext,
     with_type_parameters,
     constructorof
 using ..UtilsModule: subscriptify
@@ -23,19 +23,19 @@ using ..CoreModule:
     Dataset,
     AbstractOptions,
     Options,
-    RecordType,
+    MaybeTrace,
     max_features,
     create_expression,
-    init_value
+    init_value,
+    parse_scope
 using ..ComplexityModule: compute_complexity
-using ..PopulationModule: Population
+using ..PopulationModule: Population, _population_without_plugins
 using ..PopMemberModule: PopMember, AbstractPopMember
-using ..HallOfFameModule: HallOfFame, string_dominating_pareto_curve
+using ..HallOfFameModule: HallOfFame, string_dominating_pareto_curve, update_hall_of_fame!
 using ..ConstantOptimizationModule: optimize_constants
 using ..ProgressBarsModule: WrappedProgressBar, manually_iterate!, barlen
 using ..ExpressionBuilderModule: strip_metadata
-using ..InterfaceDynamicExpressionsModule: takes_eval_options
-using ..CheckConstraintsModule: check_constraints
+using ..InterfaceDynamicExpressionsModule: takes_eval_context
 
 function logging_callback! end
 
@@ -286,13 +286,19 @@ function assign_next_worker!(
     end
 end
 
-const DefaultWorkerOutputType{P,H} = Tuple{P,H,RecordType,Float64}
+const DefaultWorkerOutputType{P,H,TR<:MaybeTrace,S<:Tuple} = Tuple{P,H,TR,Float64,S}
 
 function get_worker_output_type(
-    ::Val{PARALLELISM}, ::Type{PopType}, ::Type{HallOfFameType}
-) where {PARALLELISM,PopType,HallOfFameType}
+    ::Val{PARALLELISM},
+    ::Type{PopType},
+    ::Type{HallOfFameType},
+    ::Type{TraceStateType},
+    ::Type{PluginStatesType},
+) where {
+    PARALLELISM,PopType,HallOfFameType,TraceStateType<:MaybeTrace,PluginStatesType<:Tuple
+}
     if PARALLELISM == :serial
-        DefaultWorkerOutputType{PopType,HallOfFameType}
+        DefaultWorkerOutputType{PopType,HallOfFameType,TraceStateType,PluginStatesType}
     elseif PARALLELISM == :multiprocessing
         Future
     else
@@ -301,9 +307,9 @@ function get_worker_output_type(
 end
 
 #! format: off
-extract_from_worker(p::DefaultWorkerOutputType, _, _) = p
-extract_from_worker(f::Future, ::Type{P}, ::Type{H}) where {P,H} = fetch(f)::DefaultWorkerOutputType{P,H}
-extract_from_worker(t::Task, ::Type{P}, ::Type{H}) where {P,H} = fetch(t)::DefaultWorkerOutputType{P,H}
+extract_from_worker(p::DefaultWorkerOutputType, _, _, _, _) = p
+extract_from_worker(f::Future, ::Type{P}, ::Type{H}, ::Type{TR}, ::Type{S}) where {P,H,TR<:MaybeTrace,S<:Tuple} = fetch(f)::DefaultWorkerOutputType{P,H,TR,S}
+extract_from_worker(t::Task, ::Type{P}, ::Type{H}, ::Type{TR}, ::Type{S}) where {P,H,TR<:MaybeTrace,S<:Tuple} = fetch(t)::DefaultWorkerOutputType{P,H,TR,S}
 #! format: on
 
 macro sr_spawner(expr, kws...)
@@ -330,32 +336,71 @@ end
 function init_dummy_pops(
     npops::Int, datasets::Vector{D}, options::AbstractOptions
 ) where {T,L,D<:Dataset{T,L}}
-    prototype = Population(
-        first(datasets);
-        population_size=1,
-        options=options,
-        nfeatures=max_features(first(datasets), options),
+    prototype = _population_without_plugins(
+        first(datasets); options, nfeatures=max_features(first(datasets), options)
     )
-    # ^ Due to occasional inference issue, we manually specify the return type
     return [
         typeof(prototype)[
-            if (i == 1 && j == 1)
+            if i == 1 && j == 1
                 prototype
             else
-                Population(
-                    datasets[j];
-                    population_size=1,
-                    options=options,
-                    nfeatures=max_features(datasets[j], options),
+                _population_without_plugins(
+                    datasets[j]; options, nfeatures=max_features(datasets[j], options)
                 )
             end for i in 1:npops
-        ] for j in 1:length(datasets)
+        ] for j in eachindex(datasets)
     ]
 end
 
-struct StdinReader
-    can_read_user_input::Bool
-    stream::IO
+mutable struct StdinReader
+    const can_read_user_input::Bool
+    const stream::IO
+    saw_quit_char::Bool
+end
+function StdinReader(can_read_user_input::Bool, stream::IO)
+    return StdinReader(can_read_user_input, stream, false)
+end
+
+function read_available_nonblocking(stream::IO)::Vector{UInt8}
+    try
+        return readavailable(stream)
+    catch err
+        if err isa Base.IOError || err isa EOFError
+            return UInt8[]
+        else
+            rethrow(err)
+        end
+    end
+end
+
+function read_available_nonblocking(stream::Base.LibuvStream)::Vector{UInt8}
+    Base.iolock_begin()
+    try
+        return take!(stream.buffer)
+    finally
+        Base.iolock_end()
+    end
+end
+
+function parse_quit_signal(data::AbstractVector{UInt8}, saw_quit_char::Bool)
+    control_c = 0x03
+    quit = 0x71
+    carriage_return = 0x0d
+    newline = 0x0a
+    for c in data
+        if c == control_c
+            return true, false
+        elseif c == quit
+            saw_quit_char = true
+        elseif c == carriage_return || c == newline
+            if saw_quit_char
+                return true, false
+            end
+        else
+            saw_quit_char = false
+        end
+    end
+    return false, saw_quit_char
 end
 
 """Start watching stream (like stdin) for user input."""
@@ -364,11 +409,7 @@ function watch_stream(stream)
 
     can_read_user_input && try
         Base.start_reading(stream)
-        bytes = bytesavailable(stream)
-        if bytes > 0
-            # Clear out initial data
-            read(stream, bytes)
-        end
+        read_available_nonblocking(stream)
     catch err
         if isa(err, MethodError)
             can_read_user_input = false
@@ -390,16 +431,9 @@ end
 """Check if the user typed 'q' and <enter> or <ctl-c>."""
 function check_for_user_quit(reader::StdinReader)::Bool
     if reader.can_read_user_input
-        bytes = bytesavailable(reader.stream)
-        if bytes > 0
-            # Read:
-            data = read(reader.stream, bytes)
-            control_c = 0x03
-            quit = 0x71
-            if length(data) > 1 && (data[end] == control_c || data[end - 1] == quit)
-                return true
-            end
-        end
+        data = read_available_nonblocking(reader.stream)
+        quit, reader.saw_quit_char = parse_quit_signal(data, reader.saw_quit_char)
+        return quit
     end
     return false
 end
@@ -414,7 +448,7 @@ end
 function _check_for_loss_threshold(halls_of_fame, f::F, options::AbstractOptions) where {F}
     return all(halls_of_fame) do hof
         any(hof.members[hof.exists]) do member
-            f(member.loss, compute_complexity(member, options))::Bool
+            return f(member.loss, compute_complexity(member, options))::Bool
         end
     end
 end
@@ -478,6 +512,7 @@ end
 
 function update_progress_bar!(
     progress_bar::WrappedProgressBar,
+    iterations_elapsed::Int,
     hall_of_fame::HallOfFame{T,L},
     dataset::Dataset{T,L},
     options::AbstractOptions,
@@ -506,7 +541,7 @@ function update_progress_bar!(
         (styled"{italic:Info}", styled"{italic:$load_string}"),
         (styled"{italic:Hall of Fame}", equation_strings),
     ]
-    manually_iterate!(progress_bar)
+    manually_iterate!(progress_bar, iterations_elapsed)
     return nothing
 end
 
@@ -530,11 +565,13 @@ function print_search_state(
     load_string = get_load_string(; head_node_occupation, parallelism)
     print(load_string)
     cycles_elapsed = total_cycles * nout - sum(cycles_remaining)
+    iterations_elapsed = cycles_elapsed ÷ options.populations
+    total_iterations = (total_cycles * nout) ÷ options.populations
     @printf(
         "Progress: %d / %d total iterations (%.3f%%)\n",
-        cycles_elapsed,
-        total_cycles * nout,
-        100.0 * cycles_elapsed / total_cycles / nout
+        iterations_elapsed,
+        total_iterations,
+        100.0 * cycles_elapsed / (total_cycles * nout)
     )
 
     print("═"^twidth * "\n")
@@ -600,7 +637,7 @@ Look through the source of `equation_search` to see how this is used.
 abstract type AbstractSearchState{T,L,N<:AbstractExpression{T}} end
 
 """
-    SearchState{T,L,N,PM,WorkerOutputType,ChannelType,PluginStatesType} <: AbstractSearchState{T,L,N}
+    SearchState{T,L,N,PM,WorkerOutputType,ChannelType,TraceStateType,PluginStatesType,WorkerPluginStatesType} <: AbstractSearchState{T,L,N}
 
 The state of the search, including the populations, worker outputs, tasks, and
 channels. This is used to manage the search and keep track of runtime variables
@@ -613,7 +650,9 @@ Base.@kwdef struct SearchState{
     PM<:AbstractPopMember{T,L,N},
     WorkerOutputType,
     ChannelType,
+    TraceStateType<:MaybeTrace,
     PluginStatesType<:Tuple,
+    WorkerPluginStatesType<:Tuple,
 } <: AbstractSearchState{T,L,N}
     procs::Vector{Int}
     we_created_procs::Bool
@@ -629,9 +668,10 @@ Base.@kwdef struct SearchState{
     cycles_remaining::Vector{Int}
     cur_maxsizes::Vector{Int}
     stdin_reader::StdinReader
-    record::Base.RefValue{RecordType}
+    trace_prototype::TraceStateType
     seed_members::Vector{Vector{PM}}
     plugin_states::Vector{PluginStatesType}
+    worker_plugin_states::Vector{Vector{WorkerPluginStatesType}}
 end
 
 function save_to_file(
@@ -667,7 +707,10 @@ function save_to_file(
 
         println(tmp_io, "Complexity,Loss,Equation")
         for i in 1:dominating_n
-            println(tmp_io, "$(complexities[i]),$(losses[i]),\"$(strings[i])\"")
+            println(
+                tmp_io,
+                "$(complexities[i]),$(losses[i]),\"$(replace(strings[i], '"' => "\"\""))\"",
+            )
         end
 
         String(take!(tmp_io))
@@ -746,27 +789,6 @@ function construct_datasets(
     ]
 end
 
-function update_hall_of_fame!(
-    hall_of_fame::HallOfFame, members::Vector{PM}, options::AbstractOptions
-) where {PM<:AbstractPopMember}
-    for member in members
-        size = compute_complexity(member, options)
-        valid_size = 0 < size <= options.maxsize
-        if !valid_size
-            continue
-        end
-        if !check_constraints(member.tree, options, options.maxsize, size)
-            continue
-        end
-        not_filled = !hall_of_fame.exists[size]
-        better_than_current = member.cost < hall_of_fame.members[size].cost
-        if not_filled || better_than_current
-            hall_of_fame.members[size] = copy(member)
-            hall_of_fame.exists[size] = true
-        end
-    end
-end
-
 function _parse_guess_expression(
     ::Type{T}, g::AbstractExpression, ::Dataset, ::AbstractOptions
 ) where {T}
@@ -788,8 +810,8 @@ end
         end
     end
 
-    eval_options_kws = if takes_eval_options(options.operators)
-        (; eval_options=EvalOptions(; options.turbo, options.bumper))
+    eval_context_kws = if takes_eval_context(options.operators)
+        (; eval_context=EvalContext(; options.turbo, options.bumper))
     else
         NamedTuple()
     end
@@ -799,8 +821,9 @@ end
         operators=options.operators,
         variable_names=nothing,  # Don't pass dataset variable names - let custom parse_expression handle #N placeholders
         node_type=with_type_parameters(options.node_type, T),
+        eval_module=parse_scope(T),
         expression_options=options.expression_options,
-        eval_options_kws...,
+        eval_context_kws...,
     )
 end
 
@@ -813,6 +836,7 @@ end
         variable_names=dataset.variable_names,
         node_type=with_type_parameters(options.node_type, T),
         expression_type=options.expression_type,
+        eval_module=parse_scope(T),
     )
 end
 

@@ -1,3 +1,14 @@
+@testitem "Dataset mismatched X/y dimensions" begin
+    using SymbolicRegression
+
+    # Transposed X (nsamples × nfeatures) should fail early with a clear error
+    @test_throws DimensionMismatch Dataset(randn(32, 3), randn(32))
+    @test_throws DimensionMismatch Dataset(randn(3, 32), randn(31))
+    # Correct shapes still work
+    @test Dataset(randn(3, 32), randn(32)) isa Dataset
+    @test Dataset(randn(3, 32)) isa Dataset
+end
+
 @testitem "Dataset construction" begin
     using SymbolicRegression
 
@@ -24,4 +35,19 @@ end
     dataset = Dataset(X, y)
     @test dataset isa Dataset{Float64,Float64}
     @test dataset.y isa Vector{NTuple{3,Float64}}
+end
+
+@testitem "Large dataset warning" begin
+    using SymbolicRegression: Dataset, Options, test_dataset_configuration
+
+    options = Options()
+    dataset_50000 = Dataset(zeros(1, 50000), zeros(50000))
+    dataset_50001 = Dataset(zeros(1, 50001), zeros(50001))
+
+    @test_logs test_dataset_configuration(dataset_50000, options, 1)
+    @test_logs test_dataset_configuration(dataset_50001, options, 0)
+    @test_logs (:warn, r"more than 50,000") begin
+        test_dataset_configuration(dataset_50001, options, 1)
+        test_dataset_configuration(dataset_50001, options, 1)
+    end
 end

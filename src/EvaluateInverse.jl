@@ -1,7 +1,12 @@
 module EvaluateInverseModule
 
 using DynamicExpressions:
-    OperatorEnum, AbstractExpressionNode, eval_tree_array, get_child, preserve_sharing
+    OperatorEnum,
+    AbstractExpressionNode,
+    eval_tree_array,
+    get_child,
+    preserve_sharing,
+    EvalContext
 
 using ..InverseFunctionsModule: approx_inverse
 
@@ -16,6 +21,47 @@ end
 struct ResultMasked{T}
     x::T
     valid::BitVector
+end
+
+@inline function _masked_eval_context(eval_context::EvalContext)
+    return EvalContext(;
+        turbo=eval_context.turbo,
+        bumper=eval_context.bumper,
+        early_exit=false,
+        buffer=eval_context.buffer,
+        use_fused=eval_context.use_fused,
+    )
+end
+
+@inline function _masked_eval_kws(eval_kws::NamedTuple)
+    eval_context = get(eval_kws, :eval_context, nothing)
+    if eval_context !== nothing
+        return merge(eval_kws, (; eval_context=_masked_eval_context(eval_context)))
+    end
+
+    eval_options = get(eval_kws, :eval_options, nothing)
+    if eval_options !== nothing
+        masked_eval_context = _masked_eval_context(eval_options)
+        if haskey(eval_kws, :turbo) || haskey(eval_kws, :bumper)
+            return merge(eval_kws, (; eval_context=masked_eval_context))
+        end
+        remaining_kws = Base.structdiff(eval_kws, (; eval_options=nothing))
+        return merge(remaining_kws, (; eval_context=masked_eval_context))
+    end
+
+    masked_eval_context = EvalContext(;
+        turbo=get(eval_kws, :turbo, Val(false)),
+        bumper=get(eval_kws, :bumper, Val(false)),
+        early_exit=false,
+    )
+    remaining_kws = Base.structdiff(eval_kws, (; turbo=nothing, bumper=nothing))
+    return merge(remaining_kws, (; eval_context=masked_eval_context))
+end
+
+@inline function _reset_eval_buffer!(eval_kws::NamedTuple)
+    buffer = eval_kws.eval_context.buffer
+    isnothing(buffer) || (buffer.index[] = 0)
+    return nothing
 end
 
 """
@@ -45,8 +91,9 @@ function eval_inverse_tree_array(
             ),
         )
     end
+    masked_eval_kws = _masked_eval_kws((; eval_kws...))
     result = _eval_inverse_tree_array_masked(
-        tree, X, operators, node_to_invert_at, copy(y), isfinite.(y), (; eval_kws...)
+        tree, X, operators, node_to_invert_at, copy(y), isfinite.(y), masked_eval_kws
     )
     return (result.x, all(result.valid))
 end
@@ -85,8 +132,9 @@ function eval_inverse_tree_array_masked(
             ),
         )
     end
+    masked_eval_kws = _masked_eval_kws((; eval_kws...))
     result = _eval_inverse_tree_array_masked(
-        tree, X, operators, node_to_invert_at, copy(y), isfinite.(y), (; eval_kws...)
+        tree, X, operators, node_to_invert_at, copy(y), isfinite.(y), masked_eval_kws
     )
     return (result.x, result.valid)
 end
@@ -115,7 +163,7 @@ function _eval_inverse_tree_array(
     eval_kws::NamedTuple,
 ) where {T,N<:AbstractExpressionNode{T,2}}
     result = _eval_inverse_tree_array_masked(
-        tree, X, operators, node_to_invert_at, y, isfinite.(y), eval_kws
+        tree, X, operators, node_to_invert_at, y, isfinite.(y), _masked_eval_kws(eval_kws)
     )
     return ResultOk(result.x, all(result.valid))
 end
@@ -202,8 +250,9 @@ function dispatch_deg2_masked(
     right_child = get_child(tree, 2)
 
     if any(Base.Fix1(===, node_to_invert_at), right_child)
+        _reset_eval_buffer!(eval_kws)
         (result_l, complete_l) = eval_tree_array(left_child, X, operators; eval_kws...)
-        !complete_l && return ResultMasked(result_l, falses(length(y)))
+        !complete_l && return ResultMasked(y, falses(length(y)))
         valid .&= isfinite.(result_l)
         any(valid) || return ResultMasked(y, valid)
         complete_inv_r = deg2_invert_right!(y, result_l, op)
@@ -214,8 +263,9 @@ function dispatch_deg2_masked(
             right_child, X, operators, node_to_invert_at, y, valid, eval_kws
         )
     else  # any(===(node_to_invert_at), left_child)
+        _reset_eval_buffer!(eval_kws)
         (result_r, complete_r) = eval_tree_array(right_child, X, operators; eval_kws...)
-        !complete_r && return ResultMasked(result_r, falses(length(y)))
+        !complete_r && return ResultMasked(y, falses(length(y)))
         valid .&= isfinite.(result_r)
         any(valid) || return ResultMasked(y, valid)
         complete_inv_l = deg2_invert_left!(y, result_r, op)

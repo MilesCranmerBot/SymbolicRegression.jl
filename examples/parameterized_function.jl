@@ -1,8 +1,6 @@
 #literate_begin file="src/examples/parameterized_function.md"
 #=
-# Learning Parameterized Expressions
-
-_Note: Parametric expressions are currently considered experimental and may change in the future._
+# Learning Parameterized Template Expressions
 
 Parameterized expressions in SymbolicRegression.jl allow you to discover symbolic expressions that contain
 optimizable parameters. This is particularly useful when you have data that follows different patterns
@@ -25,8 +23,7 @@ We will need to simultaneously learn the symbolic expression and per-class param
 =#
 using SymbolicRegression
 using Random: MersenneTwister
-using Zygote  #src
-using MLJBase: machine, fit!, predict, report
+using SymbolicRegression: machine, fit!, predict, report
 using Test
 
 #=
@@ -63,22 +60,12 @@ expression_spec = @template_spec(
 ) do x1, x2, class
     f(x1, x2, p1[class], p2[class])
 end
-test_kwargs = if get(ENV, "SYMBOLIC_REGRESSION_IS_TESTING", "false") == "true"  #src
-    (;  #src
-        expression_spec=ParametricExpressionSpec(; max_parameters=2),  #src
-        autodiff_backend=:Zygote,  #src
-    )  #src
-else  #src
-    NamedTuple()  #src
-end  #src
-
 model = SRRegressor(;
     niterations=100,
     binary_operators=[+, *, /, -],
     unary_operators=[cos, exp],
     populations=30,
     expression_spec=expression_spec,
-    test_kwargs...,  #src
     early_stop_condition=(loss, _) -> loss < stop_at[],  #src
 );
 

@@ -14,7 +14,27 @@ using SymbolicRegression:
     MutationResult,
     AbstractRuntimeOptions,
     AbstractSearchState,
-    @extend_operators
+    @extend_operators,
+    AbstractPlugin,
+    MutationEvent,
+    init_plugin_state,
+    init_plugin_states,
+    fork_plugin_state,
+    refresh_worker_plugin_state,
+    on_search_start!,
+    on_search_end!,
+    on_generation_end!,
+    on_cycle_start!,
+    on_cycle_end!,
+    on_mutation_end!,
+    init_member,
+    tournament_cost_multiplier,
+    mutation_acceptance_multiplier,
+    prepare_mutation_context,
+    condition_mutation!,
+    AdaptiveMutationWeightsPlugin,
+    SimulatedAnnealingPlugin,
+    MutationBurstPlugin
 using DynamicExpressions
 
 include("utils.jl")
@@ -39,7 +59,7 @@ hero:
       link: /api
     - theme: alt
       text: View on GitHub
-      link: https://github.com/MilesCranmer/SymbolicRegression.jl
+      link: https://github.com/astroautomata/SymbolicRegression.jl
   image:
     src: /logo.png
     alt: SymbolicRegression.jl
@@ -120,10 +140,10 @@ readme = replace(readme, r"\*\*Contents\*\*:.*?(?=## )"s => s"") # Remove Conten
 readme = replace(readme, r"## Contributors ✨.*$"s => s"") # Remove Contributors section onwards
 readme = replace( # Convert video URL to proper video tag wrapped in @raw html for VitePress
     readme,
-    r"https://github.com/MilesCranmer/SymbolicRegression.jl/assets/7593028/f5b68f1f-9830-497f-a197-6ae332c94ee0" => """```@raw html
+    r"https://github.com/astroautomata/SymbolicRegression.jl/assets/7593028/f5b68f1f-9830-497f-a197-6ae332c94ee0" => """```@raw html
 <div align="center">
 <video width="800" height="600" controls>
-<source src="https://github.com/MilesCranmer/SymbolicRegression.jl/assets/7593028/f5b68f1f-9830-497f-a197-6ae332c94ee0" type="video/mp4">
+<source src="https://github.com/astroautomata/SymbolicRegression.jl/assets/7593028/f5b68f1f-9830-497f-a197-6ae332c94ee0" type="video/mp4">
 </video>
 </div>
 ```""",
@@ -210,8 +230,7 @@ function fix_vitepress_base_path()
             content = replace(content, r"base:\s*'[^']*'" => "base: '$base_path'")
             content = replace(
                 content,
-                r"__DEPLOY_ABSPATH__\s*:\s*JSON\.stringify\('[^']*'\)" =>
-                    "__DEPLOY_ABSPATH__: JSON.stringify('$deploy_abspath')",
+                r"__DEPLOY_ABSPATH__\s*:\s*JSON\.stringify\('[^']*'\)" => "__DEPLOY_ABSPATH__: JSON.stringify('$deploy_abspath')",
             )
 
             write(config_path, content)
@@ -252,7 +271,9 @@ function generate_favicons()
         output_path = joinpath(public_dir, filename)
         # Use 'convert' for ImageMagick 6.x (Ubuntu default), 'magick' for ImageMagick 7.x
         magick_cmd = Sys.which("magick") !== nothing ? "magick" : "convert"
-        run(`$(magick_cmd) $(logo_path) -resize $(size) -background none -gravity center -extent $(size) $(output_path)`)
+        run(
+            `$(magick_cmd) $(logo_path) -resize $(size) -background none -gravity center -extent $(size) $(output_path)`,
+        )
         @info "Generated: $filename"
     end
 
@@ -285,7 +306,7 @@ else
     # Default astroautomata deployment
     deploy_decision = Documenter.deploy_folder(
         deploy_config;
-        repo="github.com/MilesCranmer/SymbolicRegression.jl",
+        repo="github.com/astroautomata/SymbolicRegression.jl",
         devbranch="master",
         devurl="dev",
         push_preview=true,
@@ -321,7 +342,7 @@ makedocs(;
     clean=get(ENV, "DOCUMENTER_PRODUCTION", "false") == "true",
     warnonly=[:docs_block, :cross_references, :missing_docs],
     format=DocumenterVitepress.MarkdownVitepress(;
-        repo="github.com/MilesCranmer/SymbolicRegression.jl",
+        repo="github.com/astroautomata/SymbolicRegression.jl",
         devbranch="master",
         devurl="dev",
         deploy_url=nothing,
@@ -341,12 +362,15 @@ makedocs(;
             "Parameterized Expressions" => "examples/parameterized_function.md",
             "Parameterized Template Expressions" => "examples/template_parametric_expression.md",
             "Custom Types" => "examples/custom_types.md",
+            "Writing a Custom Plugin" => "examples/plugin_tutorial.md",
             "Using SymbolicRegression.jl on a Cluster" => "slurm.md",
         ],
         "API" => "api.md",
         "Losses" => "losses.md",
         "Types" => "types.md",
         "Customization" => "customization.md",
+        "Plugins" => "plugins.md",
+        "Migrating from v1" => "migration.md",
     ],
 )
 
@@ -421,7 +445,7 @@ deployment_target = get(ENV, "DEPLOYMENT_TARGET", "astroautomata")
 
 if deployment_target == "astroautomata"
     DocumenterVitepress.deploydocs(;
-        repo="github.com/MilesCranmer/SymbolicRegression.jl.git",
+        repo="github.com/astroautomata/SymbolicRegression.jl.git",
         push_preview=true,
         target="build",
         devbranch="master",

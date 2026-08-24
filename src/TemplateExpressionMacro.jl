@@ -4,7 +4,8 @@ module TemplateExpressionMacroModule
     @template_spec(
         expressions=(f, g, ...),
         [parameters=(p1=size1, p2=size2, ...)],
-        [num_features=(f=n1, g=n2, ...)]
+        [num_features=(f=n1, g=n2, ...)],
+        [prototype=nothing]
     ) do x1, x2, ...
         # template function body
     end
@@ -20,6 +21,8 @@ of sub-expressions and parameterized components.
     can be indexed and accessed in the template function.
 - `num_features`: Optional. A named tuple specifying how many features each expression function can access.
     Normally this will be inferred automatically from the template function.
+- `prototype`: Optional example dataset element used as dummy data when inferring `num_features`.
+    This is useful when the template function only accepts a custom element type. Defaults to `1.0`.
 
 # Example
 ```julia
@@ -40,6 +43,7 @@ function template_spec(func, args...)
     parameters = nothing
     expressions = nothing
     num_features = nothing
+    prototype = nothing
 
     for arg in args
         if Meta.isexpr(arg, :(=))
@@ -53,6 +57,9 @@ function template_spec(func, args...)
             elseif name == :num_features
                 !isnothing(num_features) && error("cannot set `num_features` keyword twice")
                 num_features = value
+            elseif name == :prototype
+                !isnothing(prototype) && error("cannot set `prototype` keyword twice")
+                prototype = value
             else
                 error("unrecognized keyword $(name)")
             end
@@ -122,6 +129,7 @@ function template_spec(func, args...)
                         return $(func_body)
                     end;
                     num_features=($(num_features)),
+                    prototype=($(prototype)),
                 ),
             )
         end
@@ -144,6 +152,7 @@ function template_spec(func, args...)
                     end;
                     num_features=($(num_features)),
                     num_parameters=($(parameters)),
+                    prototype=($(prototype)),
                 ),
             )
         end

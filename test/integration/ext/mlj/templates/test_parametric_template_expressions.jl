@@ -186,7 +186,9 @@ end
     let param_changed = false
         # Force enough trials to see if param vector changes:
         for _ in 1:50
-            mutated_expr = mutate_constant(copy(expr), 1.0, options, rng)
+            mutated_expr = mutate_constant(
+                copy(expr), 1.0, options, ConstantMutation(), rng
+            )
             new_params = get_metadata(mutated_expr).parameters.p._data
             if new_params != old_params
                 param_changed = true
@@ -333,7 +335,9 @@ end
     let param_changed = [false, false]
         # Force enough trials to see if param vectors change:
         for _ in 1:50
-            mutated_expr = mutate_constant(copy(expr_multi), 1.0, options, rng)
+            mutated_expr = mutate_constant(
+                copy(expr_multi), 1.0, options, ConstantMutation(), rng
+            )
             new_p1 = get_metadata(mutated_expr).parameters.p1._data
             new_p2 = get_metadata(mutated_expr).parameters.p2._data
             if new_p1 != old_p1

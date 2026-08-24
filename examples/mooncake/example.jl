@@ -1,4 +1,5 @@
-using SymbolicRegression, Mooncake, MLJBase, DifferentiationInterface
+using SymbolicRegression, Mooncake, DifferentiationInterface
+using SymbolicRegression: machine, fit!
 
 X = (; x=randn(100), y=randn(100), z=randn(100), w=randn(100))
 y = @. 2 * cos(X.x) + X.y^2 - 4 * X.z + 3 * X.w

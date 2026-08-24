@@ -12,15 +12,34 @@ using DynamicExpressions:
     AbstractExpressionNode,
     Node,
     GraphNode,
-    EvalOptions
+    EvalContext
 using DynamicQuantities: dimension, ustrip
 using ..CoreModule: AbstractOptions, Dataset
 using ..CoreModule.OptionsModule: inverse_opmap
 using ..UtilsModule: subscriptify
 
-takes_eval_options(::Type{<:AbstractOperatorEnum}) = false
-takes_eval_options(::Type{<:OperatorEnum}) = true
-takes_eval_options(::T) where {T} = takes_eval_options(T)
+takes_eval_context(::Type{<:AbstractOperatorEnum}) = false
+takes_eval_context(::Type{<:OperatorEnum}) = true
+takes_eval_context(::T) where {T} = takes_eval_context(T)
+
+@inline function _process_eval_options(eval_context, kws, function_name::Symbol)
+    eval_options = get(kws, :eval_options, nothing)
+    isnothing(eval_options) && return eval_context
+    return _process_deprecated_eval_options(eval_context, eval_options, function_name)
+end
+@noinline function _process_deprecated_eval_options(
+    eval_context, eval_options, function_name::Symbol
+)
+    Base.depwarn(
+        "The `eval_options` keyword is deprecated; use `eval_context` instead.",
+        function_name,
+    )
+    @assert(
+        eval_context === nothing,
+        "Cannot use both `eval_context` and deprecated `eval_options`."
+    )
+    return eval_options
+end
 
 """
     eval_tree_array(tree::Union{AbstractExpression,AbstractExpressionNode}, X::AbstractArray, options::AbstractOptions; kws...)
@@ -64,21 +83,27 @@ which speed up evaluation significantly.
         options::AbstractOptions;
         turbo=nothing,
         bumper=nothing,
+        eval_context=nothing,
         kws...,
     )
+        eval_context = _process_eval_options(eval_context, kws, :eval_tree_array)
+        kws = Base.structdiff((; kws...), (; eval_options=nothing))
         A = expected_array_type(X, typeof(tree))
         operators = DE.get_operators(tree, options)
-        eval_options_kws = if takes_eval_options(operators)
-            (;
-                eval_options=EvalOptions(;
+        eval_context_kws = if takes_eval_context(operators)
+            de_eval_context = if isnothing(eval_context)
+                EvalContext(;
                     turbo=something(turbo, options.turbo),
                     bumper=something(bumper, options.bumper),
                 )
-            )
+            else
+                eval_context
+            end
+            (; eval_context=de_eval_context,)
         else
             NamedTuple()
         end
-        out, complete = DE.eval_tree_array(tree, X, operators; eval_options_kws..., kws...)
+        out, complete = DE.eval_tree_array(tree, X, operators; eval_context_kws..., kws...)
         if isnothing(out)
             return nothing, false
         else
@@ -91,7 +116,9 @@ which speed up evaluation significantly.
 function expected_array_type(X::AbstractArray, ::Type)
     return typeof(similar(X, axes(X, 2)))
 end
-expected_array_type(X::AbstractArray, ::Type, ::Val{:eval_grad_tree_array}) = typeof(X)
+function expected_array_type(X::AbstractArray, ::Type, ::Val{:eval_grad_tree_array})
+    typeof(similar(X))
+end
 expected_array_type(::Matrix{T}, ::Type) where {T} = Vector{T}
 expected_array_type(::SubArray{T,2,Matrix{T}}, ::Type) where {T} = Vector{T}
 
@@ -161,7 +188,7 @@ function DE.eval_grad_tree_array(
     out, grad, complete = DE.eval_grad_tree_array(
         tree, X, DE.get_operators(tree, options); kws...
     )
-    return out::A, grad::dA, complete::Bool
+    return out::A, convert(dA, grad)::dA, complete::Bool
 end
 
 """
@@ -375,9 +402,6 @@ function DE.EvaluationHelpersModule._grad_evaluator(
         tree, X, DE.get_operators(tree, options); turbo=options.turbo, kws...
     )
 end
-
-# Allows special handling of class columns in MLJInterface.jl
-handles_class_column(::Type{<:AbstractExpression}) = false
 
 # These functions allow you to declare functions that must be
 # passed to worker nodes explicitly. See TemplateExpressions.jl for

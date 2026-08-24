@@ -20,7 +20,7 @@ using SymbolicRegression
 
 using Distributed: addprocs
 using SlurmClusterManager: SlurmManager
-using MLJ: machine, fit!
+using SymbolicRegression: machine, fit!
 
 # Figure out how large a job we are launching
 num_tasks = parse(Int, ENV["SLURM_NTASKS"])
@@ -149,7 +149,7 @@ using SymbolicRegression
 
 using Distributed: addprocs, @everywhere
 using SlurmClusterManager: SlurmManager
-using MLJ: machine, fit!
+using SymbolicRegression: machine, fit!
 
 num_tasks = parse(Int, ENV["SLURM_NTASKS"])
 
