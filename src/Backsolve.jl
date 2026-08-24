@@ -658,13 +658,13 @@ operator set, since the output is structurally a weighted sum.
         end
     end
 
-    terms_fit = extra_values === nothing ? terms : [terms; extra_term]
+    terms_fit = extra_term === nothing ? terms : [terms; extra_term]
 
     term_costs, join_cost = if setup === nothing
         costs = weighted_sum_costs(terms_fit, tree_prototype, options)
         (costs[1], costs[2])
     else
-        if extra_values === nothing
+        if extra_term === nothing
             (setup.term_costs, setup.join_cost)
         else
             extra_cost = compute_complexity(extra_term, options) + setup.addend_overhead
