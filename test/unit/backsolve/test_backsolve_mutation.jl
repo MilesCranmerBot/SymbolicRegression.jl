@@ -16,8 +16,9 @@
     using StableRNGs: StableRNG
 
     rng = StableRNG(0)
-    options_with_backsolve(; kws...) =
-        Options(; default_mutations=(), mutations=(BacksolveMutation() => 1.0,), kws...)
+    options_with_backsolve(; kws...) = Options(;
+        default_mutations=(), mutations=(BacksolveMutation() => 1.0,), kws...
+    )
 
     @testset "InverseFunctions - Unary operators" begin
         inverse_pairs = (
