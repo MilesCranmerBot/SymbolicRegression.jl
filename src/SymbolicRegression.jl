@@ -49,6 +49,7 @@ export Population,
     SRRegressor,
     MultitargetSRRegressor,
     SRLogger,
+    ExternalStop,
 
     #Functions:
     equation_search,
@@ -407,6 +408,7 @@ using .SearchUtilsModule:
     SearchState,
     AbstractRuntimeOptions,
     RuntimeOptions,
+    ExternalStop,
     WorkerAssignments,
     DefaultWorkerOutputType,
     assign_next_worker!,
@@ -421,11 +423,8 @@ using .SearchUtilsModule:
     check_for_loss_threshold,
     check_for_timeout,
     check_max_evals,
-    stop_requested,
-    stop_fd,
-    stop_fd_trigger,
-    check_stop_fd,
     check_external_stop,
+    latch_external_stop!,
     ResourceMonitor,
     record_channel_state!,
     estimate_work_fraction,
@@ -602,6 +601,7 @@ function equation_search(
     y_units=nothing,
     extra::NamedTuple=NamedTuple(),
     guesses::Union{AbstractVector,AbstractVector{<:AbstractVector},Nothing}=nothing,
+    external_stop=nothing,
     v_dim_out::Val{DIM_OUT}=Val(nothing),
     # Deprecated:
     multithreaded=nothing,
@@ -650,6 +650,7 @@ function equation_search(
         logger=logger,
         progress=progress,
         guesses=guesses,
+        external_stop=external_stop,
         v_dim_out=Val(DIM_OUT),
     )
 end
@@ -694,11 +695,8 @@ end
     saved_state,
     guesses,
 ) where {D<:Dataset}
-    # Latch any stop requested since the host registered the descriptor
-    # (e.g., during input preparation in the `X, y` overload). Hosts reusing
-    # a descriptor across searches should drain or re-register it between
-    # searches, since queued bytes are indistinguishable from fresh requests.
-    stop_requested[] = check_stop_fd(stop_fd[])
+    # Preserve a request queued while the `X, y` overload prepared its datasets.
+    latch_external_stop!(ropt)
     _validate_options(datasets, ropt, options)
     state = _create_workers(datasets, ropt, options)
     _initialize_search!(state, datasets, ropt, options, saved_state, guesses)
@@ -1010,7 +1008,7 @@ function _warmup_search!(
 
     nout = length(datasets)
     for j in 1:nout, i in 1:(options.populations)
-        check_external_stop() && break
+        check_external_stop(ropt) && break
         dataset = datasets[j]
         cur_maxsize = state.cur_maxsizes[j]
         worker_idx = assign_next_worker!(
@@ -1194,7 +1192,7 @@ function _main_search_loop!(
             ###################################################################
 
             state.cycles_remaining[j] -= 1
-            if state.cycles_remaining[j] > 0 && !check_external_stop()
+            if state.cycles_remaining[j] > 0 && !check_external_stop(ropt)
                 worker_idx = assign_next_worker!(
                     state.worker_assignment;
                     out=j,
@@ -1311,7 +1309,7 @@ function _main_search_loop!(
             check_for_user_quit(state.stdin_reader),
             check_for_timeout(start_time, options),
             check_max_evals(state.num_evals, options),
-            check_external_stop(),
+            check_external_stop(ropt),
         ))
             break
         end

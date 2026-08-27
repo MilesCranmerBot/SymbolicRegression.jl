@@ -56,16 +56,18 @@ to avoid spam when worker processes exit normally.
 macro filtered_async(expr)
     return esc(
         quote
-            $(Base).errormonitor(@async begin
-                try
-                    $expr
-                catch ex
-                    if !(ex isa $(Distributed).ProcessExitedException)
-                        rethrow(ex)
+            $(Base).errormonitor(
+                @async begin
+                    try
+                        $expr
+                    catch ex
+                        if !(ex isa $(Distributed).ProcessExitedException)
+                            rethrow(ex)
+                        end
                     end
                 end
-            end)
-        end
+            )
+        end,
     )
 end
 
@@ -88,14 +90,15 @@ can customize runtime behaviors by passing it to `equation_search`.
 abstract type AbstractRuntimeOptions end
 
 """
-    RuntimeOptions{PARALLELISM,DIM_OUT,RETURN_STATE,LOGGER} <: AbstractRuntimeOptions
+    RuntimeOptions{PARALLELISM,DIM_OUT,RETURN_STATE,LOGGER,EXTERNAL_STOP} <: AbstractRuntimeOptions
 
 Parameters for a search that are passed to `equation_search` directly,
 rather than set within `Options`. This is to differentiate between
 parameters that relate to processing and the duration of the search,
 and parameters dealing with the search hyperparameters itself.
 """
-struct RuntimeOptions{PARALLELISM,DIM_OUT,RETURN_STATE,LOGGER} <: AbstractRuntimeOptions
+struct RuntimeOptions{PARALLELISM,DIM_OUT,RETURN_STATE,LOGGER,EXTERNAL_STOP} <:
+       AbstractRuntimeOptions
     niterations::Int64
     numprocs::Int64
     init_procs::Union{Vector{Int},Nothing}
@@ -107,6 +110,7 @@ struct RuntimeOptions{PARALLELISM,DIM_OUT,RETURN_STATE,LOGGER} <: AbstractRuntim
     verbosity::Int64
     progress::Bool
     logger::Union{AbstractLogger,Nothing}
+    external_stop::EXTERNAL_STOP
     parallelism::Val{PARALLELISM}
     dim_out::Val{DIM_OUT}
     return_state::Val{RETURN_STATE}
@@ -146,6 +150,7 @@ end
     progress::Union{Bool,Nothing}=nothing,
     v_dim_out::Val{DIM_OUT}=Val(nothing),
     logger=nothing,
+    external_stop=nothing,
     # Defined from options
     options_return_state::Val{ORS}=Val(nothing),
     options_verbosity::Union{Integer,Nothing}=nothing,
@@ -233,7 +238,9 @@ end
         ``
     end
 
-    return RuntimeOptions{concurrency,dim_out,_return_state,typeof(logger)}(
+    return RuntimeOptions{
+        concurrency,dim_out,_return_state,typeof(logger),typeof(external_stop)
+    }(
         niterations,
         _numprocs,
         procs,
@@ -245,6 +252,7 @@ end
         _verbosity,
         _progress,
         logger,
+        external_stop,
         Val(concurrency),
         Val(dim_out),
         Val(_return_state),
@@ -351,9 +359,9 @@ function init_dummy_pops(
     ]
 end
 
-mutable struct StdinReader
+mutable struct StdinReader{S<:IO}
     const can_read_user_input::Bool
-    const stream::IO
+    const stream::S
     saw_quit_char::Bool
 end
 function StdinReader(can_read_user_input::Bool, stream::IO)
@@ -461,74 +469,96 @@ function check_max_evals(num_evals, options::AbstractOptions)::Bool
     return options.max_evals !== nothing && options.max_evals::Int <= sum(sum, num_evals)
 end
 
-# Request a graceful stop at the next cycle boundary.
-#
-# NOTE: this stop machinery (`stop_requested`, `stop_fd`, `stop_fd_trigger`)
-# is process-global and assumes one active search per Julia process;
-# concurrent searches would share a single stop request.
-const stop_requested = Ref{Bool}(false)
-
-# Readable pipe fd that triggers a graceful stop once readable.
-const stop_fd = Ref{Cint}(-1)
-
 struct PollFD
     fd::Cint
     events::Cshort
     revents::Cshort
 end
 
-# Only bytes with this value request a stop; 0x00 means any byte does.
-# Lets hosts using `signal.set_wakeup_fd`-style mechanisms, which write the
-# signal number for every handled signal, filter for SIGINT alone.
-const stop_fd_trigger = Ref{UInt8}(0x00)
+"""
+    ExternalStop(fd::Integer=-1, trigger::Integer=0)
 
-const _stop_poll_fd = Ref(PollFD(Cint(-1), Cshort(0x0001), Cshort(0)))  # POLLIN
-const _stop_read_buf = Ref{UInt8}(0)
+A per-search request for a graceful stop at the next cycle boundary. Setting
+`requested[]` directly requests a stop. On POSIX systems, a nonnegative `fd`
+is polled and drained; only `trigger` bytes request a stop, unless the trigger is zero.
+"""
+struct ExternalStop
+    requested::Threads.Atomic{Bool}
+    fd::Cint
+    trigger::UInt8
+    poll_fd::Base.RefValue{PollFD}
+    read_buf::Base.RefValue{UInt8}
+    last_poll_ns::Base.RefValue{UInt64}
+end
 
-function check_stop_fd(fd::Cint)::Bool
-    fd < 0 && return false
+function ExternalStop(fd::Integer=-1, trigger::Integer=0)
+    return ExternalStop(
+        Threads.Atomic{Bool}(false),
+        Cint(fd),
+        UInt8(trigger),
+        Ref(PollFD(Cint(fd), Cshort(0x0001), Cshort(0))),
+        Ref(UInt8(0)),
+        Ref(UInt64(0)),
+    )
+end
+
+function check_stop_fd(stop::ExternalStop)::Bool
+    stop.fd < 0 && return false
     @static if Sys.iswindows()
         # No POSIX poll on Windows; hosts only register fds on POSIX.
         return false
     else
-        trigger = stop_fd_trigger[]
-        stop = false
+        requested = false
         # Drain everything queued so stale bytes never stop a later search.
         while true
-            _stop_poll_fd[] = PollFD(fd, Cshort(0x0001), Cshort(0))
-            ccall(:poll, Cint, (Ref{PollFD}, Cuint, Cint), _stop_poll_fd, 1, 0) == 1 ||
-                break
-            n = ccall(:read, Cssize_t, (Cint, Ref{UInt8}, Csize_t), fd, _stop_read_buf, 1)
+            stop.poll_fd[] = PollFD(stop.fd, Cshort(0x0001), Cshort(0))
+            ccall(:poll, Cint, (Ref{PollFD}, Cuint, Cint), stop.poll_fd, 1, 0) == 1 || break
+            n = ccall(
+                :read, Cssize_t, (Cint, Ref{UInt8}, Csize_t), stop.fd, stop.read_buf, 1
+            )
+            # A nonblocking descriptor may be drained between poll and read.
             n == 1 || break
-            if trigger == 0x00 || _stop_read_buf[] == trigger
-                stop = true
+            if stop.trigger == 0x00 || stop.read_buf[] == stop.trigger
+                requested = true
             end
         end
-        return stop
+        return requested
     end
 end
 
 # Minimum interval between `poll` syscalls: the scheduler loop can spin
 # thousands of times per second, and each zero-timeout poll costs ~10us.
 const STOP_POLL_INTERVAL_NS = UInt64(20_000_000)  # 20 ms
-const _last_stop_poll_ns = Ref{UInt64}(0)
 
-"""Check for an external stop request, latching pipe notifications into `stop_requested`."""
-function check_external_stop()::Bool
-    fd = stop_fd[]
-    if fd >= 0
+@inline check_external_stop(::Nothing)::Bool = false
+@inline check_external_stop(ropt::AbstractRuntimeOptions)::Bool =
+    check_external_stop(ropt.external_stop)
+
+"""Check for an external stop request and latch matching pipe notifications."""
+function check_external_stop(stop::ExternalStop)::Bool
+    if stop.fd >= 0
         now = time_ns()
-        if now - _last_stop_poll_ns[] >= STOP_POLL_INTERVAL_NS
-            _last_stop_poll_ns[] = now
+        if now - stop.last_poll_ns[] >= STOP_POLL_INTERVAL_NS
+            stop.last_poll_ns[] = now
             # Keep draining even once latched so notifications arriving after
-            # the first stop (e.g., a second Ctrl-C) cannot leak into a later
-            # search.
-            if check_stop_fd(fd)
-                stop_requested[] = true
+            # the first stop cannot remain queued on the owned descriptor.
+            if check_stop_fd(stop)
+                stop.requested[] = true
             end
         end
     end
-    return stop_requested[]
+    return stop.requested[]
+end
+
+@inline latch_external_stop!(::Nothing)::Bool = false
+@inline latch_external_stop!(ropt::AbstractRuntimeOptions)::Bool =
+    latch_external_stop!(ropt.external_stop)
+function latch_external_stop!(stop::ExternalStop)::Bool
+    stop.last_poll_ns[] = time_ns()
+    if check_stop_fd(stop)
+        stop.requested[] = true
+    end
+    return stop.requested[]
 end
 
 """
