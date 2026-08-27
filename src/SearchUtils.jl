@@ -56,18 +56,16 @@ to avoid spam when worker processes exit normally.
 macro filtered_async(expr)
     return esc(
         quote
-            $(Base).errormonitor(
-                @async begin
-                    try
-                        $expr
-                    catch ex
-                        if !(ex isa $(Distributed).ProcessExitedException)
-                            rethrow(ex)
-                        end
+            $(Base).errormonitor(@async begin
+                try
+                    $expr
+                catch ex
+                    if !(ex isa $(Distributed).ProcessExitedException)
+                        rethrow(ex)
                     end
                 end
-            )
-        end,
+            end)
+        end
     )
 end
 
@@ -531,8 +529,9 @@ end
 const STOP_POLL_INTERVAL_NS = UInt64(20_000_000)  # 20 ms
 
 @inline check_external_stop(::Nothing)::Bool = false
-@inline check_external_stop(ropt::AbstractRuntimeOptions)::Bool =
-    check_external_stop(ropt.external_stop)
+@inline check_external_stop(ropt::AbstractRuntimeOptions)::Bool = check_external_stop(
+    ropt.external_stop
+)
 
 """Check for an external stop request and latch matching pipe notifications."""
 function check_external_stop(stop::ExternalStop)::Bool
@@ -551,8 +550,9 @@ function check_external_stop(stop::ExternalStop)::Bool
 end
 
 @inline latch_external_stop!(::Nothing)::Bool = false
-@inline latch_external_stop!(ropt::AbstractRuntimeOptions)::Bool =
-    latch_external_stop!(ropt.external_stop)
+@inline latch_external_stop!(ropt::AbstractRuntimeOptions)::Bool = latch_external_stop!(
+    ropt.external_stop
+)
 function latch_external_stop!(stop::ExternalStop)::Bool
     stop.last_poll_ns[] = time_ns()
     if check_stop_fd(stop)
