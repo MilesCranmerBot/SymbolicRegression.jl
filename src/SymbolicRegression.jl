@@ -697,7 +697,6 @@ end
     saved_state,
     guesses,
 ) where {D<:Dataset}
-    # Preserve a request queued while the `X, y` overload prepared its datasets.
     latch_external_stop!(ropt)
     _validate_options(datasets, ropt, options)
     state = _create_workers(datasets, ropt, options)
@@ -1348,8 +1347,6 @@ function _tear_down!(
         # TODO: We should unwrap the error monitors here
         state.we_created_procs && rmprocs(state.procs)
     end
-    # Consume notifications that arrived after the loop's final poll (e.g.
-    # while waiting on workers) so they cannot stop a later search.
     drain_external_stop!(ropt)
     return nothing
 end
