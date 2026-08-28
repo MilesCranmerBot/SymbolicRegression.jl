@@ -78,6 +78,23 @@
         end
     end
 
+    @testset "InverseFunctions - Ternary operators" begin
+        args = (2.0, 3.0, 4.0)  # fma(2, 3, 4) == 10
+
+        @test isapprox(approx_inverse(fma, Val(1), args)(10.0), 2.0; atol=1e-10)
+        @test isapprox(approx_inverse(fma, Val(2), args)(10.0), 3.0; atol=1e-10)
+        @test isapprox(approx_inverse(fma, Val(3), args)(10.0), 4.0; atol=1e-10)
+
+        # Arities 1 and 2 keep routing through `Base.Fix1`/`Base.Fix2`
+        @test approx_inverse(sin, Val(1), (0.0,)) ===
+            SymbolicRegression.CoreModule.safe_asin
+        @test approx_inverse(*, Val(1), (0.0, 2.0)) isa Base.Fix2{typeof(/)}
+        @test approx_inverse(*, Val(2), (2.0, 0.0)) isa Base.Fix1{typeof(\)}
+
+        # An operator with no known inverse is still reported as such
+        @test approx_inverse((a, b, c) -> a + b + c, Val(2), args) === nothing
+    end
+
     @testset "EvaluateInverse - Simple unary tree" begin
         operators = OperatorEnum(; binary_operators=[+, *], unary_operators=[sin])
         x_node = Node(Float64; feature=1)
@@ -167,6 +184,48 @@
         @test inverted == before_reuse
     end
 
+    @testset "EvaluateInverse - Ternary fma tree" begin
+        operators = OperatorEnum(1 => (), 2 => (), 3 => (fma,))
+        x1 = Node{Float64,3}(; feature=1)
+        x2 = Node{Float64,3}(; feature=2)
+        x3 = Node{Float64,3}(; feature=3)
+        tree = Node{Float64,3}(; op=1, children=(x1, x2, x3))
+
+        X = reshape(Float64[3.0, 2.0, 1.0], 3, 1)
+        y = Float64[7.0]  # fma(3, 2, 1)
+
+        for (node, expected) in ((x1, 3.0), (x2, 2.0), (x3, 1.0))
+            inverted, success = eval_inverse_tree_array(tree, X, operators, node, y)
+            @test success
+            @test isapprox(inverted, [expected]; atol=1e-10)
+        end
+    end
+
+    @testset "EvaluateInverse - Ternary masked siblings with evaluation buffer" begin
+        operators = OperatorEnum(1 => (), 2 => (/,), 3 => (fma,))
+        x1 = Node{Float64,3}(; feature=1)
+        x2 = Node{Float64,3}(; feature=2)
+        # Two distinct siblings, so an aliased buffer slice would silently
+        # evaluate `fma` against the wrong factor.
+        sibling_1 = Node{Float64,3}(; op=1, children=(Node{Float64,3}(; val=1.0), x2))
+        sibling_2 = Node{Float64,3}(; op=1, children=(Node{Float64,3}(; val=2.0), x2))
+        tree = Node{Float64,3}(; op=1, children=(sibling_1, sibling_2, x1))
+
+        X = Float64[0.0 0.0 0.0; 0.0 1.0 2.0]
+        y = fill(10.0, 3)
+        buffer = ArrayBuffer(zeros(8, length(y)), Ref(0))
+        eval_context = EvalContext(; buffer)
+
+        inverted, valid = eval_inverse_tree_array_masked(
+            tree, X, operators, x1, y; eval_context
+        )
+
+        # Row 1 divides by zero in both siblings, so it drops out of the mask.
+        @test valid == BitVector([false, true, true])
+        # y - (1/x2) * (2/x2)
+        @test inverted[2:3] ≈ [8.0, 9.5]
+    end
+
     @testset "EvaluateInverse - Target node not found" begin
         operators = OperatorEnum(; binary_operators=[+, *], unary_operators=[sin])
         tree = Node(Float64; feature=1)
@@ -253,40 +312,38 @@
         @test weights_on.backsolve == 0.5
     end
 
+    @testset "backsolve_rewrite_random_node - Ternary tree" begin
+        X = reshape(Float64[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], 1, 6)
+        y = Float64[5.0, 7.0, 9.0, 11.0, 13.0, 15.0]  # 2x + 3
+        dataset = Dataset(X, y)
+        options = options_with_backsolve(;
+            operators=OperatorEnum(1 => (), 2 => (+, *), 3 => (fma,))
+        )
+
+        # fma(x, 2, 7) == 2x + 7, so the fit has something to correct
+        tree = Node{Float64,3}(;
+            op=1,
+            children=(
+                Node{Float64,3}(; feature=1),
+                Node{Float64,3}(; val=2.0),
+                Node{Float64,3}(; val=7.0),
+            ),
+        )
+        base_out, _ = eval_tree_array(tree, X, options.operators)
+
+        local_rng = StableRNG(3)
+        n_changed = 0
+        for _ in 1:20
+            mutated = backsolve_rewrite_random_node(copy(tree), dataset, options, local_rng)
+            @test mutated isa Node{Float64,3}
+            out, ok = eval_tree_array(mutated, X, options.operators)
+            @test ok
+            out ≈ base_out || (n_changed += 1)
+        end
+        @test n_changed > 0
+    end
+
     @testset "Helpful errors" begin
-        operators3 = OperatorEnum(1 => (sin,), 2 => (+, *), 3 => ((a, b, c) -> a + b + c,))
-        x1 = Node{Float64,3}(; feature=1)
-        x2 = Node{Float64,3}(; feature=2)
-        x3 = Node{Float64,3}(; feature=3)
-        ternary_tree = Node{Float64,3}(; op=1, children=(x1, x2, x3))
-        X3 = reshape(Float64[1.0, 2.0, 3.0], 3, 1)
-        y3 = Float64[6.0]
-
-        @test_throws(
-            "eval_inverse_tree_array only supports AbstractExpressionNode{T,2}",
-            eval_inverse_tree_array(ternary_tree, X3, operators3, x1, y3)
-        )
-        @test !hasmethod(
-            _eval_inverse_tree_array,
-            Tuple{
-                typeof(ternary_tree),
-                typeof(X3),
-                typeof(operators3),
-                typeof(x1),
-                typeof(y3),
-                NamedTuple{(),Tuple{}},
-            },
-        )
-        @test_throws(
-            "backsolve_rewrite_random_node only supports AbstractExpressionNode{T,2}",
-            backsolve_rewrite_random_node(
-                ternary_tree,
-                Dataset(X3, y3),
-                options_with_backsolve(; binary_operators=(+, *), unary_operators=(sin,)),
-                rng,
-            )
-        )
-
         operators_no_unary = OperatorEnum(1 => (), 2 => (+,))
         unary_tree_without_operator = Node(
             Float64; op=1, children=(Node(Float64; feature=1),)
