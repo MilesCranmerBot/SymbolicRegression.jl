@@ -529,9 +529,17 @@ end
 # thousands of times per second, and each zero-timeout poll costs ~10us.
 const STOP_POLL_INTERVAL_NS = UInt64(20_000_000)  # 20 ms
 
+"""Return the `ExternalStop` for a runtime-options object, or `nothing`.
+
+Custom `AbstractRuntimeOptions` subtypes without external-stop support get a
+no-stop default; override this method to opt in.
+"""
+@inline external_stop(::AbstractRuntimeOptions) = nothing
+@inline external_stop(ropt::RuntimeOptions) = ropt.external_stop
+
 @inline check_external_stop(::Nothing)::Bool = false
 @inline check_external_stop(ropt::AbstractRuntimeOptions)::Bool = check_external_stop(
-    ropt.external_stop
+    external_stop(ropt)
 )
 
 """Check for an external stop request and latch matching pipe notifications."""
@@ -552,7 +560,7 @@ end
 
 @inline latch_external_stop!(::Nothing)::Bool = false
 @inline latch_external_stop!(ropt::AbstractRuntimeOptions)::Bool = latch_external_stop!(
-    ropt.external_stop
+    external_stop(ropt)
 )
 function latch_external_stop!(stop::ExternalStop)::Bool
     stop.last_poll_ns[] = time_ns()

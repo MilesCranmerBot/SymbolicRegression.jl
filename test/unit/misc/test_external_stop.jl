@@ -48,6 +48,18 @@
     end
 end
 
+@testitem "Custom AbstractRuntimeOptions default to no external stop" begin
+    using SymbolicRegression.SearchUtilsModule:
+        AbstractRuntimeOptions, check_external_stop, external_stop, latch_external_stop!
+
+    struct NoStopRuntimeOptions <: AbstractRuntimeOptions end
+
+    ropt = NoStopRuntimeOptions()
+    @test external_stop(ropt) === nothing
+    @test !check_external_stop(ropt)
+    @test !latch_external_stop!(ropt)
+end
+
 @testitem "ExternalStop preserves requests queued before search entry" begin
     using SymbolicRegression
 
