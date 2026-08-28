@@ -570,6 +570,22 @@ function latch_external_stop!(stop::ExternalStop)::Bool
     return stop.requested[]
 end
 
+"""Consume stop notifications queued on the descriptor without latching a stop.
+
+Called at the end of teardown: notifications arriving after the search loop's
+final poll (e.g. while waiting on in-flight workers) belong to the finished
+search and must not stop a later search sharing the descriptor. Notifications
+arriving after teardown are preserved for the next search.
+"""
+@inline drain_external_stop!(::Nothing) = nothing
+@inline drain_external_stop!(ropt::AbstractRuntimeOptions) = drain_external_stop!(
+    external_stop(ropt)
+)
+function drain_external_stop!(stop::ExternalStop)
+    check_stop_fd(stop)
+    return nothing
+end
+
 """
 This struct is used to monitor resources.
 

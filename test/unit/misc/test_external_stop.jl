@@ -48,6 +48,41 @@
     end
 end
 
+@testitem "Teardown drain clears notifications queued for a finished search" begin
+    using SymbolicRegression
+    using SymbolicRegression.SearchUtilsModule: check_stop_fd, drain_external_stop!
+
+    @test drain_external_stop!(nothing) === nothing
+
+    if !Sys.iswindows()
+        fds = Vector{Cint}(undef, 2)
+        @test ccall(:pipe, Cint, (Ptr{Cint},), fds) == 0
+        read_fd, write_fd = fds
+        try
+            flags = ccall(:fcntl, Cint, (Cint, Cint), read_fd, Cint(3))
+            nonblocking = Sys.isbsd() ? Cint(0x0004) : Cint(0x0800)
+            @test flags >= 0
+            @test ccall(
+                :fcntl, Cint, (Cint, Cint, Cint), read_fd, Cint(4), flags | nonblocking
+            ) == 0
+
+            # A notification lands during search N's teardown window:
+            finished_search_stop = ExternalStop(read_fd, 0)
+            @test ccall(
+                :write, Cssize_t, (Cint, Ref{UInt8}, Csize_t), write_fd, Ref(UInt8(0)), 1
+            ) == 1
+            @test drain_external_stop!(finished_search_stop) === nothing
+
+            # Search N+1 reusing the descriptor must not observe it:
+            next_search_stop = ExternalStop(read_fd, 0)
+            @test !check_stop_fd(next_search_stop)
+        finally
+            ccall(:close, Cint, (Cint,), read_fd)
+            ccall(:close, Cint, (Cint,), write_fd)
+        end
+    end
+end
+
 @testitem "Custom AbstractRuntimeOptions default to no external stop" begin
     using SymbolicRegression.SearchUtilsModule:
         AbstractRuntimeOptions, check_external_stop, external_stop, latch_external_stop!

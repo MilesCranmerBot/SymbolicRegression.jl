@@ -426,6 +426,7 @@ using .SearchUtilsModule:
     check_max_evals,
     check_external_stop,
     latch_external_stop!,
+    drain_external_stop!,
     ResourceMonitor,
     record_channel_state!,
     estimate_work_fraction,
@@ -1347,6 +1348,9 @@ function _tear_down!(
         # TODO: We should unwrap the error monitors here
         state.we_created_procs && rmprocs(state.procs)
     end
+    # Consume notifications that arrived after the loop's final poll (e.g.
+    # while waiting on workers) so they cannot stop a later search.
+    drain_external_stop!(ropt)
     return nothing
 end
 function _format_output(
