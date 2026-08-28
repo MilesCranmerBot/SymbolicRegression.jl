@@ -89,14 +89,15 @@ can customize runtime behaviors by passing it to `equation_search`.
 abstract type AbstractRuntimeOptions end
 
 """
-    RuntimeOptions{PARALLELISM,DIM_OUT,RETURN_STATE,LOGGER} <: AbstractRuntimeOptions
+    RuntimeOptions{PARALLELISM,DIM_OUT,RETURN_STATE,LOGGER,EXTERNAL_STOP} <: AbstractRuntimeOptions
 
 Parameters for a search that are passed to `equation_search` directly,
 rather than set within `Options`. This is to differentiate between
 parameters that relate to processing and the duration of the search,
 and parameters dealing with the search hyperparameters itself.
 """
-struct RuntimeOptions{PARALLELISM,DIM_OUT,RETURN_STATE,LOGGER} <: AbstractRuntimeOptions
+struct RuntimeOptions{PARALLELISM,DIM_OUT,RETURN_STATE,LOGGER,EXTERNAL_STOP} <:
+       AbstractRuntimeOptions
     niterations::Int64
     numprocs::Int64
     init_procs::Union{Vector{Int},Nothing}
@@ -108,6 +109,7 @@ struct RuntimeOptions{PARALLELISM,DIM_OUT,RETURN_STATE,LOGGER} <: AbstractRuntim
     verbosity::Int64
     progress::Bool
     logger::Union{AbstractLogger,Nothing}
+    external_stop::EXTERNAL_STOP
     parallelism::Val{PARALLELISM}
     dim_out::Val{DIM_OUT}
     return_state::Val{RETURN_STATE}
@@ -147,6 +149,7 @@ end
     progress::Union{Bool,Nothing}=nothing,
     v_dim_out::Val{DIM_OUT}=Val(nothing),
     logger=nothing,
+    external_stop=nothing,
     # Defined from options
     options_return_state::Val{ORS}=Val(nothing),
     options_verbosity::Union{Integer,Nothing}=nothing,
@@ -234,7 +237,9 @@ end
         ``
     end
 
-    return RuntimeOptions{concurrency,dim_out,_return_state,typeof(logger)}(
+    return RuntimeOptions{
+        concurrency,dim_out,_return_state,typeof(logger),typeof(external_stop)
+    }(
         niterations,
         _numprocs,
         procs,
@@ -246,6 +251,7 @@ end
         _verbosity,
         _progress,
         logger,
+        external_stop,
         Val(concurrency),
         Val(dim_out),
         Val(_return_state),
@@ -352,9 +358,9 @@ function init_dummy_pops(
     ]
 end
 
-mutable struct StdinReader
+mutable struct StdinReader{S<:IO}
     const can_read_user_input::Bool
-    const stream::IO
+    const stream::S
     saw_quit_char::Bool
 end
 function StdinReader(can_read_user_input::Bool, stream::IO)
@@ -460,6 +466,124 @@ end
 
 function check_max_evals(num_evals, options::AbstractOptions)::Bool
     return options.max_evals !== nothing && options.max_evals::Int <= sum(sum, num_evals)
+end
+
+struct PollFD
+    fd::Cint
+    events::Cshort
+    revents::Cshort
+end
+
+"""
+    ExternalStop(fd::Integer=-1, trigger::Integer=0)
+
+A per-search request for a graceful stop at the next cycle boundary. Setting
+`requested[]` directly requests a stop. On POSIX systems, a nonnegative `fd`
+is polled and drained; only `trigger` bytes request a stop, unless the trigger is zero.
+"""
+struct ExternalStop
+    requested::Threads.Atomic{Bool}
+    fd::Cint
+    trigger::UInt8
+    poll_fd::Base.RefValue{PollFD}
+    read_buf::Base.RefValue{UInt8}
+    last_poll_ns::Base.RefValue{UInt64}
+end
+
+function ExternalStop(fd::Integer=-1, trigger::Integer=0)
+    return ExternalStop(
+        Threads.Atomic{Bool}(false),
+        Cint(fd),
+        UInt8(trigger),
+        Ref(PollFD(Cint(fd), Cshort(0x0001), Cshort(0))),
+        Ref(UInt8(0)),
+        Ref(UInt64(0)),
+    )
+end
+
+function check_stop_fd(stop::ExternalStop)::Bool
+    stop.fd < 0 && return false
+    @static if Sys.iswindows()
+        # No POSIX poll on Windows; hosts only register fds on POSIX.
+        return false
+    else
+        requested = false
+        # Drain everything queued so stale bytes never stop a later search.
+        while true
+            stop.poll_fd[] = PollFD(stop.fd, Cshort(0x0001), Cshort(0))
+            ccall(:poll, Cint, (Ref{PollFD}, Cuint, Cint), stop.poll_fd, 1, 0) == 1 || break
+            n = ccall(
+                :read, Cssize_t, (Cint, Ref{UInt8}, Csize_t), stop.fd, stop.read_buf, 1
+            )
+            # A nonblocking descriptor may be drained between poll and read.
+            n == 1 || break
+            if stop.trigger == 0x00 || stop.read_buf[] == stop.trigger
+                requested = true
+            end
+        end
+        return requested
+    end
+end
+
+# Minimum interval between `poll` syscalls: the scheduler loop can spin
+# thousands of times per second, and each zero-timeout poll costs ~10us.
+const STOP_POLL_INTERVAL_NS = UInt64(20_000_000)  # 20 ms
+
+"""Return the `ExternalStop` for a runtime-options object, or `nothing`.
+
+Custom `AbstractRuntimeOptions` subtypes without external-stop support get a
+no-stop default; override this method to opt in.
+"""
+@inline external_stop(::AbstractRuntimeOptions) = nothing
+@inline external_stop(ropt::RuntimeOptions) = ropt.external_stop
+
+@inline check_external_stop(::Nothing)::Bool = false
+@inline check_external_stop(ropt::AbstractRuntimeOptions)::Bool = check_external_stop(
+    external_stop(ropt)
+)
+
+"""Check for an external stop request and latch matching pipe notifications."""
+function check_external_stop(stop::ExternalStop)::Bool
+    if stop.fd >= 0
+        now = time_ns()
+        if now - stop.last_poll_ns[] >= STOP_POLL_INTERVAL_NS
+            stop.last_poll_ns[] = now
+            # Keep draining even once latched so notifications arriving after
+            # the first stop cannot remain queued on the owned descriptor.
+            if check_stop_fd(stop)
+                stop.requested[] = true
+            end
+        end
+    end
+    return stop.requested[]
+end
+
+@inline latch_external_stop!(::Nothing)::Bool = false
+@inline latch_external_stop!(ropt::AbstractRuntimeOptions)::Bool = latch_external_stop!(
+    external_stop(ropt)
+)
+function latch_external_stop!(stop::ExternalStop)::Bool
+    stop.last_poll_ns[] = time_ns()
+    if check_stop_fd(stop)
+        stop.requested[] = true
+    end
+    return stop.requested[]
+end
+
+"""Consume stop notifications queued on the descriptor without latching a stop.
+
+Called at the end of teardown: notifications arriving after the search loop's
+final poll (e.g. while waiting on in-flight workers) belong to the finished
+search and must not stop a later search sharing the descriptor. Notifications
+arriving after teardown are preserved for the next search.
+"""
+@inline drain_external_stop!(::Nothing) = nothing
+@inline drain_external_stop!(ropt::AbstractRuntimeOptions) = drain_external_stop!(
+    external_stop(ropt)
+)
+function drain_external_stop!(stop::ExternalStop)
+    check_stop_fd(stop)
+    return nothing
 end
 
 """
