@@ -98,7 +98,7 @@ using .ExpressionSpecModule:
     get_expression_type,
     get_expression_options,
     get_node_type
-using .InterfaceDataTypesModule: init_value, sample_value, mutate_value
+using .InterfaceDataTypesModule: init_value, parse_scope, sample_value, mutate_value
 using .PluginModule:
     AbstractPlugin,
     MutationEvent,

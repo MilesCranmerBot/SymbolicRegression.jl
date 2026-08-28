@@ -309,6 +309,7 @@ using .CoreModule:
     AbstractExpressionSpec,
     ExpressionSpec,
     init_value,
+    parse_scope,
     sample_value,
     mutate_value,
     get_safe_op,
