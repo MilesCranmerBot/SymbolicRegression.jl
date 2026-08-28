@@ -48,11 +48,28 @@
     end
 end
 
-@testitem "Teardown drain clears notifications queued for a finished search" begin
+@testitem "Teardown drains notifications queued for a finished search" begin
+    using DynamicExpressions: AbstractExpression, Node
     using SymbolicRegression
-    using SymbolicRegression.SearchUtilsModule: check_stop_fd, drain_external_stop!
+    using SymbolicRegression.SearchUtilsModule:
+        AbstractRuntimeOptions, AbstractSearchState, check_stop_fd, drain_external_stop!
+    import SymbolicRegression.SearchUtilsModule: close_reader!, external_stop
 
     @test drain_external_stop!(nothing) === nothing
+
+    struct DrainProbeExpression <: AbstractExpression{Float64,Node{Float64}} end
+    struct DrainProbeReader end
+    close_reader!(::DrainProbeReader) = nothing
+    struct DrainProbeRuntimeOptions <: AbstractRuntimeOptions
+        parallelism::Symbol
+        external_stop::ExternalStop
+    end
+    external_stop(ropt::DrainProbeRuntimeOptions) = ropt.external_stop
+    struct DrainProbeSearchState <:
+           AbstractSearchState{Float64,Float64,DrainProbeExpression}
+        plugin_states::Vector{Tuple{}}
+        stdin_reader::DrainProbeReader
+    end
 
     if !Sys.iswindows()
         fds = Vector{Cint}(undef, 2)
@@ -66,12 +83,17 @@ end
                 :fcntl, Cint, (Cint, Cint, Cint), read_fd, Cint(4), flags | nonblocking
             ) == 0
 
+            options = Options(;
+                binary_operators=[+, *], save_to_file=false, plugins=(), default_plugins=()
+            )
+            ropt = DrainProbeRuntimeOptions(:serial, ExternalStop(read_fd, 0))
+            state = DrainProbeSearchState([()], DrainProbeReader())
+
             # A notification lands during search N's teardown window:
-            finished_search_stop = ExternalStop(read_fd, 0)
             @test ccall(
                 :write, Cssize_t, (Cint, Ref{UInt8}, Csize_t), write_fd, Ref(UInt8(0)), 1
             ) == 1
-            @test drain_external_stop!(finished_search_stop) === nothing
+            SymbolicRegression._tear_down!(state, [nothing], ropt, options)
 
             # Search N+1 reusing the descriptor must not observe it:
             next_search_stop = ExternalStop(read_fd, 0)
