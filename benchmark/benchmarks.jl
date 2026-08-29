@@ -360,14 +360,14 @@ function create_utils_benchmark()
 end
 
 # Inverting `y = f(..., x, ...)` for the leaf `x`, which is the hot path of the
-# backsolve mutation. `deg3` only exists once inverse evaluation is arity-generic.
+# backsolve mutation.
 function _setup_inverse(::Val{degree}) where {degree}
     n = 1024
     # Keep `2x` inside asin's domain, so that no row is masked out and the
     # benchmark measures a full root-to-leaf inversion.
     X = (rand(MersenneTwister(0), 1, n) .- 0.5) .* (pi / 2)
-    # Degrees 1 and 2 live in a binary node type, so that these two entries also
-    # run against a build whose inverse evaluation accepts binary trees only.
+    # Degrees 1 and 2 use a binary node type so that every revision under
+    # comparison can construct these two entries.
     NodeT = Node{Float64,degree == 3 ? 3 : 2}
     x = NodeT(; feature=1)
     if degree == 1
