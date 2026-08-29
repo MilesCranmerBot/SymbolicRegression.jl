@@ -7,6 +7,7 @@ using DynamicExpressions:
     get_child,
     preserve_sharing,
     EvalContext
+using DynamicExpressions.EvaluateModule: get_op, get_nops
 
 using ..InverseFunctionsModule: approx_inverse
 
@@ -83,7 +84,7 @@ function eval_inverse_tree_array(
     node_to_invert_at::N,
     y::AbstractVector{T};
     eval_kws...,
-) where {T,N<:AbstractExpressionNode{T,2}}
+) where {T,D,N<:AbstractExpressionNode{T,D}}
     if preserve_sharing(tree)
         throw(
             ArgumentError(
@@ -124,7 +125,7 @@ function eval_inverse_tree_array_masked(
     node_to_invert_at::N,
     y::AbstractVector{T};
     eval_kws...,
-) where {T,N<:AbstractExpressionNode{T,2}}
+) where {T,D,N<:AbstractExpressionNode{T,D}}
     if preserve_sharing(tree)
         throw(
             ArgumentError(
@@ -139,21 +140,6 @@ function eval_inverse_tree_array_masked(
     return (result.x, result.valid)
 end
 
-function eval_inverse_tree_array(
-    tree::N,
-    X::AbstractMatrix{T},
-    operators::OperatorEnum,
-    node_to_invert_at::N,
-    y::AbstractVector{T};
-    eval_kws...,
-) where {T,D,N<:AbstractExpressionNode{T,D}}
-    throw(
-        ArgumentError(
-            "eval_inverse_tree_array only supports AbstractExpressionNode{T,2}; got $(N)."
-        ),
-    )
-end
-
 function _eval_inverse_tree_array(
     tree::N,
     X::AbstractMatrix{T},
@@ -161,13 +147,14 @@ function _eval_inverse_tree_array(
     node_to_invert_at::N,
     y::AbstractVector{T},
     eval_kws::NamedTuple,
-) where {T,N<:AbstractExpressionNode{T,2}}
+) where {T,D,N<:AbstractExpressionNode{T,D}}
     result = _eval_inverse_tree_array_masked(
         tree, X, operators, node_to_invert_at, y, isfinite.(y), _masked_eval_kws(eval_kws)
     )
     return ResultOk(result.x, all(result.valid))
 end
 
+# This forms an if statement over the degree of a given node.
 @generated function _eval_inverse_tree_array_masked(
     tree::N,
     X::AbstractMatrix{T},
@@ -176,133 +163,150 @@ end
     y::AbstractVector{T},
     valid::BitVector,
     eval_kws::NamedTuple,
-)::ResultMasked where {T,N<:AbstractExpressionNode{T,2},O<:OperatorEnum}
-    op_type = O.parameters[1]  # Tuple{Tuple{unary...}, Tuple{binary...}}
-    nuna = length(op_type.parameters[1].parameters)
-    nbin = length(op_type.parameters[2].parameters)
-    quote
+)::ResultMasked where {T,D,N<:AbstractExpressionNode{T,D},O<:OperatorEnum}
+    return quote
         tree === node_to_invert_at && return ResultMasked(y, valid)
 
         tree.degree == 0 && return ResultMasked(y, falses(length(y)))
 
-        if tree.degree == 1 && $nuna > 0
-            op_idx = tree.op
-            Base.Cartesian.@nif(
-                $nuna,
-                i -> i == op_idx,
-                i -> let op = operators.unaops[i]
-                    return dispatch_deg1_masked(
-                        tree, X, op, operators, node_to_invert_at, y, valid, eval_kws
-                    )
-                end
-            )
-        elseif tree.degree == 2 && $nbin > 0
-            op_idx = tree.op
-            Base.Cartesian.@nif(
-                $nbin,
-                i -> i == op_idx,
-                i -> let op = operators.binops[i]
-                    return dispatch_deg2_masked(
-                        tree, X, op, operators, node_to_invert_at, y, valid, eval_kws
-                    )
-                end
-            )
-        else
-            throw(
-                ArgumentError(
-                    "eval_inverse_tree_array cannot invert node degree $(tree.degree) with the configured operators.",
-                ),
-            )
+        degree = tree.degree
+        return Base.Cartesian.@nif(
+            $D,
+            d -> d == degree,  # COV_EXCL_LINE
+            d -> begin  # COV_EXCL_LINE
+                inner_dispatch_degn_masked(
+                    tree, X, Val(d), operators, node_to_invert_at, y, valid, eval_kws
+                )
+            end,
+        )
+    end
+end
+
+# This forms an if statement over the choice of operator.
+@generated function inner_dispatch_degn_masked(
+    tree::N,
+    X::AbstractMatrix{T},
+    ::Val{degree},
+    operators::O,
+    node_to_invert_at::N,
+    y::AbstractVector{T},
+    valid::BitVector,
+    eval_kws::NamedTuple,
+)::ResultMasked where {T,D,N<:AbstractExpressionNode{T,D},degree,O<:OperatorEnum}
+    nops = get_nops(O, Val(degree))
+    if nops == 0
+        msg = "eval_inverse_tree_array cannot invert node degree $degree with the configured operators."
+        return quote
+            throw(ArgumentError($msg))
         end
     end
+    return quote
+        op_idx = tree.op
+        return Base.Cartesian.@nif(
+            $nops,
+            i -> i == op_idx,  # COV_EXCL_LINE
+            i -> begin  # COV_EXCL_LINE
+                dispatch_degn_masked(
+                    tree,
+                    X,
+                    Val($degree),
+                    get_op(operators, Val($degree), Val(i)),
+                    operators,
+                    node_to_invert_at,
+                    y,
+                    valid,
+                    eval_kws,
+                )
+            end,
+        )
+    end
 end
 
-function dispatch_deg1_masked(
+@generated function dispatch_degn_masked(
     tree::N,
     X::AbstractMatrix{T},
+    ::Val{degree},
     op::F,
     operators::OperatorEnum,
     node_to_invert_at::N,
     y::AbstractVector{T},
     valid::BitVector,
     eval_kws::NamedTuple,
-) where {F,T,N<:AbstractExpressionNode{T,2}}
-    complete_inv = deg1_invert!(y, op)
-    !complete_inv && return ResultMasked(y, falses(length(y)))
-    valid .&= isfinite.(y)
-    any(valid) || return ResultMasked(y, valid)
-    return _eval_inverse_tree_array_masked(
-        get_child(tree, 1), X, operators, node_to_invert_at, y, valid, eval_kws
-    )
-end
-
-function dispatch_deg2_masked(
-    tree::N,
-    X::AbstractMatrix{T},
-    op::F,
-    operators::OperatorEnum,
-    node_to_invert_at::N,
-    y::AbstractVector{T},
-    valid::BitVector,
-    eval_kws::NamedTuple,
-) where {F,T,N<:AbstractExpressionNode{T,2}}
-    left_child = get_child(tree, 1)
-    right_child = get_child(tree, 2)
-
-    if any(Base.Fix1(===, node_to_invert_at), right_child)
-        _reset_eval_buffer!(eval_kws)
-        (result_l, complete_l) = eval_tree_array(left_child, X, operators; eval_kws...)
-        !complete_l && return ResultMasked(y, falses(length(y)))
-        valid .&= isfinite.(result_l)
-        any(valid) || return ResultMasked(y, valid)
-        complete_inv_r = deg2_invert_right!(y, result_l, op)
-        !complete_inv_r && return ResultMasked(y, falses(length(y)))
+) where {degree,F,T,D,N<:AbstractExpressionNode{T,D}}
+    degree == 1 && return quote
+        complete_inv = degn_invert!(y, (y,), op, Val(1), Val(1))
+        !complete_inv && return ResultMasked(y, falses(length(y)))
         valid .&= isfinite.(y)
         any(valid) || return ResultMasked(y, valid)
         return _eval_inverse_tree_array_masked(
-            right_child, X, operators, node_to_invert_at, y, valid, eval_kws
+            get_child(tree, 1), X, operators, node_to_invert_at, y, valid, eval_kws
         )
-    else  # any(===(node_to_invert_at), left_child)
+    end
+    quote
+        n = length(y)
+
+        child_to_invert = 0
+        Base.Cartesian.@nexprs $(degree - 1) i -> begin
+            if child_to_invert == 0 &&
+                any(Base.Fix1(===, node_to_invert_at), get_child(tree, i))
+                child_to_invert = i
+            end
+        end
+        child_to_invert == 0 && (child_to_invert = $degree)
+
+        # A single reset for the whole sibling group: each sibling has to keep
+        # its own slice of the evaluation buffer while the others are computed.
         _reset_eval_buffer!(eval_kws)
-        (result_r, complete_r) = eval_tree_array(right_child, X, operators; eval_kws...)
-        !complete_r && return ResultMasked(y, falses(length(y)))
-        valid .&= isfinite.(result_r)
+        siblings = Base.Cartesian.@ntuple $degree i -> if i == child_to_invert
+            y  # placeholder; `degn_invert!` substitutes `y[row]` at position `i`
+        else
+            (result_i, complete_i) = eval_tree_array(
+                get_child(tree, i), X, operators; eval_kws...
+            )
+            !complete_i && return ResultMasked(y, falses(n))
+            valid .&= isfinite.(result_i)
+            result_i
+        end
         any(valid) || return ResultMasked(y, valid)
-        complete_inv_l = deg2_invert_left!(y, result_r, op)
-        !complete_inv_l && return ResultMasked(y, falses(length(y)))
-        valid .&= isfinite.(y)
-        any(valid) || return ResultMasked(y, valid)
-        return _eval_inverse_tree_array_masked(
-            left_child, X, operators, node_to_invert_at, y, valid, eval_kws
+
+        Base.Cartesian.@nif(
+            $degree,
+            i -> i == child_to_invert,
+            i -> begin
+                complete_inv = degn_invert!(y, siblings, op, Val($degree), Val(i))
+                !complete_inv && return ResultMasked(y, falses(n))
+                valid .&= isfinite.(y)
+                any(valid) || return ResultMasked(y, valid)
+                return _eval_inverse_tree_array_masked(
+                    get_child(tree, i),
+                    X,
+                    operators,
+                    node_to_invert_at,
+                    y,
+                    valid,
+                    eval_kws,
+                )
+            end
         )
     end
 end
 
-function deg1_invert!(y::AbstractVector, op::F) where {F}
-    op_inv = approx_inverse(op)
-    op_inv === nothing && return false
-    @inbounds @simd for i in eachindex(y)
-        y[i] = op_inv(y[i])
+# Fast general implementation of inverting `op` with respect to its `I`-th
+# argument, with the remaining arguments taken row-wise from `siblings`.
+# `siblings[I]` is ignored; that slot is supplied by `y`.
+@generated function degn_invert!(
+    y::AbstractVector, siblings::Tuple, op::F, ::Val{degree}, ::Val{I}
+) where {F,degree,I}
+    quote
+        Base.Cartesian.@nexprs($degree, i -> sibling_i = siblings[i])
+        @inbounds for row in eachindex(y)
+            args = Base.Cartesian.@ntuple($degree, i -> i == $I ? y[row] : sibling_i[row])
+            op_inv = approx_inverse(op, Val($I), args)
+            op_inv === nothing && return false
+            y[row] = op_inv(y[row])
+        end  # COV_EXCL_LINE
+        return true
     end
-    return true
-end
-
-function deg2_invert_right!(y::AbstractVector, l::AbstractVector, op::F) where {F}
-    @inbounds for i in eachindex(y, l)
-        op_inv = approx_inverse(Base.Fix1(op, l[i]))
-        op_inv === nothing && return false
-        y[i] = op_inv(y[i])
-    end
-    return true
-end
-
-function deg2_invert_left!(y::AbstractVector, r::AbstractVector, op::F) where {F}
-    @inbounds for i in eachindex(y, r)
-        op_inv = approx_inverse(Base.Fix2(op, r[i]))
-        op_inv === nothing && return false
-        y[i] = op_inv(y[i])
-    end
-    return true
 end
 
 end

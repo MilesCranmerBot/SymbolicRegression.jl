@@ -33,6 +33,42 @@ function approx_inverse(f::F) where {F<:Function}
     return i_f
 end
 
+"""
+    FitExcept{I}(f, args)
+
+The complement of `Base.Fix{I}`: every argument of `f` is fixed to the
+corresponding entry of `args` except position `I`, which is supplied at
+call time. `args[I]` is ignored.
+
+Arities 1 and 2 are covered by `Base.Fix1`/`Base.Fix2`, so this is only
+used for operators of degree 3 and above.
+"""
+struct FitExcept{I,F,A<:Tuple} <: Function
+    f::F
+    args::A
+end
+
+@inline function (f::FitExcept{I})(x) where {I}
+    args = ntuple(i -> i == I ? x : f.args[i], Val(length(f.args)))
+    return f.f(args...)
+end
+
+"""
+    approx_inverse(f, ::Val{I}, args::Tuple)
+
+The [`approx_inverse`](@ref) of `f` with respect to its `I`-th argument,
+holding the other arguments fixed to the corresponding entries of `args`.
+
+Unary and binary operators route through `Base.Fix1`/`Base.Fix2` so that they
+keep their dedicated inverse methods; higher arities wrap in [`FitExcept`](@ref).
+"""
+approx_inverse(f, ::Val{1}, ::Tuple{Any}) = approx_inverse(f)
+approx_inverse(f, ::Val{1}, args::Tuple{Any,Any}) = approx_inverse(Base.Fix2(f, args[2]))
+approx_inverse(f, ::Val{2}, args::Tuple{Any,Any}) = approx_inverse(Base.Fix1(f, args[1]))
+function approx_inverse(f::F, ::Val{I}, args::A) where {F,I,A<:Tuple}
+    return approx_inverse(FitExcept{I,F,A}(f, args))
+end
+
 ###########################################################################
 ## Unary operators ########################################################
 ###########################################################################
@@ -82,13 +118,19 @@ approx_inverse(::typeof(abs)) = nothing
 ## Binary operators #######################################################
 ###########################################################################
 
-# Note that Fix{N,<:Union{typeof(+),typeof(*),typeof(-),typeof(/)}}
-# is already implemented.
-
-# However, the `InverseFunctions` ones throw a domain error,
-# so we choose to re-implement them.
+# `Fix{N,<:Union{typeof(+),typeof(*),typeof(-),typeof(/)}}` is already
+# implemented in `InverseFunctions`, but the `*` and `/` ones throw a domain
+# error, and the generic path does not infer a concrete return type on Julia
+# 1.10. Spelling them out keeps `approx_inverse` type-stable for every fixed
+# arithmetic operator.
+approx_inverse(f::Base.Fix1{typeof(+)}) = Base.Fix2(-, f.x)
+approx_inverse(f::Base.Fix2{typeof(+)}) = Base.Fix2(-, f.x)
+approx_inverse(f::Base.Fix1{typeof(-)}) = Base.Fix1(-, f.x)
+approx_inverse(f::Base.Fix2{typeof(-)}) = Base.Fix2(+, f.x)
 approx_inverse(f::Base.Fix1{typeof(*)}) = Base.Fix1(\, f.x)
 approx_inverse(f::Base.Fix2{typeof(*)}) = Base.Fix2(/, f.x)
+approx_inverse(f::Base.Fix1{typeof(/)}) = Base.Fix1(/, f.x)
+approx_inverse(f::Base.Fix2{typeof(/)}) = Base.Fix2(*, f.x)
 
 # (f.x ^ _) => log(_) / log(f.x)
 # For a^x = y, solve for x: x = log(y) / log(a)
@@ -101,6 +143,16 @@ approx_inverse(f::Base.Fix2{typeof(safe_pow)}) = Base.Fix2(safe_pow, inv(f.x))
 # mod is not invertible: mod(x, m) = mod(x + k*m, m) for any integer k
 approx_inverse(::Base.Fix1{typeof(mod)}) = nothing
 approx_inverse(::Base.Fix2{typeof(mod)}) = nothing
+###########################################################################
+
+###########################################################################
+## Ternary operators ######################################################
+###########################################################################
+
+# fma(a, b, c) = a * b + c
+approx_inverse(f::FitExcept{1,typeof(fma)}) = y -> (y - f.args[3]) / f.args[2]
+approx_inverse(f::FitExcept{2,typeof(fma)}) = y -> (y - f.args[3]) / f.args[1]
+approx_inverse(f::FitExcept{3,typeof(fma)}) = y -> y - f.args[1] * f.args[2]
 ###########################################################################
 
 end
