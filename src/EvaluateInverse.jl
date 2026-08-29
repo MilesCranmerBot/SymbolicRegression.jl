@@ -233,17 +233,26 @@ end
     valid::BitVector,
     eval_kws::NamedTuple,
 ) where {degree,F,T,D,N<:AbstractExpressionNode{T,D}}
+    degree == 1 && return quote
+        complete_inv = degn_invert!(y, (y,), op, Val(1), Val(1))
+        !complete_inv && return ResultMasked(y, falses(length(y)))
+        valid .&= isfinite.(y)
+        any(valid) || return ResultMasked(y, valid)
+        return _eval_inverse_tree_array_masked(
+            get_child(tree, 1), X, operators, node_to_invert_at, y, valid, eval_kws
+        )
+    end
     quote
         n = length(y)
 
         child_to_invert = 0
-        Base.Cartesian.@nexprs $degree i -> begin
+        Base.Cartesian.@nexprs $(degree - 1) i -> begin
             if child_to_invert == 0 &&
                 any(Base.Fix1(===, node_to_invert_at), get_child(tree, i))
                 child_to_invert = i
             end
         end
-        child_to_invert == 0 && return ResultMasked(y, falses(n))
+        child_to_invert == 0 && (child_to_invert = $degree)
 
         # A single reset for the whole sibling group: each sibling has to keep
         # its own slice of the evaluation buffer while the others are computed.
