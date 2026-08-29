@@ -366,24 +366,20 @@ function _setup_inverse(::Val{degree}) where {degree}
     # Keep `2x` inside asin's domain, so that no row is masked out and the
     # benchmark measures a full root-to-leaf inversion.
     X = (rand(MersenneTwister(0), 1, n) .- 0.5) .* (pi / 2)
-    x = Node{Float64,degree}(; feature=1)
+    # Degrees 1 and 2 live in a binary node type, so that these two entries also
+    # run against a build whose inverse evaluation accepts binary trees only.
+    NodeT = Node{Float64,degree == 3 ? 3 : 2}
+    x = NodeT(; feature=1)
     if degree == 1
-        operators = OperatorEnum(1 => (sin,))
-        tree = Node{Float64,1}(; op=1, children=(x,))
+        operators = OperatorEnum(1 => (sin,), 2 => (+, *))
+        tree = NodeT(; op=1, children=(x,))
     elseif degree == 2
         operators = OperatorEnum(1 => (sin,), 2 => (+, *))
-        inner = Node{Float64,2}(; op=2, children=(x, Node{Float64,2}(; val=2.0)))
-        tree = Node{Float64,2}(;
-            op=1,
-            children=(
-                Node{Float64,2}(; op=1, children=(inner,)), Node{Float64,2}(; val=1.0)
-            ),
-        )
+        inner = NodeT(; op=2, children=(x, NodeT(; val=2.0)))
+        tree = NodeT(; op=1, children=(NodeT(; op=1, children=(inner,)), NodeT(; val=1.0)))
     else
         operators = OperatorEnum(1 => (), 2 => (+, *), 3 => (fma,))
-        tree = Node{Float64,3}(;
-            op=1, children=(x, Node{Float64,3}(; val=2.0), Node{Float64,3}(; val=1.0))
-        )
+        tree = NodeT(; op=1, children=(x, NodeT(; val=2.0), NodeT(; val=1.0)))
     end
     y, _ = eval_tree_array(tree, X, operators)
     return (; tree, X, operators, node=x, y)
