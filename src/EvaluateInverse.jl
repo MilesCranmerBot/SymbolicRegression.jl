@@ -222,26 +222,6 @@ end
     end
 end
 
-function dispatch_degn_masked(
-    tree::N,
-    X::AbstractMatrix{T},
-    ::Val{1},
-    op::F,
-    operators::OperatorEnum,
-    node_to_invert_at::N,
-    y::AbstractVector{T},
-    valid::BitVector,
-    eval_kws::NamedTuple,
-) where {F,T,D,N<:AbstractExpressionNode{T,D}}
-    complete_inv = deg1_invert!(y, op)
-    !complete_inv && return ResultMasked(y, falses(length(y)))
-    valid .&= isfinite.(y)
-    any(valid) || return ResultMasked(y, valid)
-    return _eval_inverse_tree_array_masked(
-        get_child(tree, 1), X, operators, node_to_invert_at, y, valid, eval_kws
-    )
-end
-
 @generated function dispatch_degn_masked(
     tree::N,
     X::AbstractMatrix{T},
@@ -300,15 +280,6 @@ end
             end
         )
     end
-end
-
-function deg1_invert!(y::AbstractVector, op::F) where {F}
-    op_inv = approx_inverse(op)
-    op_inv === nothing && return false
-    @inbounds @simd for i in eachindex(y)
-        y[i] = op_inv(y[i])
-    end
-    return true
 end
 
 # Fast general implementation of inverting `op` with respect to its `I`-th
