@@ -5,6 +5,7 @@ using SymbolicRegression.AdaptiveParsimonyModule: RunningSearchStatistics
 using SymbolicRegression.PopulationModule: best_of_sample
 using SymbolicRegression.ConstantOptimizationModule: optimize_constants
 using SymbolicRegression.CheckConstraintsModule: check_constraints
+using SymbolicRegression.EvaluateInverseModule: eval_inverse_tree_array
 using Bumper, LoopVectorization
 
 function create_search_benchmark()
@@ -358,10 +359,59 @@ function create_utils_benchmark()
     return suite
 end
 
+# Inverting `y = f(..., x, ...)` for the leaf `x`, which is the hot path of the
+# backsolve mutation. `deg3` only exists once inverse evaluation is arity-generic.
+function _setup_inverse(::Val{degree}) where {degree}
+    n = 1024
+    # Keep `2x` inside asin's domain, so that no row is masked out and the
+    # benchmark measures a full root-to-leaf inversion.
+    X = (rand(MersenneTwister(0), 1, n) .- 0.5) .* (pi / 2)
+    x = Node{Float64,degree}(; feature=1)
+    if degree == 1
+        operators = OperatorEnum(1 => (sin,))
+        tree = Node{Float64,1}(; op=1, children=(x,))
+    elseif degree == 2
+        operators = OperatorEnum(1 => (sin,), 2 => (+, *))
+        inner = Node{Float64,2}(; op=2, children=(x, Node{Float64,2}(; val=2.0)))
+        tree = Node{Float64,2}(;
+            op=1,
+            children=(
+                Node{Float64,2}(; op=1, children=(inner,)), Node{Float64,2}(; val=1.0)
+            ),
+        )
+    else
+        operators = OperatorEnum(1 => (), 2 => (+, *), 3 => (fma,))
+        tree = Node{Float64,3}(;
+            op=1, children=(x, Node{Float64,3}(; val=2.0), Node{Float64,3}(; val=1.0))
+        )
+    end
+    y, _ = eval_tree_array(tree, X, operators)
+    return (; tree, X, operators, node=x, y)
+end
+
+function create_inverse_benchmark()
+    suite = BenchmarkGroup()
+
+    degrees = if isdefined(SymbolicRegression.InverseFunctionsModule, :FitExcept)
+        (1, 2, 3)
+    else
+        (1, 2)
+    end
+    for degree in degrees
+        suite["eval_inverse_tree_array_deg$(degree)"] = @benchmarkable(
+            eval_inverse_tree_array(s.tree, s.X, s.operators, s.node, s.y),
+            setup = (s = _setup_inverse(Val($degree)))
+        )
+    end
+
+    return suite
+end
+
 function create_benchmark()
     suite = BenchmarkGroup()
     suite["search"] = create_search_benchmark()
     suite["utils"] = create_utils_benchmark()
+    suite["inverse"] = create_inverse_benchmark()
     return suite
 end
 
