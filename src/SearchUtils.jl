@@ -468,22 +468,46 @@ function check_max_evals(num_evals, options::AbstractOptions)::Bool
     return options.max_evals !== nothing && options.max_evals::Int <= sum(sum, num_evals)
 end
 
+# POSIX file descriptors are `int`; Windows `SOCKET`s are pointer-sized handles.
+const StopFD = @static Sys.iswindows() ? UInt : Cint
+
+# POLLRDNORM on Windows, POLLIN elsewhere.
+const STOP_POLL_READ = @static Sys.iswindows() ? Cshort(0x0100) : Cshort(0x0001)
+
 struct PollFD
-    fd::Cint
+    fd::StopFD
     events::Cshort
     revents::Cshort
+end
+
+@static if Sys.iswindows()
+    poll_stop_fd(pfd::Base.RefValue{PollFD}) = ccall(
+        (:WSAPoll, "ws2_32"), stdcall, Cint, (Ref{PollFD}, Culong, Cint), pfd, 1, 0
+    )
+    read_stop_byte(fd::StopFD, buf::Base.RefValue{UInt8}) = ccall(
+        (:recv, "ws2_32"), stdcall, Cint, (StopFD, Ref{UInt8}, Cint, Cint), fd, buf, 1, 0
+    )
+else
+    poll_stop_fd(pfd::Base.RefValue{PollFD}) = ccall(
+        :poll, Cint, (Ref{PollFD}, Cuint, Cint), pfd, 1, 0
+    )
+    read_stop_byte(fd::StopFD, buf::Base.RefValue{UInt8}) = ccall(
+        :read, Cssize_t, (Cint, Ref{UInt8}, Csize_t), fd, buf, 1
+    )
 end
 
 """
     ExternalStop(fd::Integer=-1, trigger::Integer=0)
 
 A per-search request for a graceful stop at the next cycle boundary. Setting
-`requested[]` directly requests a stop. On POSIX systems, a nonnegative `fd`
-is polled and drained; only `trigger` bytes request a stop, unless the trigger is zero.
+`requested[]` directly requests a stop. A nonnegative `fd` is polled and drained;
+only `trigger` bytes request a stop, unless the trigger is zero. `fd` is a file
+descriptor on POSIX systems and a Winsock `SOCKET` on Windows, which can poll
+sockets only.
 """
 struct ExternalStop
     requested::Threads.Atomic{Bool}
-    fd::Cint
+    fd::Int
     trigger::UInt8
     poll_fd::Base.RefValue{PollFD}
     read_buf::Base.RefValue{UInt8}
@@ -493,9 +517,9 @@ end
 function ExternalStop(fd::Integer=-1, trigger::Integer=0)
     return ExternalStop(
         Threads.Atomic{Bool}(false),
-        Cint(fd),
+        Int(fd),
         UInt8(trigger),
-        Ref(PollFD(Cint(fd), Cshort(0x0001), Cshort(0))),
+        Ref(PollFD(StopFD(0), STOP_POLL_READ, Cshort(0))),
         Ref(UInt8(0)),
         Ref(UInt64(0)),
     )
@@ -503,26 +527,19 @@ end
 
 function check_stop_fd(stop::ExternalStop)::Bool
     stop.fd < 0 && return false
-    @static if Sys.iswindows()
-        # No POSIX poll on Windows; hosts only register fds on POSIX.
-        return false
-    else
-        requested = false
-        # Drain everything queued so stale bytes never stop a later search.
-        while true
-            stop.poll_fd[] = PollFD(stop.fd, Cshort(0x0001), Cshort(0))
-            ccall(:poll, Cint, (Ref{PollFD}, Cuint, Cint), stop.poll_fd, 1, 0) == 1 || break
-            n = ccall(
-                :read, Cssize_t, (Cint, Ref{UInt8}, Csize_t), stop.fd, stop.read_buf, 1
-            )
-            # A nonblocking descriptor may be drained between poll and read.
-            n == 1 || break
-            if stop.trigger == 0x00 || stop.read_buf[] == stop.trigger
-                requested = true
-            end
+    fd = StopFD(stop.fd)
+    requested = false
+    # Drain everything queued so stale bytes never stop a later search.
+    while true
+        stop.poll_fd[] = PollFD(fd, STOP_POLL_READ, Cshort(0))
+        poll_stop_fd(stop.poll_fd) == 1 || break
+        # A nonblocking descriptor may be drained between poll and read.
+        read_stop_byte(fd, stop.read_buf) == 1 || break
+        if stop.trigger == 0x00 || stop.read_buf[] == stop.trigger
+            requested = true
         end
-        return requested
     end
+    return requested
 end
 
 # Minimum interval between `poll` syscalls: the scheduler loop can spin
