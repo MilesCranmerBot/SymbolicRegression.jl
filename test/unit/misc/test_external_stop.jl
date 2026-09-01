@@ -9,8 +9,42 @@
     direct_stop.requested[] = true
     @test check_external_stop(direct_stop)
 
-    if Sys.iswindows()
-        @test !check_stop_fd(ExternalStop())
+    @static if Sys.iswindows()
+        socks = Vector{UInt}(undef, 2)
+        @test ccall(
+            :uv_socketpair, Cint, (Cint, Cint, Ptr{UInt}, Cint, Cint), 1, 0, socks, 0, 0
+        ) == 0
+        read_sock, write_sock = socks
+        function write_byte(byte)
+            return ccall(
+                (:send, "ws2_32"),
+                stdcall,
+                Cint,
+                (UInt, Ref{UInt8}, Cint, Cint),
+                write_sock,
+                Ref(UInt8(byte)),
+                1,
+                0,
+            )
+        end
+
+        try
+            stop = ExternalStop(read_sock, 2)
+            @test !check_stop_fd(stop)
+
+            write_byte(14)
+            write_byte(14)
+            @test !check_stop_fd(stop)
+
+            write_byte(14)
+            write_byte(2)
+            write_byte(14)
+            @test check_stop_fd(stop)
+            @test !check_stop_fd(stop)
+        finally
+            ccall((:closesocket, "ws2_32"), stdcall, Cint, (UInt,), read_sock)
+            ccall((:closesocket, "ws2_32"), stdcall, Cint, (UInt,), write_sock)
+        end
     else
         fds = Vector{Cint}(undef, 2)
         @test ccall(:pipe, Cint, (Ptr{Cint},), fds) == 0

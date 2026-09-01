@@ -13,7 +13,7 @@ if startswith(TEST_GROUP, "integration/")
     elseif integration_name == "examples/custom_types"
         joinpath(@__DIR__, "..", "examples", "custom_types.jl")
     end
-    integration_dir = joinpath(@__DIR__, "integration", integration_name)
+    integration_dir = normpath(joinpath(@__DIR__, "integration", integration_name))
 
     if !isdir(integration_dir)
         error("Integration directory does not exist: $(integration_dir)")
@@ -26,19 +26,22 @@ if startswith(TEST_GROUP, "integration/")
 
     if example_path === nothing
         @run_package_tests(
-            filter = ti -> startswith(ti.filename, integration_dir), verbose = true
+            filter = ti -> startswith(normpath(ti.filename), integration_dir),
+            verbose = true
         )
     else
         include(example_path)
     end
 else
     @testset "SymbolicRegression.jl" begin
-        test_dir = joinpath(@__DIR__, TEST_GROUP)
+        test_dir = normpath(joinpath(@__DIR__, TEST_GROUP))
 
         if !isdir(test_dir)
             error("Test directory does not exist: $(test_dir)")
         end
 
-        @run_package_tests(filter = ti -> startswith(ti.filename, test_dir), verbose = true)
+        @run_package_tests(
+            filter = ti -> startswith(normpath(ti.filename), test_dir), verbose = true
+        )
     end
 end
