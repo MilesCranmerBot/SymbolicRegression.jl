@@ -18,24 +18,28 @@ head node and workers. For a gentler start, see the step-by-step
 
 ## How the search works
 
-The search maintains multiple **populations** of candidate expressions. Each
-population is owned by a **worker** (a thread or process); a single **head
-node** coordinates everything. A search may target several **outputs** (e.g.,
+The search maintains multiple **populations** of candidate expressions.
+**Workers** (threads or processes) evolve them; a single **head node**
+coordinates everything. A search may target several **outputs** (e.g.,
 multi-target regression); each output gets its own dataset, populations, and
 plugin states.
 
-The head node repeatedly **dispatches** a population to its worker. One
-dispatch runs `ncycles` **cycles** before the population is returned. Each
+The head node repeatedly **dispatches** a population, choosing the least-busy
+worker in multiprocessing mode. Plugin state belongs to the (output,
+population), rather than a fixed worker. One dispatch runs `ncycles` **cycles**
+before the population is returned. Each
 cycle walks the population for
 `ceil(population_size / tournament_selection_n)` **steps**; each step either:
 
-1. picks a member via **tournament selection** (sample a few members, keep the
-   fittest under the adjusted cost — see
+1. picks a member via **tournament selection** (sample a few members, then sample
+   a rank using `tournament_selection_p`, default `0.982`; the fittest under
+   the adjusted cost wins most often, and is guaranteed only when `p == 1.0`; see
    [`tournament_cost_multiplier`](@ref)), samples a mutation, applies it, and
    decides whether to **accept** the result (see
    [`mutation_acceptance_multiplier`](@ref)); or
-2. picks two members and applies a **crossover** (no plugin hooks fire inside
-   crossovers).
+2. picks two members and applies a **crossover** (the engine fires no mutation
+   hooks inside crossovers, though tournament multipliers fire when selecting
+   the two parents).
 
 After a dispatch finishes, the worker sends the updated population (and its
 plugin states) back to the head node, which merges results, updates the hall
@@ -83,10 +87,10 @@ and in tuple order, so user plugins are consulted first.
 ## A complete example
 
 The following plugin is self-contained: copy it into a file and run it. It
-gives the search a "second wind" — after a run of consecutive rejections, it
-temporarily boosts the acceptance probability for slightly-worse mutations so
-the population can escape local optima — and reports progress from the head
-node.
+gives the search a "second wind": after a run of consecutive rejections, it
+temporarily boosts acceptance for every evaluated mutation that reaches the
+accept/reject draw, regardless of its cost change, and reports progress from
+the head node.
 
 ```julia
 using SymbolicRegression
@@ -99,7 +103,7 @@ struct SecondWindPlugin <: AbstractPlugin
     stall_threshold::Int   # consecutive rejections before the boost activates
     boost::Float64         # per-stall acceptance boost once active
     max_boost::Float64     # cap on the total boost
-    verbose::Bool          # print a head-node report after each cycle
+    verbose::Bool          # print a head-node report after each dispatch
     function SecondWindPlugin(;
         stall_threshold::Integer=10,
         boost::Real=1.5,
@@ -120,7 +124,7 @@ mutable struct SecondWindState
     accepted::Int
     rejected::Int
     best_cost::Float64
-    cycles_received::Int
+    dispatches_received::Int
 end
 
 SymbolicRegression.init_plugin_state(::SecondWindPlugin, options, dataset) =
@@ -168,10 +172,10 @@ function SymbolicRegression.on_generation_end!(
     returned_pop,
 )
     best_cost = minimum(member.cost for member in returned_pop.members)
-    s.cycles_received += 1
+    s.dispatches_received += 1
     s.best_cost = min(s.best_cost, best_cost)
     if p.verbose
-        println("cycle $(s.cycles_received): best cost = $(round(best_cost; digits=6))")
+        println("dispatch $(s.dispatches_received): best cost = $(round(best_cost; digits=6))")
     end
     return nothing
 end
@@ -181,7 +185,7 @@ function SymbolicRegression.on_search_end!(
     s::SecondWindState, p::SecondWindPlugin, search_state, dataset, options, ropt
 )
     println(
-        "SecondWind finished after $(s.cycles_received) cycles; " *
+        "SecondWind finished after $(s.dispatches_received) dispatches; " *
         "best cost seen: $(round(s.best_cost; digits=6))",
     )
     return nothing
@@ -197,14 +201,15 @@ options = Options(;
     plugins=(SecondWindPlugin(; stall_threshold=5, boost=2.0, verbose=true),),
 )
 
-hallOfFame = equation_search(X, y; options=options, niterations=2)
+hall_of_fame = equation_search(X, y; options=options, niterations=2)
 ```
 
 Note the two roles of the state: the `mutation_acceptance_multiplier` and
 `on_mutation_end!` methods run on **workers** against per-population state
 forks, so their counters never reach the head-node instance. The
 `on_generation_end!` and `on_search_end!` methods run on the **head** against
-the head's own state, so the final report only sees head-side fields. See
+the head's own state, so the final report counts received dispatches and only
+sees head-side fields. See
 [Plugin state across workers](@ref) for how to share data in the other
 direction.
 
@@ -223,16 +228,16 @@ A plugin has two parts:
 
 Every hook follows a naming taxonomy; the verb shape tells you the contract:
 
-| Category              | Name shape                 | Contract                                                                       |
-| --------------------- | -------------------------- | ------------------------------------------------------------------------------ |
-| Observer              | `on_X_start!`, `on_X_end!` | Engine fires, plugin reacts. Return value ignored.                             |
-| Multiplier            | `X_multiplier`             | Returns a `Real`. Plugins compose multiplicatively in tuple order.             |
-| Conditioner           | `condition_X!`             | Mutates a passed struct in place. Composes by sequential in-place mutation.    |
-| Factory (once)        | `init_X`                   | Called once per (plugin, output) at startup. Returns a new instance.           |
-| Factory (per-context) | `prepare_X`, `fork_X`      | Called per dispatch/population. Returns a new instance for the worker.         |
-| Defaults              | `plugin_X`                 | Returns configuration contributed by the plugin when `Options` is constructed. |
+| Category                 | Name shape                 | Contract                                                                                                                                                |
+| ------------------------ | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Observer                 | `on_X_start!`, `on_X_end!` | Engine fires, plugin reacts. Return value ignored.                                                                                                      |
+| Multiplier               | `X_multiplier`             | Returns a `Real`. Plugins compose multiplicatively in tuple order.                                                                                      |
+| Conditioner              | `condition_X!`             | Mutates a passed struct in place. Composes by sequential in-place mutation.                                                                             |
+| Factory (initialization) | `init_X`                   | `init_plugin_state` runs once per (plugin, output); `init_member` runs per initial member.                                                              |
+| Factory (per-context)    | `prepare_X`, `fork_X`      | `fork_plugin_state` runs per (output, population); `prepare_mutation_context` runs per sampled mutation and dispatches on the mutation, not the plugin. |
+| Defaults                 | `plugin_X`                 | Returns configuration contributed by the plugin when `Options` is constructed.                                                                          |
 
-Hooks also follow a single positional argument-order convention:
+Hooks generally follow this positional argument-order convention:
 
 ```
 (mutated_thing_if_any, state, plugin, ...other_context)
@@ -248,32 +253,42 @@ Hooks also follow a single positional argument-order convention:
 - Constructor hooks that _create_ a state (`init_plugin_state`) have no state
   yet, so the plugin is the dispatch key and goes first.
 
-Default implementations are no-ops (or return `1.0` for multipliers,
-`nothing` for factories), so you override only what you need.
+The exceptions are `refresh_worker_plugin_state(worker_state, latest_head_state,
+plugin, dataset)`, which takes two states, and `prepare_mutation_context(mutation)`,
+which takes neither state nor plugin.
+
+Default observers and conditioners are no-ops. Multipliers return `1.0`;
+`init_member`, `wrap_mutation_step`, `init_plugin_state`, and the generic
+`prepare_mutation_context` return `nothing`. `fork_plugin_state` returns a
+`deepcopy` of the head state, `refresh_worker_plugin_state` returns the worker
+state, and `plugin_mutations` and `plugin_crossovers` return `()`. Override only
+what you need.
 
 ## The search lifecycle
 
-Here is the full order of hook invocations for one output, from `equation_search`
-start to finish. Head-node hooks run serially; worker hooks run inside the
-worker's task or process.
+Here is the order of hook invocations for one output, from `equation_search`
+start to finish. Head-node observers run serially; worker hooks run inside the
+worker's task or process. With `runtests=true` (the default), each worker process
+also runs a small smoke population and five cycles before the search, firing
+initialization, cycle, and mutation hooks against the real plugin states.
 
-| #   | Location | When                                                                                      | Hook(s)                                                                                                                                                                                   |
-| --- | -------- | ----------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0   | Head     | `Options` construction, once                                                              | `plugin_mutations`, `plugin_crossovers` are consulted to build the weighted mutation/crossover lists                                                                                      |
-| 1   | Head     | Search start, once per (plugin, output)                                                   | `init_plugin_state` (via `init_plugin_states`) builds the head state                                                                                                                      |
-| 2   | Head     | After initialization, before warmup and the main loop                                     | `on_search_start!`                                                                                                                                                                        |
-| 3   | Head     | Before each population's first dispatch                                                   | `fork_plugin_state` builds the worker state for each (output, population)                                                                                                                 |
-| 4   | Head     | Initial population creation (once per population)                                         | `init_member` (via `resolve_init_member`) — head state, see below                                                                                                                         |
-| 5   | Worker   | Start of each cycle in the dispatch                                                       | `on_cycle_start!`                                                                                                                                                                         |
-| 6   | Worker   | Once per cycle, before the first step                                                     | `wrap_mutation_step` — middlewares are composed around every `next_generation` call                                                                                                       |
-| 7   | Worker   | Per step, during tournament selection                                                     | `tournament_cost_multiplier`                                                                                                                                                              |
-| 8   | Worker   | Per step, before mutation sampling                                                        | `condition_mutation_weights!` plugin methods (after the engine's legality conditioning — see [Customization](customization.md))                                                           |
-| 9   | Worker   | Per step, after sampling, before mutating                                                 | `prepare_mutation_context`, then `condition_mutation!` per plugin (only if a context was built)                                                                                           |
-| 10  | Worker   | Per step, at the end of the mutation, on every exit path                                  | `MutationEvent` is built, then `on_mutation_end!` fires right before returning; for evaluated mutations, `mutation_acceptance_multiplier` is consulted just before the accept/reject draw |
-| 11  | Worker   | End of each cycle                                                                         | `on_cycle_end!`                                                                                                                                                                           |
-| 12  | Head     | After each dispatch's result is received (hall of fame already updated, before migration) | `on_generation_end!`                                                                                                                                                                      |
-| 13  | Head     | Before re-dispatching the same population                                                 | `refresh_worker_plugin_state`                                                                                                                                                             |
-| 14  | Head     | After the main loop exits, before tearing down workers                                    | `on_search_end!`                                                                                                                                                                          |
+| #   | Location                 | When                                                                                      | Hook(s)                                                                                                                                                                                                                                                                                                            |
+| --- | ------------------------ | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 0   | Head                     | `Options` construction, once                                                              | `plugin_mutations`, `plugin_crossovers` are consulted to build the weighted mutation/crossover lists                                                                                                                                                                                                               |
+| 1   | Head                     | Search start, once per (plugin, output)                                                   | `init_plugin_state` (via `init_plugin_states`) builds the head state                                                                                                                                                                                                                                               |
+| 2   | Head                     | After initialization, before warmup and the main loop                                     | `on_search_start!`                                                                                                                                                                                                                                                                                                 |
+| 3   | Head                     | Before each population's first dispatch                                                   | `fork_plugin_state` builds the worker state for each (output, population)                                                                                                                                                                                                                                          |
+| 4   | Population-creation task | Per initial member in each new population                                                 | `init_member` (via `resolve_init_member`), using shared head state with threads or a serialized copy on a remote process; see below                                                                                                                                                                                |
+| 5   | Worker                   | Start of each cycle in the dispatch                                                       | `on_cycle_start!`                                                                                                                                                                                                                                                                                                  |
+| 6   | Worker                   | Once per cycle, before the first step                                                     | `wrap_mutation_step` — middlewares are composed around every `next_generation` call                                                                                                                                                                                                                                |
+| 7   | Worker                   | Per step, during tournament selection                                                     | `tournament_cost_multiplier`                                                                                                                                                                                                                                                                                       |
+| 8   | Worker                   | Per step, before mutation sampling                                                        | `condition_mutation_weights!` plugin methods (after the engine's legality conditioning — see [Customization](customization.md))                                                                                                                                                                                    |
+| 9   | Worker                   | Per step, after sampling, before mutating                                                 | `prepare_mutation_context`, then `condition_mutation!` per plugin (only if a context was built)                                                                                                                                                                                                                    |
+| 10  | Worker                   | Per step, at the end of the mutation, on every exit path                                  | `MutationEvent` is built, then `on_mutation_end!` fires right before returning; `mutation_acceptance_multiplier` is consulted just before the accept/reject draw only on the ordinary path after a successful, non-NaN cost evaluation. Successful `return_immediately` results skip it and are accepted directly. |
+| 11  | Worker                   | End of each cycle                                                                         | `on_cycle_end!`                                                                                                                                                                                                                                                                                                    |
+| 12  | Head                     | After each dispatch's result is received (hall of fame already updated, before migration) | `on_generation_end!`                                                                                                                                                                                                                                                                                               |
+| 13  | Head                     | Before re-dispatching the same population                                                 | `refresh_worker_plugin_state`                                                                                                                                                                                                                                                                                      |
+| 14  | Head                     | After the main loop exits, before tearing down workers                                    | `on_search_end!`                                                                                                                                                                                                                                                                                                   |
 
 A few precise details behind the table:
 
@@ -291,10 +306,12 @@ A few precise details behind the table:
   losses, and the acceptance draw. `event.mutation_idx` indexes into
   `options.mutations` (and the conditioned weight vector, which shares its
   order).
-- **`init_member` timing.** It is consulted only during initial population
-  creation, with the head node's per-output state. At most one plugin may
-  return a member; two or more providers is an error. If all return `nothing`,
-  the engine generates a random tree as usual.
+- **`init_member` timing.** It is consulted per initial member inside the
+  population-creation task spawned by `@sr_spawner` (also for worker smoke
+  populations). Threads may call it concurrently on the shared per-output
+  head state; remote processes use a serialized copy, whose mutations never
+  reach the head. At most one plugin may return a member; two or more providers
+  is an error. If all return `nothing`, the engine generates a random tree as usual.
 
 ## Hook reference
 
@@ -403,9 +420,11 @@ Key behaviors:
 - **Workers never construct their own state.** In multiprocessing mode, plugin
   configuration travels via `options.plugins`, and worker states are forked on
   the head and serialized with the dispatch.
-- **Head state is only mutated by head hooks.** `on_generation_end!`,
-  `on_search_start!`, `on_search_end!`, and `init_member` all receive the head
-  state. Worker hooks (`on_cycle_start!`, `on_cycle_end!`, `on_mutation_end!`,
+- **Head observers receive head state.** `on_generation_end!`,
+  `on_search_start!`, and `on_search_end!` receive it serially. `init_member`
+  receives the same object in concurrent population-creation tasks with threads,
+  or a serialized copy with multiprocessing; mutations to that copy never
+  reach the head. Worker hooks (`on_cycle_start!`, `on_cycle_end!`, `on_mutation_end!`,
   `tournament_cost_multiplier`, `mutation_acceptance_multiplier`,
   `condition_mutation!`, `wrap_mutation_step`) receive the worker fork, so any
   counters they bump stay worker-local unless you deliberately share.
@@ -422,9 +441,10 @@ SymbolicRegression.fork_plugin_state(
 ) = head
 ```
 
-(Here the state holds a `Channel{Any}` created by the plugin; head hooks then
-`take!` from it to consume worker events. In multiprocessing mode, use a
-`RemoteChannel`, since a plain `Channel` cannot be serialized to workers.)
+(Here the state holds a `Channel{Any}` passed to the plugin; both head and worker
+hooks `put!` events into it, and the test drains it after `equation_search`
+returns. A head hook could instead consume available events during the search.
+A plain `Channel` does not span processes; use `RemoteChannel` in multiprocessing mode.)
 
 ## Error handling
 
@@ -435,22 +455,23 @@ retrieves the dispatch's result, also aborting the search.
 
 Practical consequences:
 
-- Validate configuration eagerly in the plugin's constructor (all shipped
-  plugins throw `ArgumentError` for bad settings), so failures happen at
-  `Options` construction rather than mid-search.
+- Validate configuration eagerly in the plugin's constructor (the shipped
+  plugins with numeric settings throw `ArgumentError` for bad settings), so
+  failures happen when the plugin is constructed rather than mid-search.
 - Wrap fallible external calls (I/O, logging systems, network) in your own
   `try`/`catch` if a transient failure should not kill a long search.
 
 ## Thread and process safety
 
-| Hook                                                                         | Runs on | Concurrency                                                           | State seen  |
-| ---------------------------------------------------------------------------- | ------- | --------------------------------------------------------------------- | ----------- |
-| `on_search_start!` / `on_search_end!`                                        | Head    | Serial                                                                | Head state  |
-| `on_generation_end!`                                                         | Head    | Serial; safe to mutate state                                          | Head state  |
-| `init_member`                                                                | Head    | Population-creation tasks may run concurrently in multithreading mode | Head state  |
-| `on_cycle_start!` / `on_cycle_end!`                                          | Worker  | Concurrent across workers; serial within one                          | Worker fork |
-| `on_mutation_end!`, `condition_mutation!`, multipliers, `wrap_mutation_step` | Worker  | Within the worker's evolution loop                                    | Worker fork |
-| `fork_plugin_state`, `refresh_worker_plugin_state`                           | Head    | Serial                                                                | Head state  |
+| Hook                                                                         | Runs on                  | Concurrency                                          | State seen                                                          |
+| ---------------------------------------------------------------------------- | ------------------------ | ---------------------------------------------------- | ------------------------------------------------------------------- |
+| `on_search_start!` / `on_search_end!`                                        | Head                     | Serial                                               | Head state                                                          |
+| `on_generation_end!`                                                         | Head                     | Serial; safe to mutate state                         | Head state                                                          |
+| `init_member`                                                                | Population-creation task | Concurrent with threads; remote with multiprocessing | Shared head state (threads); serialized head-state copy (processes) |
+| `on_cycle_start!` / `on_cycle_end!`                                          | Worker                   | Concurrent across workers; serial within one         | Worker fork                                                         |
+| `on_mutation_end!`, `condition_mutation!`, multipliers, `wrap_mutation_step` | Worker                   | Within the worker's evolution loop                   | Worker fork                                                         |
+| `fork_plugin_state`                                                          | Head                     | Serial                                               | Head state                                                          |
+| `refresh_worker_plugin_state`                                                | Head                     | Serial                                               | Worker state + head state                                           |
 
 Rules of thumb:
 
@@ -517,10 +538,12 @@ end
 ### `AdaptiveMutationWeightsPlugin`: accounting with `MutationEvent`
 
 The plugin tracks attempts and strict improvements per mutation kind, keyed by
-`event.mutation_idx`, inside `on_mutation_end!`:
+`event.mutation_idx`, inside `on_mutation_end!`, excluding `SimplifyMutation`
+and `DoNothingMutation` via `skip_in_adaptive_weights`:
 
 ```julia
 idx = event.mutation_idx
+s.active[idx] || return nothing
 s.attempts[idx] += 1.0
 before, after = if p.reward === :cost
     event.before_cost, event.after_cost
