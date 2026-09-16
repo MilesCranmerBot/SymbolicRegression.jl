@@ -8,8 +8,7 @@ tracking statistics across generations.
 
 This page is the complete reference for the plugin interface: every hook, when
 it fires, what it receives and returns, and how plugin state moves between the
-head node and workers. For a gentler start, see the step-by-step
-[Writing a Custom Plugin](examples/plugin_tutorial.md) tutorial.
+head node and workers.
 
 !!! warning "Experimental"
 
