@@ -292,12 +292,17 @@ fix_vitepress_base_path()
 # Configure deployment based on target
 deployment_target = get(ENV, "DEPLOYMENT_TARGET", "astroautomata")
 
+if deployment_target == "cambridge"
+    ENV["GITHUB_REPOSITORY"] = "ai-damtp-cam-ac-uk/symbolicregression"
+    ENV["DOCUMENTER_KEY"] = get(ENV, "DOCUMENTER_KEY_CAM", "")
+end
+
 deploy_config = Documenter.auto_detect_deploy_system()
 if deployment_target == "cambridge"
     # Cambridge deployment with different base path
     deploy_decision = Documenter.deploy_folder(
         deploy_config;
-        repo="github.com/ai-damtp-cam-ac-uk/symbolicregression",
+        repo="github.com/ai-damtp-cam-ac-uk/symbolicregression.git",
         devbranch="master",
         devurl="dev",
         push_preview=true,
@@ -347,6 +352,7 @@ makedocs(;
         devurl="dev",
         deploy_url=nothing,
         deploy_decision,
+        keep=:patch,
         build_vitepress=get(ENV, "DOCUMENTER_PRODUCTION", "false") == "true",
         md_output_path=if get(ENV, "DOCUMENTER_PRODUCTION", "false") == "true"
             ".documenter"
@@ -451,8 +457,6 @@ if deployment_target == "astroautomata"
         devbranch="master",
     )
 elseif deployment_target == "cambridge"
-    ENV["DOCUMENTER_KEY"] = get(ENV, "DOCUMENTER_KEY_CAM", "")
-    ENV["GITHUB_REPOSITORY"] = "ai-damtp-cam-ac-uk/symbolicregression.git"
     DocumenterVitepress.deploydocs(;
         repo="github.com/ai-damtp-cam-ac-uk/symbolicregression.git",
         push_preview=true,

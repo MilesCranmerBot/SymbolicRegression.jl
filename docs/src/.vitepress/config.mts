@@ -18,7 +18,7 @@ const navTemp = {
 }
 
 const nav = [
-  ...navTemp.nav,
+  ...navTemp.nav.filter(item => item.text !== 'Migrating from v1'),
   {
     text: 'Julia',
     items: [
