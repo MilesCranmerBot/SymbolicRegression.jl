@@ -161,39 +161,56 @@ end
 
 # Sample the population, and get the best member from that sample
 function best_of_sample(
-    pop::Population{T,L,N}, options::AbstractOptions; plugin_states::Tuple
+    pop::Population{T,L,N},
+    options::AbstractOptions;
+    plugin_states::Tuple,
+    workspace=nothing,
 ) where {T,L,N}
-    sample = sample_pop(pop, options)
-    return copy(_best_of_sample(sample.members, options; plugin_states))
+    if isnothing(workspace)
+        sample = sample_pop(pop, options)
+        return _best_of_sample(sample.members, options; plugin_states)
+    end
+    StatsBase.sample!(1:(pop.n), workspace.sample_indices; replace=false)
+    return _best_of_sample(
+        pop.members,
+        options;
+        plugin_states,
+        sample_indices=workspace.sample_indices,
+        adjusted_costs=workspace.adjusted_costs,
+    )
 end
 function _best_of_sample(
-    members::Vector{P}, options::AbstractOptions; plugin_states::Tuple
+    members::Vector{P},
+    options::AbstractOptions;
+    plugin_states::Tuple,
+    sample_indices=nothing,
+    adjusted_costs=nothing,
 ) where {T,L,N,P<:AbstractPopMember{T,L,N}}
     p = options.tournament_selection_p
-    n = length(members)  # == tournament_selection_n
-    adjusted_costs = Vector{L}(undef, n)
-    for i in eachindex(members, adjusted_costs)
-        member = members[i]
+    n = isnothing(sample_indices) ? length(members) : length(sample_indices)
+    costs = isnothing(adjusted_costs) ? Vector{L}(undef, n) : adjusted_costs
+    for i in eachindex(costs)
+        member = members[isnothing(sample_indices) ? i : sample_indices[i]]
         multipliers = strictmap(options.plugins, plugin_states) do plugin, pstate
             return L(tournament_cost_multiplier(pstate, plugin, member, options))
         end
-        adjusted_costs[i] = L(member.cost) * prod(multipliers)
+        costs[i] = L(member.cost) * prod(multipliers)
     end
 
     chosen_idx = if p == 1.0
-        argmin_fast(adjusted_costs)
+        argmin_fast(costs)
     else
         # First, decide what place we take (usually 1st place wins):
         tournament_winner = StatsBase.sample(get_tournament_selection_weights(options))
         # Then, find the member that won that place, given
         # their fitness:
         if tournament_winner == 1
-            argmin_fast(adjusted_costs)
+            argmin_fast(costs)
         else
-            bottomk_fast(adjusted_costs, tournament_winner)[2][end]
+            bottomk_fast(costs, tournament_winner)[2][end]
         end
     end
-    return members[chosen_idx]
+    return members[isnothing(sample_indices) ? chosen_idx : sample_indices[chosen_idx]]
 end
 _get_cost(member::AbstractPopMember) = member.cost
 

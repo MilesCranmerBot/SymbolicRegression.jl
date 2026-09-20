@@ -1,5 +1,32 @@
 module RegularizedEvolutionModule
 
+using DynamicExpressions: Expression, Node, get_tree
+using ..PopMemberModule: PopMember
+using ..CoreModule:
+    BUILTIN_MUTATION_TYPES,
+    SubtreeCrossover,
+    default_adaptive_parsimony_plugin,
+    default_adaptive_mutation_weights_plugin,
+    default_simulated_annealing_plugin
+
+# Only these built-in hooks leave population members and their trees unaliased.
+function can_recycle(pop, options)
+    member = first(pop.members)
+    member isa PopMember && member.tree isa Expression && get_tree(member.tree) isa Node ||
+        return false
+    isnothing(options.loss_function) && isnothing(options.loss_function_expression) ||
+        return false
+    options.complexity_mapping isa Function && return false
+    all(pair -> any(T -> pair.first isa T, BUILTIN_MUTATION_TYPES), options.mutations) ||
+        return false
+    all(pair -> pair.first isa SubtreeCrossover, options.crossovers) || return false
+    parsimony = default_adaptive_parsimony_plugin(; use_frequency=true, use_frequency_in_tournament=true)
+    weights = default_adaptive_mutation_weights_plugin()
+    annealing = default_simulated_annealing_plugin(; annealing=true, alpha=0.1)
+    return all(options.plugins) do plugin
+        plugin isa typeof(parsimony) || plugin isa typeof(weights) || plugin isa typeof(annealing)
+    end
+end
 using ..CoreModule:
     AbstractOptions,
     Dataset,
@@ -11,7 +38,7 @@ using ..CoreModule:
 using ..PopulationModule: Population, best_of_sample
 using ..HallOfFameModule: HallOfFame, update_hall_of_fame!, _update_hall_of_fame_unchecked!
 using ..ComplexityModule: compute_complexity
-using ..MutateModule: next_generation
+using ..MutateModule: next_generation, MutationWorkspace, recycle!
 using ..CrossoverModule: crossover_generation
 using ..TracingModule:
     new_trace,
@@ -21,7 +48,30 @@ using ..TracingModule:
     trace_crossover!,
     trace_mutation_attempts!,
     trace_mutation_step!
-using ..UtilsModule: argmin_fast, strictmap
+using ..UtilsModule: strictmap
+
+function mutation_workspace(pop, options, curmaxsize)
+    return can_recycle(pop, options) ? MutationWorkspace(
+        first(pop.members).tree,
+        curmaxsize,
+        options.mutations,
+        options.tournament_selection_n,
+        typeof(first(pop.members).cost),
+    ) : nothing
+end
+function oldest_member(pop, skip::Int=0)
+    BT = typeof(first(pop.members).birth)
+    oldest = 1
+    oldest_birth = typemax(BT)
+    @inbounds for i in 1:(pop.n)
+        birth = i == skip ? typemax(BT) : pop.members[i].birth
+        if birth < oldest_birth
+            oldest = i
+            oldest_birth = birth
+        end
+    end
+    return oldest
+end
 
 """
 One precomposed mutation-middleware layer.
@@ -49,7 +99,7 @@ Engine-owned state for one mutation step. Mutable contents accumulate every
 middleware attempt so evaluation counts, Hall-of-Fame updates, and tracing
 stay under engine control.
 """
-struct MutationStep{D,P,O,S,E,H,A,M,R}
+struct MutationStep{D,P,O,S,E,H,A,M,R,W}
     dataset::D
     population::P
     curmaxsize::Int
@@ -60,6 +110,7 @@ struct MutationStep{D,P,O,S,E,H,A,M,R}
     attempted_results::A
     attempted_members::M
     traced_steps::R
+    workspace::W
 end
 
 function (step::MutationStep)(parent)
@@ -73,6 +124,7 @@ function (step::MutationStep)(parent)
         plugin_states=step.plugin_states,
         eval_context=step.eval_context,
         population_for_backsolve=step.population,
+        workspace=step.workspace,
     )
     attempt_id = isnothing(step.attempted_results) ? 1 : length(step.attempted_results) + 1
     result = MutationStepResult(member, accepted, attempt_id, num_evals)
@@ -103,6 +155,7 @@ function reg_evol_cycle(
     plugin_states::Tuple,
     best_seen::HallOfFame,
     eval_context=nothing,
+    workspace=nothing,
 )::Tuple{P,Float64} where {T<:DATA_TYPE,L<:LOSS_TYPE,P<:Population{T,L}}
     num_evals = 0.0
     n_evol_cycles = ceil(Int, pop.n / options.tournament_selection_n)
@@ -123,12 +176,15 @@ function reg_evol_cycle(
         attempted_results,
         attempted_members,
         traced_steps,
+        workspace,
     )
     wrapped_step = build_mutation_step(mutation_wrappers, base_step)
 
+    borrow_parents = !isnothing(workspace) && !has_mutation_wrappers
     for i in 1:n_evol_cycles
         if rand() > options.crossover_probability
-            allstar = best_of_sample(pop, options; plugin_states)
+            allstar = best_of_sample(pop, options; plugin_states, workspace)
+            borrow_parents || (allstar = copy(allstar))
             reset!(base_step)
             result = wrapped_step(allstar)
             selected_attempt_idx = result.attempt_id
@@ -154,7 +210,7 @@ function reg_evol_cycle(
 
             should_replace = mutation_accepted || !options.skip_mutation_failures
             oldest = if should_replace
-                argmin_fast([pop.members[member].birth for member in 1:(pop.n)])
+                oldest_member(pop)
             else
                 0
             end
@@ -170,11 +226,18 @@ function reg_evol_cycle(
             )
 
             should_replace || continue
+            mutation_accepted || (baby = copy(baby))
+            !isnothing(workspace) && recycle!(workspace, pop.members[oldest].tree)
             pop.members[oldest] = baby
 
         else # Crossover
-            allstar1 = best_of_sample(pop, options; plugin_states)
-            allstar2 = best_of_sample(pop, options; plugin_states)
+            allstar1 = best_of_sample(pop, options; plugin_states, workspace)
+            allstar2 = best_of_sample(pop, options; plugin_states, workspace)
+            if !borrow_parents
+                allstar1, allstar2 = copy(allstar1), copy(allstar2)
+            elseif allstar1 === allstar2
+                allstar2 = copy(allstar2)
+            end
 
             crossover_trace = new_trace(trace)
             baby1, baby2, crossover_accepted, tmp_num_evals = crossover_generation(
@@ -200,13 +263,13 @@ function reg_evol_cycle(
             if !crossover_accepted && options.skip_mutation_failures
                 continue
             end
+            if !crossover_accepted
+                baby1, baby2 = copy(baby1), copy(baby2)
+            end
 
             # Find the oldest members to replace:
-            oldest1 = argmin_fast([pop.members[member].birth for member in 1:(pop.n)])
-            BT = typeof(first(pop.members).birth)
-            oldest2 = argmin_fast([
-                i == oldest1 ? typemax(BT) : pop.members[i].birth for i in 1:(pop.n)
-            ])
+            oldest1 = oldest_member(pop)
+            oldest2 = oldest_member(pop, oldest1)
 
             trace_crossover!(
                 trace,

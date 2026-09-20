@@ -16,7 +16,7 @@ using ..CoreModule:
 using ..PopMemberModule: generate_reference
 using ..PopulationModule: Population, finalize_costs
 using ..HallOfFameModule: HallOfFame, _update_hall_of_fame_unchecked!
-using ..RegularizedEvolutionModule: reg_evol_cycle
+using ..RegularizedEvolutionModule: reg_evol_cycle, mutation_workspace
 using ..LossFunctionsModule: create_eval_context, eval_cost
 using ..ConstantOptimizationModule: optimize_constants
 using ..TracingModule: trace_optimization!
@@ -44,6 +44,7 @@ function s_r_cycle(
         dataset
     end
     eval_context = create_eval_context(batched_dataset, options, curmaxsize)
+    workspace = mutation_workspace(pop, options, curmaxsize)
 
     for cycle_idx in 1:ncycles
         strictmap(options.plugins, plugin_states) do plugin, pstate
@@ -58,6 +59,7 @@ function s_r_cycle(
             plugin_states,
             best_seen=best_examples_seen,
             eval_context,
+            workspace,
         )
         num_evals += tmp_num_evals
         _update_hall_of_fame_unchecked!(best_examples_seen, pop.members, options)

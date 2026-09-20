@@ -16,6 +16,7 @@ using DynamicExpressions:
     NodeSampler,
     set_child!,
     with_contents
+using DynamicExpressions: Node, get_child
 using ..CoreModule:
     AbstractOptions,
     AbstractMutation,
@@ -73,6 +74,67 @@ using ..BacksolveModule:
 using ..ConstantOptimizationModule: optimize_constants
 using ..TracingModule:
     trace_identity_mutation!, trace_mutation_result!, trace_mutation_type!
+
+mutable struct MutationWorkspace{S,M,C}
+    node_storage::S
+    mutation_weights::M
+    sample_indices::Vector{Int}
+    adjusted_costs::C
+    available::Int
+    used::Int
+end
+
+function MutationWorkspace(
+    tree::Expression, curmaxsize::Int, mutations, tournament_size::Int, ::Type{L}
+) where {L}
+    storage = allocate_container(tree, max(curmaxsize, length(get_tree(tree))))
+    return MutationWorkspace(
+        storage,
+        copy(mutations),
+        Vector{Int}(undef, tournament_size),
+        Vector{L}(undef, tournament_size),
+        length(storage.tree),
+        0,
+    )
+end
+
+function prepare_storage!(workspace::MutationWorkspace, tree, curmaxsize)
+    workspace.used = length(get_tree(tree))
+    nodes = workspace.node_storage.tree
+    needed = max(curmaxsize, workspace.used)
+    while workspace.available < needed
+        node = eltype(nodes)()
+        workspace.available += 1
+        if workspace.available > length(nodes)
+            push!(nodes, node)
+        else
+            nodes[workspace.available] = node
+        end
+    end
+    return workspace.node_storage
+end
+
+function recycle!(workspace::MutationWorkspace, tree::Expression)
+    nodes = workspace.node_storage.tree
+    remaining = workspace.available - workspace.used
+    copyto!(nodes, 1, nodes, workspace.used + 1, remaining)
+    workspace.available = remaining
+    _recycle_nodes!(workspace, get_tree(tree))
+    return nothing
+end
+function _recycle_nodes!(workspace::MutationWorkspace, node::Node)
+    for i in 1:(node.degree)
+        _recycle_nodes!(workspace, get_child(node, i))
+    end
+    workspace.available += 1
+    nodes = workspace.node_storage.tree
+    if workspace.available > length(nodes)
+        push!(nodes, node)
+    else
+        nodes[workspace.available] = node
+    end
+    return nothing
+end
 
 abstract type AbstractMutationResult{N<:AbstractExpression,P<:AbstractPopMember} end
 
@@ -295,6 +357,7 @@ end
     plugin_states::Tuple,
     eval_context=nothing,
     population_for_backsolve=nothing,
+    workspace=nothing,
 )::Tuple{
     P,Bool,Float64
 } where {T,L,D<:Dataset{T,L},N<:AbstractExpression{T},P<:AbstractPopMember{T,L,N}}
@@ -306,7 +369,11 @@ end
 
     nfeatures = max_features(dataset, options)
 
-    weights = copy(options.mutations)
+    weights = if isnothing(workspace)
+        copy(options.mutations)
+    else
+        copyto!(workspace.mutation_weights, options.mutations)
+    end
 
     condition_mutation_weights!(weights, member, options, curmaxsize, nfeatures)
     strictmap(options.plugins, plugin_states) do plugin, pstate
@@ -335,6 +402,7 @@ end
         eval_context,
         population_for_backsolve,
         num_evals,
+        workspace,
     )
 end
 
@@ -354,6 +422,7 @@ function _next_generation(
     eval_context,
     population_for_backsolve,
     num_evals::Float64,
+    workspace,
 )::Tuple{
     P,Bool,Float64
 } where {
@@ -367,7 +436,11 @@ function _next_generation(
     successful_mutation = false
     attempts = 0
     max_attempts = 10
-    node_storage = allocate_container(member.tree)
+    node_storage = if isnothing(workspace)
+        allocate_container(member.tree)
+    else
+        prepare_storage!(workspace, member.tree, curmaxsize)
+    end
 
     mut_context = prepare_mutation_context(mutation_choice)
     if !isnothing(mut_context)
@@ -941,7 +1014,7 @@ function mutate!(
     dataset::Dataset,
     kws...,
 ) where {N<:AbstractExpression,P<:AbstractPopMember}
-    cur_member, new_num_evals = optimize_constants(dataset, parent_member, options)
+    cur_member, new_num_evals = optimize_constants(dataset, copy(parent_member), options)
     trace_mutation_type!(trace, "optimize")
     return MutationResult{N,P}(;
         member=cur_member, num_evals=new_num_evals, return_immediately=true
