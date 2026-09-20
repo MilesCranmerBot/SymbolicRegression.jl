@@ -146,7 +146,7 @@ end
 
 function Base.copy(pop::P)::P where {T,L,N,PM,P<:Population{T,L,N,PM}}
     copied_members = Vector{PM}(undef, pop.n)
-    Threads.@threads for i in 1:(pop.n)
+    for i in 1:(pop.n)
         copied_members[i] = copy(pop.members[i])
     end
     return Population(copied_members)
