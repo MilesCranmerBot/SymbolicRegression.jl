@@ -379,7 +379,8 @@ using .MutationFunctionsModule:
     gen_random_tree, gen_random_tree_fixed_size, random_node, crossover_trees
 using .InterfaceDynamicExpressionsModule:
     @extend_operators, require_copy_to_workers, make_example_inputs
-using .LossFunctionsModule: eval_loss, eval_cost, update_baseline_loss!, score_func
+using .LossFunctionsModule:
+    eval_loss, eval_losses, eval_cost, update_costs!, update_baseline_loss!, score_func
 using .ConstantOptimizationModule:
     optimize_constants,
     get_constants_for_optimization,
@@ -1399,14 +1400,9 @@ end
     )
     num_evals += evals_from_optimize
     if use_batching(options, dataset)
-        for i_member in 1:(options.maxsize)
-            if best_seen.exists[i_member]
-                cost, result_loss = eval_cost(dataset, best_seen.members[i_member], options)
-                best_seen.members[i_member].cost = cost
-                best_seen.members[i_member].loss = result_loss
-                num_evals += 1
-            end
-        end
+        members = best_seen.members[best_seen.exists]
+        update_costs!(dataset, members, options)
+        num_evals += length(members)
     end
     return (out_pop, best_seen, trace, num_evals, plugin_states)
 end

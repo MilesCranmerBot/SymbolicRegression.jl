@@ -246,6 +246,20 @@ function eval_cost(
     return cost, result_loss
 end
 
+# Evaluate several expressions on one dataset. Extensions may batch this.
+function eval_losses(trees::AbstractVector, dataset::Dataset{T,L}, options::AbstractOptions; regularization::Bool=true)::Vector{L} where {T<:DATA_TYPE,L<:LOSS_TYPE}
+    return L[eval_loss(tree, dataset, options; regularization) for tree in trees]
+end
+
+function update_costs!(dataset::Dataset{T,L}, members::AbstractVector, options::AbstractOptions) where {T<:DATA_TYPE,L<:LOSS_TYPE}
+    losses = eval_losses(map(get_tree_from_member, members), dataset, options)
+    for (member, loss) in zip(members, losses)
+        member.loss = loss
+        member.cost = loss_to_cost(loss, dataset.use_baseline, dataset.baseline_loss, member, options)
+    end
+    return nothing
+end
+
 # Deprecated form
 function score_func end
 

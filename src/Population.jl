@@ -13,7 +13,7 @@ using ..CoreModule:
     resolve_init_member,
     tournament_cost_multiplier,
     use_batching
-using ..LossFunctionsModule: eval_cost, update_baseline_loss!
+using ..LossFunctionsModule: eval_cost, update_costs!, update_baseline_loss!
 using ..MutationFunctionsModule: gen_random_tree
 using ..PopMemberModule: AbstractPopMember, PopMember
 import ..PopMemberModule: popmember_type
@@ -223,11 +223,7 @@ function finalize_costs(
     need_recalculate = use_batching(options, dataset)
     num_evals = 0.0
     if need_recalculate
-        for member in 1:(pop.n)
-            cost, loss = eval_cost(dataset, pop.members[member], options)
-            pop.members[member].cost = cost
-            pop.members[member].loss = loss
-        end
+        update_costs!(dataset, view(pop.members, 1:(pop.n)), options)
         num_evals += pop.n
     end
     return (pop, num_evals)
