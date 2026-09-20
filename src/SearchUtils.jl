@@ -834,7 +834,7 @@ function save_to_file(
     losses = Vector{L}(undef, dominating_n)
     strings = Vector{String}(undef, dominating_n)
 
-    Threads.@threads for i in 1:dominating_n
+    for i in 1:dominating_n
         member = dominating[i]
         complexities[i] = compute_complexity(member, options)
         losses[i] = member.loss
