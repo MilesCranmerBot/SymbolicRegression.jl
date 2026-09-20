@@ -202,8 +202,10 @@ end
 function _optimize_constants_inner(
     f::F, fg!::G, x0, refs, dataset, member::P, options, algorithm, optimizer_options, rng
 )::Tuple{P,Float64} where {F,G,T,L,N,P<:AbstractPopMember{T,L,N}}
-    obj = if algorithm isa Optim.Newton || options.autodiff_backend === nothing
+    obj = if algorithm isa Optim.Newton
         f
+    elseif options.autodiff_backend === nothing
+        finite_difference_objective(f, dataset)
     else
         NLSolversBase.only_fg!(fg!)
     end
@@ -263,6 +265,9 @@ function (e::Evaluator)(x::AbstractVector; regularization=false)
     set_optimizable_parameters!(e.tree, x, e.refs)
     return e.ctx(e.tree; regularization)
 end
+
+# Objective used when no AD backend is configured. Extensions may batch the finite differences.
+finite_difference_objective(f::Evaluator, dataset::Dataset) = f
 
 struct GradEvaluator{E<:Evaluator,AD<:Union{Nothing,AbstractADType},PR,EX} <: Function
     e::E
