@@ -1,5 +1,15 @@
 module SymbolicRegression
 
+export gpu_matrix
+
+"""
+    gpu_matrix(X::AbstractMatrix)
+
+Wrap a feature matrix so that expression evaluation and loss reduction run on a CUDA
+GPU. Requires `using CUDA`. Pass the result as `X` to `equation_search`.
+"""
+function gpu_matrix end
+
 # Types
 export Population,
     PopMember,
