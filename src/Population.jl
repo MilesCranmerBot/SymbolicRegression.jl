@@ -152,25 +152,18 @@ function Base.copy(pop::P)::P where {T,L,N,PM,P<:Population{T,L,N,PM}}
     return Population(copied_members)
 end
 
-# `n` distinct indices in `1:N`, uniformly, by rejection: for tournament sizes
-# this beats a Fisher-Yates over all `N` members and needs no scratch of size `N`.
+# `n` distinct indices in `1:N` by rejection; allocation-free for tournament sizes.
 const TOURNAMENT_INDICES_SCRATCH = PerTaskCache{Vector{Int}}()
 function _sample_indices!(idxs::Vector{Int}, N::Int, n::Int)
     resize!(idxs, n)
     for i in 1:n
         candidate = rand(1:N)
-        while _seen(idxs, candidate, i - 1)
+        while candidate in view(idxs, 1:(i - 1))
             candidate = rand(1:N)
         end
         idxs[i] = candidate
     end
     return idxs
-end
-function _seen(idxs::Vector{Int}, x::Int, upto::Int)
-    for j in 1:upto
-        idxs[j] == x && return true
-    end
-    return false
 end
 
 """
@@ -202,25 +195,19 @@ function _best_of_sample(
     end
 
     # First, decide what place we take (usually 1st place wins):
-    tournament_winner = if p == 1.0
-        1
-    else
-        StatsBase.sample(get_tournament_selection_weights(options))
-    end
+    tournament_winner =
+        p == 1.0 ? 1 : StatsBase.sample(get_tournament_selection_weights(options))
     chosen_idx = if tournament_winner == 1
-        best_i = 1
-        best_cost = adjusted_cost(1)
+        # Strict `<`: the first minimum wins, and a NaN cost never does.
+        best_i, best_cost = 1, adjusted_cost(1)
         for i in 2:n
             cost = adjusted_cost(i)
-            if cost < best_cost
-                best_i, best_cost = i, cost
-            end
+            cost < best_cost && ((best_i, best_cost) = (i, cost))
         end
         best_i
     else
         # Then, find the member that won that place, given their fitness:
-        adjusted_costs = L[adjusted_cost(i) for i in 1:n]
-        bottomk_fast(adjusted_costs, tournament_winner)[2][end]
+        bottomk_fast(L[adjusted_cost(i) for i in 1:n], tournament_winner)[2][end]
     end
     return members[idxs[chosen_idx]]
 end

@@ -153,7 +153,7 @@ function reg_evol_cycle(
             mutation_accepted = selected_result.accepted
 
             should_replace = mutation_accepted || !options.skip_mutation_failures
-            oldest = should_replace ? _oldest_member(pop) : 0
+            oldest = should_replace ? argmin(i -> pop.members[i].birth, 1:(pop.n)) : 0
 
             trace_mutation_attempts!(
                 trace,
@@ -205,8 +205,10 @@ function reg_evol_cycle(
             end
 
             # Find the oldest members to replace:
-            oldest1 = _oldest_member(pop)
-            oldest2 = _oldest_member(pop; exclude=oldest1)
+            oldest1 = argmin(i -> pop.members[i].birth, 1:(pop.n))
+            oldest2 = argmin(
+                i -> i == oldest1 ? typemax(Int) : pop.members[i].birth, 1:(pop.n)
+            )
 
             trace_crossover!(
                 trace,
@@ -228,17 +230,6 @@ function reg_evol_cycle(
     end
 
     return (pop, num_evals)
-end
-
-function _oldest_member(pop::Population; exclude::Int=0)
-    oldest = 0
-    for i in 1:(pop.n)
-        i == exclude && continue
-        if oldest == 0 || pop.members[i].birth < pop.members[oldest].birth
-            oldest = i
-        end
-    end
-    return oldest
 end
 
 end
