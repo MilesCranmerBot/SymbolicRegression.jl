@@ -17,7 +17,7 @@ const nav = [
     text: 'Julia',
     items: [
       { text: 'Julia', link: '/' },
-      { text: 'Python', link: 'https://ai.damtp.cam.ac.uk/pysr/dev/' }
+      { text: 'Python', link: 'https://pysr.ai/' }
     ]
   },
   {
