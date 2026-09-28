@@ -99,10 +99,14 @@ function do_precompilation(::Val{mode}) where {mode}
                 nout == 1 && calculate_pareto_frontier(hof::HallOfFame)
                 # The first worker smoke-test response otherwise compiles this codec on every worker.
                 member = first(hof.members)
+                second_member = copy(member)
+                setfield!(second_member, :tree, getfield(member, :tree))
+                population = Population([member, second_member])
+                small_hall = HallOfFame([member, second_member], Bool[true, false])
                 network_serializer_type = Distributed.ClusterSerializer{
                     Distributed.Sockets.TCPSocket
                 }
-                for sample in (member,)
+                for sample in (member, population, small_hall)
                     io = IOBuffer()
                     Serialization.serialize(Distributed.ClusterSerializer(io), sample)
                     seekstart(io)
@@ -115,6 +119,14 @@ function do_precompilation(::Val{mode}) where {mode}
                         (network_serializer_type, Type{typeof(sample)}),
                     )
                 end
+                precompile(Serialization.serialize, (network_serializer_type, Vector{T}))
+                precompile(
+                    Serialization.serialize, (network_serializer_type, Vector{UInt8})
+                )
+                precompile(
+                    Serialization.serialize, (network_serializer_type, Vector{UInt16})
+                )
+                precompile(Serialization.serialize, (network_serializer_type, Vector{Int}))
             end
         end
     end

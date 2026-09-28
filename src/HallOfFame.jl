@@ -2,12 +2,15 @@ module HallOfFameModule
 
 using StyledStrings: @styled_str
 using DynamicExpressions: AbstractExpression, string_tree
+using Serialization: Serialization
+using Distributed: ClusterSerializer
 using ..UtilsModule: split_string, AnnotatedIOBuffer, dump_buffer
 using ..CoreModule:
     AbstractOptions, Dataset, DATA_TYPE, LOSS_TYPE, relu, create_expression, init_value
 using ..ComplexityModule: compute_complexity
 using ..CheckConstraintsModule: check_constraints
 using ..PopMemberModule: AbstractPopMember, PopMember
+using ..PopulationModule: _serialize_member_collection, _deserialize_member_collection
 using ..InterfaceDynamicExpressionsModule: format_dimensions, WILDCARD_UNIT_STRING
 using Printf: @sprintf
 
@@ -342,4 +345,10 @@ function format_hall_of_fame(hof::AbstractVector{<:HallOfFame}, options)
 end
 # TODO: Re-use this in `string_dominating_pareto_curve`
 
+function Serialization.serialize(s::ClusterSerializer, hall::HallOfFame)
+    _serialize_member_collection(s, hall, 0xa6)
+end
+function Serialization.deserialize(s::ClusterSerializer, ::Type{H}) where {H<:HallOfFame}
+    _deserialize_member_collection(s, H, 0xa6)
+end
 end

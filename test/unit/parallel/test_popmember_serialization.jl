@@ -124,6 +124,134 @@
                 getfield(other_copy.tree, :metadata)
             check_member(members[1], first_copy)
             check_member(other, other_copy)
+            population = Population(typeof(members[1])[members[1:7]...])
+            copied_population = remotecall_fetch(identity, proc, population)
+            @test copied_population.n == population.n
+            for (original, copied) in zip(population.members, copied_population.members)
+                check_member(original, copied)
+            end
+
+            shared_metadata = getfield(members[1].tree, :metadata)
+            shared_members = typeof(members[1])[]
+            for i in 1:33
+                member = copy(members[mod1(i, length(members))])
+                ex = getfield(member, :tree)
+                setfield!(member, :tree, typeof(ex)(get_tree(ex), shared_metadata))
+                push!(shared_members, member)
+            end
+            shared_population = Population(shared_members)
+            disk_serializer = Serializer(IOBuffer())
+            @test which(serialize, (typeof(disk_serializer), typeof(shared_population))).module ===
+                Serialization
+            @test which(
+                deserialize, (typeof(disk_serializer), Type{typeof(shared_population)})
+            ).module === Serialization
+            shared_io = IOBuffer()
+            serialize(ClusterSerializer(shared_io), shared_population)
+            shared_bytes = position(shared_io)
+            seekstart(shared_io)
+            shared_copy = deserialize(ClusterSerializer(shared_io))
+            @test shared_copy.n == 33
+            for (original, copied) in zip(shared_population.members, shared_copy.members)
+                check_member(original, copied)
+            end
+            @test all(
+                getfield(member.tree, :metadata) ===
+                getfield(shared_copy.members[1].tree, :metadata) for
+                member in shared_copy.members
+            )
+            shared_worker_copy = remotecall_fetch(identity, proc, shared_population)
+            for (original, copied) in
+                zip(shared_population.members, shared_worker_copy.members)
+                check_member(original, copied)
+            end
+            legacy_io = IOBuffer()
+            serialize(ClusterSerializer(legacy_io), (shared_members, shared_population.n))
+            @test shared_bytes < position(legacy_io)
+
+            shared_hall = HallOfFame(shared_members[1:25], [isodd(i) for i in 1:25])
+            hall_io = IOBuffer()
+            serialize(ClusterSerializer(hall_io), shared_hall)
+            hall_bytes = position(hall_io)
+            seekstart(hall_io)
+            hall_copy = deserialize(ClusterSerializer(hall_io))
+            @test hall_copy.exists == shared_hall.exists
+            for (original, copied) in zip(shared_hall.members, hall_copy.members)
+                check_member(original, copied)
+            end
+            hall_worker_copy = remotecall_fetch(identity, proc, shared_hall)
+            @test hall_worker_copy.exists == shared_hall.exists
+            for (original, copied) in zip(shared_hall.members, hall_worker_copy.members)
+                check_member(original, copied)
+            end
+            legacy_hall_io = IOBuffer()
+            serialize(
+                ClusterSerializer(legacy_hall_io), (shared_hall.members, shared_hall.exists)
+            )
+            @test hall_bytes < position(legacy_hall_io)
+            @test_throws ArgumentError deserialize(
+                ClusterSerializer(IOBuffer(UInt8[0xff])), typeof(shared_hall)
+            )
+            joined_io = IOBuffer()
+            serialize(ClusterSerializer(joined_io), (shared_population, shared_hall))
+            seekstart(joined_io)
+            joined_pop, joined_hall = deserialize(ClusterSerializer(joined_io))
+            @test joined_pop.members[1] === joined_hall.members[1]
+            member_vector_io = IOBuffer()
+            serialize(
+                ClusterSerializer(member_vector_io),
+                (shared_population, shared_population.members),
+            )
+            seekstart(member_vector_io)
+            joined_pop, joined_members = deserialize(ClusterSerializer(member_vector_io))
+            @test joined_pop.members === joined_members
+
+            changed_member = copy(members[2])
+            setfield!(
+                changed_member,
+                :tree,
+                Expression(
+                    get_tree(changed_member.tree);
+                    operators,
+                    variable_names=["different", "names"],
+                ),
+            )
+            distinct_population = Population([members[1], changed_member])
+            distinct_io = IOBuffer()
+            serialize(ClusterSerializer(distinct_io), distinct_population)
+            seekstart(distinct_io)
+            distinct_copy = deserialize(ClusterSerializer(distinct_io))
+            for (original, copied) in
+                zip(distinct_population.members, distinct_copy.members)
+                check_member(original, copied)
+            end
+            @test getfield(distinct_copy.members[1].tree, :metadata) !=
+                getfield(distinct_copy.members[2].tree, :metadata)
+            repeated_population = Population([shared_members[1], shared_members[1]])
+            repeated_io = IOBuffer()
+            serialize(ClusterSerializer(repeated_io), repeated_population)
+            seekstart(repeated_io)
+            repeated_copy = deserialize(ClusterSerializer(repeated_io))
+            @test repeated_copy.members[1] === repeated_copy.members[2]
+            empty_population = Population(typeof(members[1])[])
+            empty_io = IOBuffer()
+            serialize(ClusterSerializer(empty_io), empty_population)
+            seekstart(empty_io)
+            @test isempty(deserialize(ClusterSerializer(empty_io)).members)
+            @test_throws ArgumentError deserialize(
+                ClusterSerializer(IOBuffer(UInt8[0xff])), typeof(shared_population)
+            )
+            @test_throws ArgumentError deserialize(
+                ClusterSerializer(IOBuffer(UInt8[0xa5, 0xff])), typeof(shared_population)
+            )
+            disk_io = IOBuffer()
+            serialize(disk_io, shared_population)
+            seekstart(disk_io)
+            disk_copy = deserialize(disk_io)
+            @test disk_copy.n == 33
+            for (original, copied) in zip(shared_population.members, disk_copy.members)
+                check_member(original, copied)
+            end
 
             shared = GraphNode(T; feature=1)
             graph = GraphNode(; op=1, children=(shared, shared))
@@ -153,6 +281,22 @@
             recovered_pair = deserialize(ClusterSerializer(io))
             @test recovered_pair[1] === recovered_pair[2]
             check_member(fallback, recovered_pair[1])
+
+            graph_population = Population([fallback, fallback])
+            graph_io = IOBuffer()
+            serialize(ClusterSerializer(graph_io), graph_population)
+            seekstart(graph_io)
+            copied_graph_population = deserialize(ClusterSerializer(graph_io))
+            @test copied_graph_population.members[1] === copied_graph_population.members[2]
+            @test get_child(get_tree(copied_graph_population.members[1].tree), 1) ===
+                get_child(get_tree(copied_graph_population.members[1].tree), 2)
+
+            pair = [fallback, fallback]
+            io = IOBuffer()
+            serialize(io, pair)
+            seekstart(io)
+            recovered_pair = deserialize(io)
+            @test recovered_pair[1] === recovered_pair[2]
         end
     finally
         rmprocs(proc)

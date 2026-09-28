@@ -2,7 +2,9 @@ module PopulationModule
 
 using StatsBase: StatsBase
 using DispatchDoctor: @unstable
-using DynamicExpressions: AbstractExpression, constructorof
+using DynamicExpressions: AbstractExpression, Expression, Node, constructorof
+using Serialization: Serialization
+using Distributed: ClusterSerializer
 using ..CoreModule:
     AbstractOptions,
     Options,
@@ -15,7 +17,7 @@ using ..CoreModule:
     use_batching
 using ..LossFunctionsModule: eval_cost, update_baseline_loss!
 using ..MutationFunctionsModule: gen_random_tree
-using ..PopMemberModule: AbstractPopMember, PopMember
+using ..PopMemberModule: AbstractPopMember, PopMember, _pack_node!, _unpack_node
 import ..PopMemberModule: popmember_type
 using ..UtilsModule: bottomk_fast, PerTaskCache, strictmap
 # A list of members of the population, with easy constructors,
@@ -260,4 +262,147 @@ end
 # Type accessor for Population
 popmember_type(::Type{<:Population{T,L,N,PM}}) where {T,L,N,PM} = PM
 
+function _can_pack_members(s::ClusterSerializer, members::Vector{PM}) where {PM}
+    PM <: PopMember || return false
+    E = fieldtype(PM, :tree)
+    E <: Expression{<:Any,<:Node} || return false
+    isempty(members) && return false
+    haskey(s.table, members) && return false
+    metadata = getfield(getfield(first(members), :tree), :metadata)
+    for i in eachindex(members)
+        member = members[i]
+        getfield(getfield(member, :tree), :metadata) === metadata || return false
+        haskey(s.table, member) && return false
+        for j in 1:(i - 1)
+            member === members[j] && return false
+        end
+    end
+    return true
+end
+
+function _serialize_packed_members(s::ClusterSerializer, members::Vector{PM}) where {PM}
+    write(s.io, length(members))
+    # Reserve the reference ids that ordinary Vector and PopMember transfers would use.
+    Serialization.serialize_cycle(s, members) && error("Repeated packed member vector")
+    metadata = getfield(getfield(first(members), :tree), :metadata)
+    Serialization.serialize(s, metadata)
+    T = PM.parameters[1]
+    degrees = UInt8[]
+    leaf_types = UInt8[]
+    constants = T[]
+    features = UInt16[]
+    ops = UInt8[]
+    for member in members
+        _pack_node!(
+            getfield(getfield(member, :tree), :tree),
+            degrees,
+            leaf_types,
+            constants,
+            features,
+            ops,
+        )
+    end
+    for values in (degrees, leaf_types, constants, features, ops)
+        Serialization.serialize(s, values)
+    end
+    for field in fieldnames(PM)
+        field === :tree && continue
+        values = Vector{fieldtype(PM, field)}(undef, length(members))
+        for i in eachindex(members)
+            values[i] = getfield(members[i], field)
+        end
+        Serialization.serialize(s, values)
+    end
+    for member in members
+        Serialization.serialize_cycle(s, member) && error("Repeated packed member")
+    end
+    return nothing
+end
+
+function _deserialize_packed_members(s::ClusterSerializer, ::Type{PM}) where {PM}
+    PM <: PopMember || throw(ArgumentError("Unsupported packed member type $PM"))
+    E = fieldtype(PM, :tree)
+    E <: Expression{<:Any,<:Node} ||
+        throw(ArgumentError("Unsupported packed expression type $E"))
+    n = read(s.io, Int)
+    n >= 0 || throw(ArgumentError("Negative packed member count"))
+    members = Vector{PM}(undef, n)
+    Serialization.resolve_ref_immediately(s, members)
+    metadata = Serialization.deserialize(s)
+    degrees, leaf_types, constants, features, ops = (
+        Serialization.deserialize(s) for _ in 1:5
+    )
+    columns = Vector{Any}(undef, fieldcount(PM) - 1)
+    column = 0
+    for field in fieldnames(PM)
+        field === :tree && continue
+        column += 1
+        values = Serialization.deserialize(s)
+        length(values) == n || throw(ArgumentError("Invalid packed member field length"))
+        columns[column] = values
+    end
+    N = fieldtype(E, :tree)
+    positions = ones(Int, 5)
+    for i in eachindex(members)
+        member = ccall(:jl_new_struct_uninit, Any, (Any,), PM)::PM
+        tree = _unpack_node(N, degrees, leaf_types, constants, features, ops, positions)
+        setfield!(member, :tree, E(tree, metadata))
+        column = 0
+        for field in fieldnames(PM)
+            field === :tree && continue
+            column += 1
+            setfield!(member, field, columns[column][i])
+        end
+        members[i] = member
+        Serialization.resolve_ref_immediately(s, member)
+    end
+    for (position, values) in
+        zip(positions, (degrees, leaf_types, constants, features, ops))
+        position == length(values) + 1 || throw(ArgumentError("Trailing packed Node data"))
+    end
+    return members
+end
+
+function _serialize_member_collection(s::ClusterSerializer, value, tag::UInt8)
+    P = typeof(value)
+    Serialization.serialize_type(s, P)
+    write(s.io, tag)
+    members = getfield(value, :members)
+    packed = _can_pack_members(s, members)
+    write(s.io, UInt8(packed))
+    for field in fieldnames(P)
+        if field === :members && packed
+            _serialize_packed_members(s, members)
+        else
+            Serialization.serialize(s, getfield(value, field))
+        end
+    end
+    return nothing
+end
+
+function _deserialize_member_collection(
+    s::ClusterSerializer, ::Type{P}, tag::UInt8
+) where {P}
+    read(s.io, UInt8) == tag || throw(ArgumentError("Unsupported $P encoding"))
+    mode = read(s.io, UInt8)
+    mode in (0x00, 0x01) || throw(ArgumentError("Unsupported member collection mode $mode"))
+    fields = Vector{Any}(undef, fieldcount(P))
+    for (i, field) in enumerate(fieldnames(P))
+        fields[i] = if field === :members && mode == 0x01
+            _deserialize_packed_members(s, eltype(fieldtype(P, :members)))
+        else
+            Serialization.deserialize(s)
+        end
+    end
+    return ccall(
+        :jl_new_structv, Any, (Any, Ptr{Any}, UInt32), P, fields, UInt32(length(fields))
+    )::P
+end
+
+function Serialization.serialize(s::ClusterSerializer, pop::Population)
+    _serialize_member_collection(s, pop, 0xa5)
+end
+function Serialization.deserialize(s::ClusterSerializer, ::Type{P}) where {P<:Population}
+    _deserialize_member_collection(s, P, 0xa5)
+end
 end
