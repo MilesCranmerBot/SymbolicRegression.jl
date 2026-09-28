@@ -800,6 +800,7 @@ Base.@kwdef struct SearchState{
     worker_output::Vector{Vector{WorkerOutputType}}
     tasks::Vector{Vector{Task}}
     channels::Vector{Vector{ChannelType}}
+    worker_inputs::Dict{Int,Vector{Future}}
     worker_assignment::WorkerAssignments
     task_order::Vector{Tuple{Int,Int}}
     halls_of_fame::Vector{HallOfFame{T,L,N,PM}}

@@ -704,6 +704,7 @@ end
     _warmup_search!(state, datasets, ropt, options)
     _main_search_loop!(state, datasets, ropt, options)
     _tear_down!(state, datasets, ropt, options)
+    empty!(state.worker_inputs)
     _info_dump(state, datasets, ropt, options)
     return _format_output(state, datasets, ropt, options)
 end
@@ -814,6 +815,11 @@ end
     else
         Int[], false
     end
+    worker_inputs = Dict{Int,Vector{Future}}(
+        worker =>
+            [remotecall(identity, worker, (dataset, options)) for dataset in datasets] for
+        worker in procs
+    )
     # Get the next worker process to give a job:
     worker_assignment = WorkerAssignments()
     # Randomly order which order to check populations:
@@ -857,6 +863,7 @@ end
         tasks=tasks,
         channels=channels,
         worker_assignment=worker_assignment,
+        worker_inputs=worker_inputs,
         task_order=task_order,
         halls_of_fame=halls_of_fame,
         last_pops=last_pops,
@@ -928,43 +935,78 @@ function _initialize_search!(
                     member.loss = result_loss
                 end
                 copy_pop = copy(_saved_pop)
-                @sr_spawner(
-                    begin
+                if ropt.parallelism == :multiprocessing
+                    worker_input = state.worker_inputs[worker_idx][j]
+                    Distributed.@spawnat worker_idx begin
+                        worker_dataset, worker_options = _fetch_worker_input(worker_input)
                         (
                             copy_pop,
-                            HallOfFame(options, _dataset),
-                            new_trace(options),
+                            HallOfFame(worker_options, worker_dataset),
+                            new_trace(worker_options),
                             0.0,
                             _worker_plugin_states,
                         )
-                    end,
-                    parallelism = ropt.parallelism,
-                    worker_idx = worker_idx
-                )
+                    end
+                else
+                    @sr_spawner(
+                        begin
+                            (
+                                copy_pop,
+                                HallOfFame(options, _dataset),
+                                new_trace(options),
+                                0.0,
+                                _worker_plugin_states,
+                            )
+                        end,
+                        parallelism = ropt.parallelism,
+                        worker_idx = worker_idx
+                    )
+                end
             else
                 if saved_pop !== nothing && ropt.verbosity > 0
                     @warn "Recreating population (output=$(j), population=$(i)), as the saved one doesn't have the correct number of members."
                 end
-                @sr_spawner(
-                    begin
+                if ropt.parallelism == :multiprocessing
+                    worker_input = state.worker_inputs[worker_idx][j]
+                    Distributed.@spawnat worker_idx begin
+                        worker_dataset, worker_options = _fetch_worker_input(worker_input)
                         (
                             Population(
-                                _dataset;
-                                population_size=options.population_size,
+                                worker_dataset;
+                                population_size=worker_options.population_size,
                                 nlength=3,
-                                options=options,
-                                nfeatures=max_features(_dataset, options),
+                                options=worker_options,
+                                nfeatures=max_features(worker_dataset, worker_options),
                                 plugin_states=_plugin_states,
                             ),
-                            HallOfFame(options, _dataset),
-                            new_trace(options),
-                            Float64(options.population_size),
+                            HallOfFame(worker_options, worker_dataset),
+                            new_trace(worker_options),
+                            Float64(worker_options.population_size),
                             _worker_plugin_states,
                         )
-                    end,
-                    parallelism = ropt.parallelism,
-                    worker_idx = worker_idx
-                )
+                    end
+                else
+                    @sr_spawner(
+                        begin
+                            (
+                                Population(
+                                    _dataset;
+                                    population_size=options.population_size,
+                                    nlength=3,
+                                    options=options,
+                                    nfeatures=max_features(_dataset, options),
+                                    plugin_states=_plugin_states,
+                                ),
+                                HallOfFame(options, _dataset),
+                                new_trace(options),
+                                Float64(options.population_size),
+                                _worker_plugin_states,
+                            )
+                        end,
+                        parallelism = ropt.parallelism,
+                        worker_idx = worker_idx
+                    )
+                end
                 # This involves population_size evaluations, on the full dataset:
             end
         end
@@ -1030,28 +1072,43 @@ function _warmup_search!(
             TraceStateType,
             eltype(eltype(state.worker_plugin_states)),
         )
-        updated_pop = @sr_spawner(
-            begin
-                _dispatch_s_r_cycle(
-                    in_pop,
-                    dataset,
-                    options;
-                    pop=i,
-                    out=j,
-                    iteration=0,
-                    ropt.verbosity,
-                    cur_maxsize,
-                    plugin_states=worker_plugin_states,
-                )::DefaultWorkerOutputType{
-                    Population{T,L,N},
-                    HallOfFame{T,L,N},
-                    TraceStateType,
-                    typeof(worker_plugin_states),
-                }
-            end,
-            parallelism = ropt.parallelism,
-            worker_idx = worker_idx
-        )
+        updated_pop = if ropt.parallelism == :multiprocessing
+            remotecall(
+                _dispatch_s_r_cycle_cached,
+                worker_idx,
+                in_pop,
+                state.worker_inputs[worker_idx][j],
+                i,
+                j,
+                0,
+                ropt.verbosity,
+                cur_maxsize,
+                worker_plugin_states,
+            )
+        else
+            @sr_spawner(
+                begin
+                    _dispatch_s_r_cycle(
+                        in_pop,
+                        dataset,
+                        options;
+                        pop=i,
+                        out=j,
+                        iteration=0,
+                        ropt.verbosity,
+                        cur_maxsize,
+                        plugin_states=worker_plugin_states,
+                    )::DefaultWorkerOutputType{
+                        Population{T,L,N},
+                        HallOfFame{T,L,N},
+                        TraceStateType,
+                        typeof(worker_plugin_states),
+                    }
+                end,
+                parallelism = ropt.parallelism,
+                worker_idx = worker_idx
+            )
+        end
         state.worker_output[j][i] = updated_pop
     end
     return nothing
@@ -1211,23 +1268,38 @@ function _main_search_loop!(
                         worker_state, latest_head_state, plugin, dataset
                     )
                 end
-                state.worker_output[j][i] = @sr_spawner(
-                    begin
-                        _dispatch_s_r_cycle(
-                            in_pop,
-                            dataset,
-                            options;
-                            pop=i,
-                            out=j,
-                            iteration,
-                            ropt.verbosity,
-                            cur_maxsize,
-                            plugin_states=worker_plugin_states,
-                        )
-                    end,
-                    parallelism = ropt.parallelism,
-                    worker_idx = worker_idx
-                )
+                state.worker_output[j][i] = if ropt.parallelism == :multiprocessing
+                    remotecall(
+                        _dispatch_s_r_cycle_cached,
+                        worker_idx,
+                        in_pop,
+                        state.worker_inputs[worker_idx][j],
+                        i,
+                        j,
+                        iteration,
+                        ropt.verbosity,
+                        cur_maxsize,
+                        worker_plugin_states,
+                    )
+                else
+                    @sr_spawner(
+                        begin
+                            _dispatch_s_r_cycle(
+                                in_pop,
+                                dataset,
+                                options;
+                                pop=i,
+                                out=j,
+                                iteration,
+                                ropt.verbosity,
+                                cur_maxsize,
+                                plugin_states=worker_plugin_states,
+                            )
+                        end,
+                        parallelism = ropt.parallelism,
+                        worker_idx = worker_idx
+                    )
+                end
                 if ropt.parallelism in (:multiprocessing, :multithreading)
                     state.tasks[j][i] = @filtered_async put!(
                         state.channels[j][i], fetch(state.worker_output[j][i])
@@ -1410,6 +1482,26 @@ end
     end
     return (out_pop, best_seen, trace, num_evals, plugin_states)
 end
+function _fetch_worker_input(worker_input::Future)
+    @assert myid() == worker_input.where
+    return fetch(worker_input)
+end
+function _dispatch_s_r_cycle_cached(
+    in_pop::Population,
+    worker_input::Future,
+    pop::Int,
+    out::Int,
+    iteration::Int,
+    verbosity,
+    cur_maxsize::Int,
+    plugin_states::Tuple,
+)
+    dataset, options = _fetch_worker_input(worker_input)
+    return _dispatch_s_r_cycle(
+        in_pop, dataset, options; pop, out, iteration, verbosity, cur_maxsize, plugin_states
+    )
+end
+
 function _info_dump(
     state::AbstractSearchState,
     datasets::Vector{D},
