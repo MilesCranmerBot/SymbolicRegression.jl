@@ -38,6 +38,73 @@ for N in (1, 2)
     precompile(Tuple{typeof(copy),PythonCall.PyArray{Float32,N,true,true,Float32}})
 end
 
+# Conversions and calls PySR makes from Python that the workload below cannot.
+for (T, rule) in (
+    (Integer, PythonCall.Convert.pyconvert_rule_int),
+    (Bool, PythonCall.Convert.pyconvert_rule_bool),
+)
+    precompile(Tuple{typeof(PythonCall.Convert.pyconvert_fix(T, rule)),PythonCall.Py})
+end
+for T in (String, Tuple{Int64,Int64})
+    precompile(Tuple{Type{Vector{T}},Vector{Union{}}})
+end
+precompile(
+    Tuple{
+        typeof(PythonCall.Convert._pyconvert_rule_iterable),
+        Vector{Tuple{Int64,Int64}},
+        PythonCall.Py,
+        Type{Any},
+    },
+)
+
+# Julia functions and types that PySR calls or indexes directly from Python.
+for f in (
+    isa,
+    copy,
+    take!,
+    SymbolicRegression.SearchUtilsModule.generate_run_id,
+    SymbolicRegression.Serialization.serialize,
+    PythonCall.PyArray,
+    Dict{Int64,Vector},
+)
+    precompile(
+        Tuple{
+            typeof(PythonCall.JlWrap.pyjlany_call),
+            Core.Typeof(f),
+            PythonCall.Py,
+            PythonCall.Py,
+        },
+    )
+end
+precompile(
+    Tuple{
+        typeof(PythonCall.JlWrap.pyjlany_call_nogil),
+        typeof(SymbolicRegression.equation_search),
+        PythonCall.Py,
+        PythonCall.Py,
+    },
+)
+precompile(Tuple{typeof(PythonCall.JlWrap.pyjltype_getitem),Type,PythonCall.Py})
+precompile(
+    Tuple{
+        typeof(PythonCall.JlWrap.pyjldict_setitem),
+        Dict{Int64,Vector},
+        PythonCall.Py,
+        PythonCall.Py,
+    },
+)
+# NumPy reads serialized search state through the buffer protocol.
+precompile(
+    Tuple{
+        typeof(PythonCall.JlWrap.Cjl._pyjl_get_buffer_impl),
+        Ptr{PythonCall.C.PyObject},
+        Ptr{PythonCall.C.Py_buffer},
+        Int32,
+        Vector{UInt8},
+        typeof(PythonCall.JlWrap.pyjlarray_buffer_info),
+    },
+)
+
 function pysr_shaped_workload(
     mode, operators=SymbolicRegression.OperatorEnum(((), (+, -, /, *)))
 )
