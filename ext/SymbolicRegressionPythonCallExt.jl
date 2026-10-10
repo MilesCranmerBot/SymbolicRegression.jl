@@ -104,6 +104,17 @@ precompile(
         typeof(PythonCall.JlWrap.pyjlarray_buffer_info),
     },
 )
+# PySR converts Python lists with `PythonCall.pyconvert(Array, list)`, which
+# receives the list wrapped as a `PyList`.
+precompile(
+    Tuple{
+        typeof(PythonCall.JlWrap.pyjlany_call),
+        typeof(PythonCall.pyconvert),
+        PythonCall.Py,
+        PythonCall.Py,
+    },
+)
+precompile(Tuple{typeof(PythonCall.pyconvert),Type{Array},PythonCall.PyList{PythonCall.Py}})
 
 # The workload below prints to devnull, but in a terminal the progress bar
 # writes styled text to a `Base.TTY`.
