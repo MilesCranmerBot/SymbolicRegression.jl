@@ -105,6 +105,20 @@ precompile(
     },
 )
 
+# The workload below prints to devnull, but in a terminal the progress bar
+# writes styled text to a `Base.TTY`.
+let AnnotatedString = SymbolicRegression.UtilsModule.AnnotatedString{String}
+    precompile(
+        Tuple{
+            typeof(SymbolicRegression.ProgressBarsModule.ProgressMeter.printover),
+            Base.TTY,
+            AnnotatedString,
+            Symbol,
+        },
+    )
+    precompile(Tuple{typeof(print),Base.TTY,AnnotatedString,String})
+end
+
 function pysr_shaped_workload(
     mode, operators=SymbolicRegression.OperatorEnum(((), (+, -, /, *)))
 )
