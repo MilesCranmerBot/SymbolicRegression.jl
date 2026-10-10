@@ -169,7 +169,6 @@ function _crossover_generation(
     local child_tree1::N, child_tree2::N
     afterSize1 = -1
     afterSize2 = -1
-    storage_keywords = crossover_choice isa SubtreeCrossover ? (; crossover_storage) : (;)
     while true
         result = crossover(
             member1,
@@ -181,7 +180,7 @@ function _crossover_generation(
             curmaxsize,
             nfeatures,
             attempt=num_tries,
-            storage_keywords...,
+            crossover_storage,
             plugin_states,
         )::CrossoverResult{N}
         num_evals += result.num_evals
@@ -191,8 +190,8 @@ function _crossover_generation(
         # Both trees satisfy constraints
         if check_constraints(child_tree1, options, curmaxsize, afterSize1) &&
             check_constraints(child_tree2, options, curmaxsize, afterSize2)
-            if crossover_choice isa SubtreeCrossover &&
-                crossover_storage isa CrossoverStorage
+            # The accepted children now own these arenas.
+            if crossover_storage isa CrossoverStorage
                 crossover_storage.first = nothing
                 crossover_storage.second = nothing
             end
