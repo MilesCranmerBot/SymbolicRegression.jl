@@ -1,0 +1,4 @@
+# conda-forge's python stopped depending on its shared library in 3.15, and PythonCall
+# loads that library to embed Python. Remove once PythonCall declares it itself.
+[deps]
+libpython = ""
