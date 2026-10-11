@@ -161,4 +161,13 @@ redirect_stdout(devnull) do
     end
 end
 
+# PySR always passes `constraints`, which runs a part of `Options` that the
+# searches above skip. This compiles it without changing their `Options` type.
+SymbolicRegression.@compile_workload begin
+    SymbolicRegression.Options(;
+        operators=SymbolicRegression.OperatorEnum(((), (+, -, /, *))),
+        constraints=Dict{Int,Vector}(1 => [], 2 => fill((-1, -1), 4)),
+    )
+end
+
 end
