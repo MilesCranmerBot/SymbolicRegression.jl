@@ -74,7 +74,10 @@ async function run(scenario) {
     }
     offset = raw.length;
     await type(scenario.line);
-    if (!await waitFor(prompt, offset, scenario.timeout ?? 180_000, 'trigger prompt')) {
+    const triggerPrompt = scenario.background
+      ? (text) => /Task \([^\r\n]*\) @0x[0-9a-f]+[\s\S]*?julia>/i.test(text)
+      : prompt;
+    if (!await waitFor(triggerPrompt, offset, scenario.timeout ?? 180_000, 'trigger prompt')) {
       throw new Error('Trigger did not return to the prompt');
     }
     const markerPrinted = (text) => new RegExp(`(?:^|[\\r\\n]|julia>\\s*)${scenario.marker}\\s*(?:[\\r\\n])`).test(text);
