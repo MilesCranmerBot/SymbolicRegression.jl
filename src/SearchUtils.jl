@@ -500,8 +500,24 @@ precompile(Tuple{typeof(watch_stream),Base.TTY})
 """Close the stdin reader and stop reading."""
 function close_reader!(reader::StdinReader)
     if reader.can_read_user_input
-        Base.stop_reading(reader.stream)
+        stop_reading_if_unshared(reader.stream)
     end
+end
+
+stop_reading_if_unshared(stream::IO) = Base.stop_reading(stream)
+
+# Another task may still be blocked reading this stream, such as the REPL prompt
+# while VS Code evaluates code sent from the editor. On Windows, `stop_reading`
+# halts the underlying libuv read, so that task would never wake up. This is the
+# same rule `Base.wait_readnb` follows.
+function stop_reading_if_unshared(stream::Base.LibuvStream)
+    Base.iolock_begin()
+    try
+        Base.@lock stream.cond isempty(stream.cond) && Base.stop_reading(stream)
+    finally
+        Base.iolock_end()
+    end
+    return nothing
 end
 
 """Check if the user typed 'q' and <enter> or <ctl-c>."""

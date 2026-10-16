@@ -119,3 +119,22 @@
     @test SymbolicRegression.check_for_user_quit(control_c_reader)
     SymbolicRegression.close_reader!(control_c_reader)
 end
+
+@testitem "closing the stdin reader does not stall another task reading the stream" begin
+    using SymbolicRegression
+
+    # Mirrors the VS Code REPL: code sent from the editor runs while the REPL prompt
+    # task is still blocked reading stdin.
+    pipe = Pipe()
+    Base.link_pipe!(pipe; reader_supports_async=true, writer_supports_async=true)
+    other_reader = @async read(pipe.out, UInt8)
+    @test timedwait(() -> !isempty(pipe.out.cond), 5.0) == :ok
+
+    reader = SymbolicRegression.watch_stream(pipe.out)
+    SymbolicRegression.close_reader!(reader)
+
+    write(pipe.in, 0x41)
+    @test timedwait(() -> istaskdone(other_reader), 5.0) == :ok
+    @test istaskdone(other_reader) && fetch(other_reader) == 0x41
+    close(pipe)
+end
