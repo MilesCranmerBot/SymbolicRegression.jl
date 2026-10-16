@@ -118,3 +118,6 @@ for (const scenario of scenarios) results.push(await run(scenario));
 console.log('scenario | julia | result');
 for (const row of results) console.log(`${row.scenario} | ${row.julia} | ${row.result}`);
 writeFileSync(resolve(output, 'results.json'), JSON.stringify(results, null, 2));
+// node-pty's bundled ConPTY workers can outlive the terminated Julia processes.
+await new Promise((resolve) => process.stdout.write('', resolve));
+process.exit(0);
