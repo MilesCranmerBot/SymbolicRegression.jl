@@ -512,11 +512,9 @@ stop_reading_if_unshared(stream::IO) = Base.stop_reading(stream)
 # same rule `Base.wait_readnb` follows.
 function stop_reading_if_unshared(stream::Base.LibuvStream)
     Base.iolock_begin()
-    lock(stream.cond)
     try
-        isempty(stream.cond) && Base.stop_reading(stream)
+        Base.@lock stream.cond isempty(stream.cond) && Base.stop_reading(stream)
     finally
-        unlock(stream.cond)
         Base.iolock_end()
     end
     return nothing
