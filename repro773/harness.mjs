@@ -7,26 +7,24 @@ import { stripVTControlCharacters } from 'node:util';
 import { setTimeout as sleep } from 'node:timers/promises';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const variant = process.argv[2] ?? 'baseline';
-if (!['baseline', 'during-input', 'extra-enter', 'conpty-dll'].includes(variant)) throw new Error(`Unknown variant: ${variant}`);
-const output = resolve(root, 'repro773', 'transcripts', variant);
+const output = resolve(root, 'repro773', 'transcripts');
 const executable = execFileSync('where.exe', ['julia'], { encoding: 'utf8' }).trim().split(/\r?\n/)[0];
 const julia = execFileSync(executable, ['--version'], { encoding: 'utf8' }).trim();
 const fit = (extra, marker) => 'import SymbolicRegression: SRRegressor, machine, fit!; '
-  + 'X = (a = rand(500), b = rand(500)); '
+  + '@async (X = (a = rand(500), b = rand(500)); '
   + 'y = @. 2 * cos(X.a * 23.5) - X.b ^ 2; '
   + 'y = y .+ randn(500) .* 1e-3; '
   + `model = SRRegressor(niterations=3, binary_operators=[+,-,*], unary_operators=[cos]${extra}); `
-  + `fit!(machine(model,X,y)); :${marker}`;
+  + `fit!(machine(model,X,y)); println("${marker}"))`;
 const scenarios = [
-  { name: 'A_control', line: ':noop_done', marker: 'noop_done' },
-  { name: 'B_base_only', line: 'Base.start_reading(stdin); sleep(2); Base.stop_reading(stdin); :b_done', marker: 'b_done' },
-  { name: 'C_sr_reader', line: 'using SymbolicRegression; let S = SymbolicRegression.SearchUtilsModule; r = S.watch_stream(stdin); sleep(2); S.check_for_user_quit(r); S.close_reader!(r); end; :c_done', marker: 'c_done' },
-  { name: 'D_readme_fit', line: fit('', 'd_done'), marker: 'd_done', timeout: 600_000 },
-  { name: 'E_readme_devnull', line: fit(', input_stream=devnull', 'e_done'), marker: 'e_done', timeout: 600_000 },
+  { name: 'A_control', line: ':noop_done', marker: ':noop_done' },
+  { name: 'F_async_base', line: '@async (sleep(1); Base.start_reading(stdin); sleep(2); Base.stop_reading(stdin); println("F_MARK"))', marker: 'F_MARK', background: true },
+  { name: 'G_async_sr', line: 'using SymbolicRegression; @async (sleep(1); let S = SymbolicRegression.SearchUtilsModule; r = S.watch_stream(stdin); sleep(2); S.check_for_user_quit(r); S.close_reader!(r); end; println("G_MARK"))', marker: 'G_MARK', background: true },
+  { name: 'H_async_fit', line: fit('', 'H_MARK'), marker: 'H_MARK', background: true, timeout: 600_000 },
+  { name: 'I_async_fit_devnull', line: fit(', input_stream=devnull', 'I_MARK'), marker: 'I_MARK', background: true, timeout: 600_000 },
 ];
 mkdirSync(output, { recursive: true });
-console.log(JSON.stringify({ variant, julia, platform: process.platform, node: process.version, terminal: 'node-pty ConPTY', cols: 120, rows: 40 }));
+console.log(JSON.stringify({ julia, platform: process.platform, node: process.version, terminal: 'node-pty ConPTY', cols: 120, rows: 40 }));
 
 async function run(scenario) {
   let terminal;
@@ -52,18 +50,18 @@ async function run(scenario) {
     event('timeout', { phase });
     return false;
   }
-  async function type(line, enter = true) {
-    event('keyboard', { text: line + (enter ? '\r' : '') });
+  async function type(line) {
+    event('keyboard', { text: `${line}\r` });
     for (const character of line) {
       terminal.write(character);
       await sleep(2);
     }
-    if (enter) terminal.write('\r');
+    terminal.write('\r');
   }
   try {
     terminal = pty.spawn(executable, [`--project=${root}`, '--startup-file=no', '--color=no'], {
       name: 'xterm-256color', cols: 120, rows: 40, cwd: root,
-      env: { ...process.env, TERM: 'xterm-256color' }, useConpty: true, useConptyDll: variant === 'conpty-dll',
+      env: { ...process.env, TERM: 'xterm-256color' }, useConpty: true,
     });
     terminal.onData((data) => { raw += data; });
     terminal.onExit((status) => { exited = true; event('exit', status); });
@@ -76,26 +74,20 @@ async function run(scenario) {
     }
     offset = raw.length;
     await type(scenario.line);
-    if (variant === 'during-input' && scenario.name === 'C_sr_reader') {
-      await sleep(1_000);
-      await type('   ', false);
+    if (!await waitFor(prompt, offset, scenario.timeout ?? 180_000, 'trigger prompt')) {
+      throw new Error('Trigger did not return to the prompt');
     }
-    if (variant === 'during-input' && scenario.name === 'D_readme_fit') {
-      if (!await waitFor((text) => text.includes('Started!'), offset, scenario.timeout, 'search start')) {
-        throw new Error('Search start was not observed before typing during execution');
-      }
-      await type('   ', false);
+    const markerPrinted = (text) => new RegExp(`(?:^|[\\r\\n]|julia>\\s*)${scenario.marker}\\s*(?:[\\r\\n])`).test(text);
+    if (!await waitFor(markerPrinted, offset, scenario.timeout ?? 180_000, 'trigger marker')) {
+      throw new Error('Trigger did not print its completion marker');
     }
-    if (!await waitFor((text) => value(text, `:${scenario.marker}`) && prompt(text), offset, scenario.timeout ?? 180_000, 'trigger')) {
-      throw new Error('Trigger did not print its marker and return to prompt');
+    if (scenario.background) {
+      await sleep(2_000);
+      event('background settled');
     }
     offset = raw.length;
     await type('3+4');
     result = await waitFor((text) => value(text, '7') && prompt(text), offset, 30_000, 'post-trigger 3+4') ? 'PASS' : 'HANG';
-    if (result === 'HANG' && variant === 'extra-enter') {
-      await type('');
-      if (await waitFor((text) => value(text, '7') && prompt(text), offset, 30_000, 'extra Enter')) result = 'NEEDS_EXTRA_ENTER';
-    }
     event('result', { result, postTriggerOffset: offset });
   } catch (error) {
     detail = error.stack ?? String(error);
@@ -118,6 +110,3 @@ for (const scenario of scenarios) results.push(await run(scenario));
 console.log('scenario | julia | result');
 for (const row of results) console.log(`${row.scenario} | ${row.julia} | ${row.result}`);
 writeFileSync(resolve(output, 'results.json'), JSON.stringify(results, null, 2));
-// node-pty's bundled ConPTY workers can outlive the terminated Julia processes.
-await new Promise((resolve) => process.stdout.write('', resolve));
-process.exit(0);

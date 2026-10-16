@@ -32,11 +32,19 @@ jobs:
         run: npm install
       - name: Run keyboard scenarios
         working-directory: repro773
+        run: npm start
+      - name: Probe paused pipe reader
         run: |
-          npm start -- baseline
-          npm start -- during-input
-          npm start -- extra-enter
-          npm start -- conpty-dll
+          julia --startup-file=no -e '
+            p = Pipe(); Base.link_pipe!(p; reader_supports_async=true, writer_supports_async=true)
+            s = p.out
+            t = @async read(s, UInt8)
+            sleep(0.2)
+            Base.start_reading(s); sleep(0.2); Base.stop_reading(s)
+            write(p.in, 0x41)
+            for _ in 1:30; istaskdone(t) && break; sleep(0.1); end
+            println("PIPE_PROBE reader task done: ", istaskdone(t))
+          '
       - name: Upload raw terminal transcripts
         if: always()
         uses: actions/upload-artifact@v4
