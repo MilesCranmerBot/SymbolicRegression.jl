@@ -7,7 +7,9 @@ import { stripVTControlCharacters } from 'node:util';
 import { setTimeout as sleep } from 'node:timers/promises';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const output = resolve(root, 'repro773', 'transcripts');
+const variant = process.argv[2] ?? 'baseline';
+if (!['baseline', 'during-input', 'extra-enter', 'conpty-dll'].includes(variant)) throw new Error(`Unknown variant: ${variant}`);
+const output = resolve(root, 'repro773', 'transcripts', variant);
 const executable = execFileSync('where.exe', ['julia'], { encoding: 'utf8' }).trim().split(/\r?\n/)[0];
 const julia = execFileSync(executable, ['--version'], { encoding: 'utf8' }).trim();
 const fit = (extra, marker) => 'import SymbolicRegression: SRRegressor, machine, fit!; '
@@ -24,7 +26,7 @@ const scenarios = [
   { name: 'E_readme_devnull', line: fit(', input_stream=devnull', 'e_done'), marker: 'e_done', timeout: 600_000 },
 ];
 mkdirSync(output, { recursive: true });
-console.log(JSON.stringify({ julia, platform: process.platform, node: process.version, terminal: 'node-pty ConPTY', cols: 120, rows: 40 }));
+console.log(JSON.stringify({ variant, julia, platform: process.platform, node: process.version, terminal: 'node-pty ConPTY', cols: 120, rows: 40 }));
 
 async function run(scenario) {
   let terminal;
@@ -50,18 +52,18 @@ async function run(scenario) {
     event('timeout', { phase });
     return false;
   }
-  async function type(line) {
-    event('keyboard', { text: `${line}\r` });
+  async function type(line, enter = true) {
+    event('keyboard', { text: line + (enter ? '\r' : '') });
     for (const character of line) {
       terminal.write(character);
       await sleep(2);
     }
-    terminal.write('\r');
+    if (enter) terminal.write('\r');
   }
   try {
     terminal = pty.spawn(executable, [`--project=${root}`, '--startup-file=no', '--color=no'], {
       name: 'xterm-256color', cols: 120, rows: 40, cwd: root,
-      env: { ...process.env, TERM: 'xterm-256color' }, useConpty: true,
+      env: { ...process.env, TERM: 'xterm-256color' }, useConpty: true, useConptyDll: variant === 'conpty-dll',
     });
     terminal.onData((data) => { raw += data; });
     terminal.onExit((status) => { exited = true; event('exit', status); });
@@ -74,12 +76,26 @@ async function run(scenario) {
     }
     offset = raw.length;
     await type(scenario.line);
+    if (variant === 'during-input' && scenario.name === 'C_sr_reader') {
+      await sleep(1_000);
+      await type('   ', false);
+    }
+    if (variant === 'during-input' && scenario.name === 'D_readme_fit') {
+      if (!await waitFor((text) => text.includes('Started!'), offset, scenario.timeout, 'search start')) {
+        throw new Error('Search start was not observed before typing during execution');
+      }
+      await type('   ', false);
+    }
     if (!await waitFor((text) => value(text, `:${scenario.marker}`) && prompt(text), offset, scenario.timeout ?? 180_000, 'trigger')) {
       throw new Error('Trigger did not print its marker and return to prompt');
     }
     offset = raw.length;
     await type('3+4');
     result = await waitFor((text) => value(text, '7') && prompt(text), offset, 30_000, 'post-trigger 3+4') ? 'PASS' : 'HANG';
+    if (result === 'HANG' && variant === 'extra-enter') {
+      await type('');
+      if (await waitFor((text) => value(text, '7') && prompt(text), offset, 30_000, 'extra Enter')) result = 'NEEDS_EXTRA_ENTER';
+    }
     event('result', { result, postTriggerOffset: offset });
   } catch (error) {
     detail = error.stack ?? String(error);

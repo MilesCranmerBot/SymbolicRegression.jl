@@ -32,7 +32,11 @@ jobs:
         run: npm install
       - name: Run keyboard scenarios
         working-directory: repro773
-        run: npm start
+        run: |
+          npm start -- baseline
+          npm start -- during-input
+          npm start -- extra-enter
+          npm start -- conpty-dll
       - name: Upload raw terminal transcripts
         if: always()
         uses: actions/upload-artifact@v4
