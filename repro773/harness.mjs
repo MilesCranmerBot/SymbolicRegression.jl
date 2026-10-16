@@ -34,7 +34,7 @@ async function run(scenario) {
   let detail = '';
   const events = [];
   const event = (kind, data = {}) => events.push({ time: new Date().toISOString(), offset: raw.length, kind, ...data });
-  const plainSince = (offset) => stripVTControlCharacters(raw.slice(offset));
+  const plainSince = (offset) => stripVTControlCharacters(raw.slice(offset).replace(/\x1b\[\d+;1[Hf]/g, '\n'));
   const prompt = (text) => /julia>\s*$/.test(text);
   const value = (text, expected) => new RegExp(`(?:^|[\\r\\n])\\s*${expected}\\s*(?:[\\r\\n])`).test(text);
   async function waitFor(predicate, offset, timeout, phase) {
