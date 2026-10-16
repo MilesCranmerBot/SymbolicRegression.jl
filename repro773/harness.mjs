@@ -8,7 +8,8 @@ import { setTimeout as sleep } from 'node:timers/promises';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const output = resolve(root, 'repro773', 'transcripts');
-const julia = execFileSync('julia', ['--version'], { encoding: 'utf8' }).trim();
+const executable = execFileSync('where.exe', ['julia'], { encoding: 'utf8' }).trim().split(/\r?\n/)[0];
+const julia = execFileSync(executable, ['--version'], { encoding: 'utf8' }).trim();
 const fit = (extra, marker) => 'import SymbolicRegression: SRRegressor, machine, fit!; '
   + 'X = (a = rand(500), b = rand(500)); '
   + 'y = @. 2 * cos(X.a * 23.5) - X.b ^ 2; '
@@ -58,7 +59,7 @@ async function run(scenario) {
     terminal.write('\r');
   }
   try {
-    terminal = pty.spawn('julia', [`--project=${root}`, '--startup-file=no', '--color=no'], {
+    terminal = pty.spawn(executable, [`--project=${root}`, '--startup-file=no', '--color=no'], {
       name: 'xterm-256color', cols: 120, rows: 40, cwd: root,
       env: { ...process.env, TERM: 'xterm-256color' }, useConpty: true,
     });
