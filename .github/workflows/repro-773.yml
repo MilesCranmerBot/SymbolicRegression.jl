@@ -24,6 +24,10 @@ jobs:
       - uses: julia-actions/cache@v3
       - name: Instantiate and precompile package
         run: julia --project=. -e "using Pkg; Pkg.instantiate(); using SymbolicRegression"
+      - name: Run unit evaluation tests
+        continue-on-error: true
+        timeout-minutes: 15
+        run: julia --project=. -e 'using Pkg; Pkg.test(; test_args=["unit/evaluation"])'
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
