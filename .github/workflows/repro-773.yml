@@ -1,0 +1,42 @@
+name: Reproduce Windows ConPTY issue 773
+
+on:
+  push:
+    branches: [repro/773-conpty]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  conpty:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        julia-version: ["1", "1.10"]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: julia-actions/setup-julia@v3
+        with:
+          version: ${{ matrix.julia-version }}
+      - uses: julia-actions/cache@v3
+      - name: Instantiate and precompile package
+        run: julia --project=. -e "using Pkg; Pkg.instantiate(); using SymbolicRegression"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install node-pty
+        working-directory: repro773
+        run: npm install
+      - name: Run keyboard scenarios
+        working-directory: repro773
+        run: npm start
+      - name: Upload raw terminal transcripts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: conpty-julia-${{ matrix.julia-version }}
+          path: repro773/transcripts/
+          if-no-files-found: warn

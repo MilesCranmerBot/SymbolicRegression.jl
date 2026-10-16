@@ -1,0 +1,11 @@
+{
+  "name": "sr-773-conpty-repro",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node harness.mjs"
+  },
+  "dependencies": {
+    "node-pty": "1.1.0"
+  }
+}
