@@ -9,6 +9,7 @@ permissions:
   contents: write
   pull-requests: write
   issues: write
+  actions: write
 
 jobs:
   release-please:
@@ -50,10 +51,17 @@ jobs:
       - name: Create GitHub release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          tag="v$(jq -r '."."' .release-please-manifest.json)"
+          tag_before=$(git ls-remote origin "refs/tags/$tag")
           node release-please-src/build/src/bin/release-please.js github-release \
             --token "$GITHUB_TOKEN" \
             --repo-url "https://github.com/${{ github.repository }}" \
             --target-branch master \
             --config-file release-please-config.json \
             --manifest-file .release-please-manifest.json
+          # A tag created with GITHUB_TOKEN cannot start the tag-push docs run, but workflow_dispatch can.
+          if [ -z "$tag_before" ] && [ -n "$(git ls-remote origin "refs/tags/$tag")" ]; then
+            gh workflow run Documentation.yml --repo "${{ github.repository }}" --ref master -f tag="$tag"
+          fi

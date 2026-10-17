@@ -21,6 +21,11 @@ on:
       - "README.md"
       - ".github/workflows/**"
       - "examples/**"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to build and deploy, e.g. v2.7.1"
+        required: true
 
 jobs:
   build:
@@ -31,6 +36,8 @@ jobs:
       statuses: write
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag || github.ref }}
       - uses: julia-actions/setup-julia@v3
         with:
           version: "1"
@@ -51,8 +58,13 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           DOCUMENTER_KEY_CAM: ${{ secrets.DAMTP_DEPLOY_KEY }}
           DOCUMENTER_PRODUCTION: "true"
+          RELEASE_TAG: ${{ inputs.tag }}
+        # Release tags come from release-please via GITHUB_TOKEN, which cannot trigger
+        # tag-push runs, so they arrive here as workflow_dispatch with the tag as input.
         run: |
-          julia --project=docs/ docs/make.jl
+          julia --project=docs/ -e '
+            isempty(ENV["RELEASE_TAG"]) || (ENV["GITHUB_REF"] = "refs/tags/" * ENV["RELEASE_TAG"])
+            include("docs/make.jl")'
       - name: Save Julia depot cache on cancel or failure
         id: julia-cache-save
         if: cancelled() || failure()
