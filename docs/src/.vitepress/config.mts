@@ -29,6 +29,26 @@ const nav = [
   }
 ]
 
+// pysr.ai and julia.pysr.ai are separate origins with separate localStorage, so mirror
+// VitePress's light/dark choice into a cookie that both sites read before first paint.
+const shareAppearanceAcrossSites = `(() => {
+  const key = "vitepress-theme-appearance";
+  const domain = "pysr.ai";
+  const host = location.hostname;
+  if (host !== domain && !host.endsWith("." + domain)) return;
+  const saved = document.cookie.match(/(?:^|; )vitepress-theme-appearance=([^;]*)/);
+  if (saved) localStorage.setItem(key, saved[1]);
+  addEventListener("DOMContentLoaded", () => {
+    const html = document.documentElement;
+    let dark = html.classList.contains("dark");
+    new MutationObserver(() => {
+      if (html.classList.contains("dark") === dark) return;
+      dark = !dark;
+      document.cookie = key + "=" + localStorage.getItem(key) + "; domain=" + domain + "; path=/; max-age=31536000; SameSite=Lax";
+    }).observe(html, { attributeFilter: ["class"] });
+  });
+})();`
+
 // https://vitepress.dev/reference/site-config
 export default defineConfig({
   base: 'REPLACE_ME_DOCUMENTER_VITEPRESS',
@@ -38,6 +58,7 @@ export default defineConfig({
   cleanUrls: true,
   outDir: 'REPLACE_ME_DOCUMENTER_VITEPRESS', // This is required for MarkdownVitepress to work correctly...
   head: [
+    ['script', {}, shareAppearanceAcrossSites],
     ['link', { rel: 'icon', type: 'image/x-icon', href: 'https://raw.githubusercontent.com/MilesCranmer/PySR/master/docs/src/public/favicon.ico' }],
     ['link', { rel: 'icon', type: 'image/png', sizes: '16x16', href: 'https://raw.githubusercontent.com/MilesCranmer/PySR/master/docs/src/public/favicon-16x16.png' }],
     ['link', { rel: 'icon', type: 'image/png', sizes: '32x32', href: 'https://raw.githubusercontent.com/MilesCranmer/PySR/master/docs/src/public/favicon-32x32.png' }],
