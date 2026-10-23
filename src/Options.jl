@@ -84,11 +84,7 @@ end
     end
 
     _op_constraints = ntuple(Val(D)) do i
-        if constraints[i] isa Array && !is_constraints_already_done[i]
-            Dict(constraints[i])
-        else
-            constraints[i]
-        end
+        is_constraints_already_done[i] ? constraints[i] : opmap_keys(constraints[i])
     end
 
     return ntuple(Val(D)) do i
@@ -124,15 +120,9 @@ end
         push!(all_operators, op)
     end
 
-    # Convert to dict:
-    _nested_constraints = if nested_constraints isa Dict
-        nested_constraints
-    else
-        # Convert to dict:
-        nested_constraints = Dict(
-            [cons[1] => Dict(cons[2]...) for cons in nested_constraints]...
-        )
-    end
+    _nested_constraints = opmap_keys(
+        op => opmap_keys(inner) for (op, inner) in nested_constraints
+    )
 
     for (op, nested_constraint) in _nested_constraints
         if !(op ∈ all_operators)
@@ -228,6 +218,17 @@ const INVERSE_OP_MAP = Dict{Any,Any}(
 
 opmap(@nospecialize(op)) = get(OP_MAP, op, op)
 inverse_opmap(@nospecialize(op)) = get(INVERSE_OP_MAP, op, op)
+
+"""Re-key `op => value` pairs through `opmap`, so `^` and `safe_pow` keys both match."""
+opmap_keys(::Nothing) = nothing
+@unstable function opmap_keys(ops)
+    d = Dict(ops)
+    mapped = Dict{Any,valtype(d)}(opmap(k) => v for (k, v) in d)
+    length(mapped) == length(d) || error(
+        "Operator keys $(collect(keys(d))) refer to the same operator more than once."
+    )
+    return mapped
+end
 
 recommend_loss_function_expression(expression_type) = false
 
@@ -890,14 +891,35 @@ $(OPTION_DESCRIPTIONS)
     @assert tournament_selection_n < population_size "`tournament_selection_n` must be less than `population_size`"
     @assert loss_scale in (:log, :linear) "`loss_scale` must be either log or linear"
 
-    # Make sure nested_constraints contains functions within our operator set:
-    _nested_constraints = if user_provided_operators
-        build_nested_constraints(; nested_constraints, operators_by_degree=operators.ops)
-    else
-        # Convert binary/unary to generic format for backwards compatibility
-        operators_tuple = (unary_operators, binary_operators)
-        build_nested_constraints(; nested_constraints, operators_by_degree=operators_tuple)
+    if define_helper_functions && !user_provided_operators
+        # We call here so that mapped operators, like `^`
+        # are correctly overloaded, rather than overloading
+        # operators like "safe_pow", etc.
+        OperatorEnum(;
+            binary_operators=binary_operators,
+            unary_operators=unary_operators,
+            define_helper_functions=true,
+            empty_old_operators=true,
+        )
     end
+
+    # Map to safe operators (e.g., log -> safe_log) before building any per-operator option.
+    # A user-provided GenericOperatorEnum keeps its operators; only the lookup list is mapped.
+    operators_by_degree = if user_provided_operators
+        map(ops -> map(opmap, ops), operators.ops)
+    else
+        binary_operators = map(opmap, binary_operators)
+        unary_operators = map(opmap, unary_operators)
+        (unary_operators, binary_operators)
+    end
+    if operators isa OperatorEnum
+        operators = OperatorEnum(operators_by_degree)
+    end
+
+    # Make sure nested_constraints contains functions within our operator set:
+    _nested_constraints = build_nested_constraints(;
+        nested_constraints, operators_by_degree
+    )
 
     if typeof(constraints) <: Tuple
         constraints = Dict(constraints)
@@ -968,65 +990,33 @@ $(OPTION_DESCRIPTIONS)
 
     node_type = with_max_degree_from_context(node_type, user_provided_operators, operators)
 
-    operators = if user_provided_operators && operators isa OperatorEnum
-        # Apply opmap to user-provided operators (e.g., log -> safe_log)
-        mapped_operators_by_degree = ntuple(length(operators.ops)) do i
-            map(opmap, operators.ops[i])
-        end
-        OperatorEnum(mapped_operators_by_degree)
-    else
-        operators
-    end
-
     op_constraints = if user_provided_operators
         @assert(
             all(isnothing, (una_constraints, bin_constraints)),
             "When using user_provided_operators=true, use the 'constraints' parameter instead of 'una_constraints' and 'bin_constraints'"
         )
 
-        build_constraints(; constraints, operators_by_degree=operators.ops)
+        build_constraints(; constraints, operators_by_degree)
     else
         # Convert binary/unary to generic format for backwards compatibility
-        build_constraints(;
-            una_constraints,
-            bin_constraints,
-            operators_by_degree=(unary_operators, binary_operators),
-        )
+        build_constraints(; una_constraints, bin_constraints, operators_by_degree)
     end
 
     complexity_mapping = @something(
         complexity_mapping,
         ComplexityMapping(
-            complexity_of_operators,
+            opmap_keys(complexity_of_operators),
             complexity_of_variables,
             complexity_of_constants,
-            if user_provided_operators
-                operators.ops
-            else
-                (unary_operators, binary_operators)
-            end,
+            operators_by_degree,
         )
     )
 
     maxdepth = something(maxdepth, maxsize)
 
-    if define_helper_functions && !user_provided_operators
-        # We call here so that mapped operators, like `^`
-        # are correctly overloaded, rather than overloading
-        # operators like "safe_pow", etc.
-        OperatorEnum(;
-            binary_operators=binary_operators,
-            unary_operators=unary_operators,
-            define_helper_functions=true,
-            empty_old_operators=true,
-        )
-    end
-
     operators = if user_provided_operators
         operators
     else
-        binary_operators = map(opmap, binary_operators)
-        unary_operators = map(opmap, unary_operators)
         if operator_enum_constructor !== nothing
             operator_enum_constructor(;
                 binary_operators=binary_operators, unary_operators=unary_operators
