@@ -84,6 +84,7 @@ end
     # https://github.com/astroautomata/SymbolicRegression.jl/issues/781
     using SymbolicRegression
     using SymbolicRegression: safe_pow, safe_sqrt, safe_log
+    using DynamicExpressions: GenericOperatorEnum
 
     operators = OperatorEnum(1 => (cos, sqrt, log), 2 => (+, *, ^))
     for (pow_op, sqrt_op, log_op) in ((^, sqrt, log), (safe_pow, safe_sqrt, safe_log))
@@ -107,5 +108,23 @@ end
         )
         @test legacy.complexity_mapping.op_complexities == ([1, 4, 5], [1, 2, 3])
         @test legacy.op_constraints == options.op_constraints
+
+        # GenericOperatorEnum keeps its operators, but keys still line up:
+        generic = Options(;
+            operators=GenericOperatorEnum(;
+                unary_operators=(cos, sqrt, log), binary_operators=(+, *, ^)
+            ),
+            complexity_of_operators,
+            constraints=Dict(1 => [sqrt_op => 5], 2 => [pow_op => (-1, 1)]),
+            nested_constraints=[pow_op => [pow_op => 0], log_op => [log_op => 0]],
+        )
+        @test generic.operators.ops == ((cos, sqrt, log), (+, *, ^))
+        @test generic.complexity_mapping.op_complexities == ([1, 4, 5], [1, 2, 3])
+        @test generic.op_constraints == options.op_constraints
+        @test sort(generic.nested_constraints) == sort(options.nested_constraints)
     end
+
+    @test_throws "refer to the same operator" Options(;
+        operators, complexity_of_operators=[(^) => 3, safe_pow => 5]
+    )
 end

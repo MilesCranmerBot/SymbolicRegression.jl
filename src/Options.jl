@@ -120,8 +120,8 @@ end
         push!(all_operators, op)
     end
 
-    _nested_constraints = Dict(
-        opmap(op) => opmap_keys(inner) for (op, inner) in nested_constraints
+    _nested_constraints = opmap_keys(
+        op => opmap_keys(inner) for (op, inner) in nested_constraints
     )
 
     for (op, nested_constraint) in _nested_constraints
@@ -221,9 +221,13 @@ inverse_opmap(@nospecialize(op)) = get(INVERSE_OP_MAP, op, op)
 
 """Re-key `op => value` pairs through `opmap`, so `^` and `safe_pow` keys both match."""
 opmap_keys(::Nothing) = nothing
-function opmap_keys(ops)
+@unstable function opmap_keys(ops)
     d = Dict(ops)
-    return Dict{Any,valtype(d)}(opmap(k) => v for (k, v) in d)
+    mapped = Dict{Any,valtype(d)}(opmap(k) => v for (k, v) in d)
+    length(mapped) == length(d) || error(
+        "Operator keys $(collect(keys(d))) refer to the same operator more than once."
+    )
+    return mapped
 end
 
 recommend_loss_function_expression(expression_type) = false
@@ -899,22 +903,23 @@ $(OPTION_DESCRIPTIONS)
         )
     end
 
-    # Map to safe operators (e.g., log -> safe_log) before building any per-operator option:
-    if !user_provided_operators
+    # Map to safe operators (e.g., log -> safe_log) before building any per-operator option.
+    # A user-provided GenericOperatorEnum keeps its operators; only the lookup list is mapped.
+    operators_by_degree = if user_provided_operators
+        map(ops -> map(opmap, ops), operators.ops)
+    else
         binary_operators = map(opmap, binary_operators)
         unary_operators = map(opmap, unary_operators)
-    elseif operators isa OperatorEnum
-        operators = OperatorEnum(map(ops -> map(opmap, ops), operators.ops))
+        (unary_operators, binary_operators)
+    end
+    if operators isa OperatorEnum
+        operators = OperatorEnum(operators_by_degree)
     end
 
     # Make sure nested_constraints contains functions within our operator set:
-    _nested_constraints = if user_provided_operators
-        build_nested_constraints(; nested_constraints, operators_by_degree=operators.ops)
-    else
-        # Convert binary/unary to generic format for backwards compatibility
-        operators_tuple = (unary_operators, binary_operators)
-        build_nested_constraints(; nested_constraints, operators_by_degree=operators_tuple)
-    end
+    _nested_constraints = build_nested_constraints(;
+        nested_constraints, operators_by_degree
+    )
 
     if typeof(constraints) <: Tuple
         constraints = Dict(constraints)
@@ -991,14 +996,10 @@ $(OPTION_DESCRIPTIONS)
             "When using user_provided_operators=true, use the 'constraints' parameter instead of 'una_constraints' and 'bin_constraints'"
         )
 
-        build_constraints(; constraints, operators_by_degree=operators.ops)
+        build_constraints(; constraints, operators_by_degree)
     else
         # Convert binary/unary to generic format for backwards compatibility
-        build_constraints(;
-            una_constraints,
-            bin_constraints,
-            operators_by_degree=(unary_operators, binary_operators),
-        )
+        build_constraints(; una_constraints, bin_constraints, operators_by_degree)
     end
 
     complexity_mapping = @something(
@@ -1007,11 +1008,7 @@ $(OPTION_DESCRIPTIONS)
             opmap_keys(complexity_of_operators),
             complexity_of_variables,
             complexity_of_constants,
-            if user_provided_operators
-                operators.ops
-            else
-                (unary_operators, binary_operators)
-            end,
+            operators_by_degree,
         )
     )
 
