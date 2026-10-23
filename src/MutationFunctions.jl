@@ -522,10 +522,8 @@ function crossover_trees(
     n1, p1, i1 = _random_node_and_parent(t1, rng)
     n2, p2, i2 = _random_node_and_parent(t2, rng)
 
-    # Each subtree is spliced into the other tree exactly once, so neither
-    # needs a copy: n2 leaves t2 when n1 takes its place, and n1 has already
-    # left t1 by then. Only a root swap keeps the whole tree, so copy there.
-    # With shared nodes a subtree can have other parents, so copy both.
+    # Shared nodes can have other parents, so both subtrees are copied. Root swaps
+    # copy too, since they skip the subtree copy that `set_child!` does across arenas.
     if preserve_sharing(N)
         n1 = copy(n1)
         n2 = copy(n2)
