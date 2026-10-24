@@ -949,7 +949,7 @@ function mutate!(
     options::AbstractOptions;
     trace::MaybeTrace,
     dataset::Dataset,
-    parent_ref,
+    parent_ref=parent_member.ref,
     kws...,
 ) where {N<:AbstractExpression,P<:AbstractPopMember}
     child = create_child(
