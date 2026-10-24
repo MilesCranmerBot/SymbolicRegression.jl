@@ -57,6 +57,20 @@ end
     @test best_idx_linear == 4  # Simply picks minimum loss (0.2)
 end
 
+@testitem "choose_best ignores NaN losses" begin
+    using SymbolicRegression
+    using SymbolicRegression.MLJInterfaceModule: choose_best
+
+    losses = [2.0, 1.0, NaN]
+    scores = [0.0, 1.0, 0.0]
+    for loss_scale in (:log, :linear)
+        options = Options(; loss_scale)
+        @test choose_best(;
+            trees=nothing, losses, scores, complexities=[1, 2, 3], options
+        ) == 2
+    end
+end
+
 @testitem "loss_scale in pareto_volume" begin
     using SymbolicRegression.LoggingModule: pareto_volume
 
