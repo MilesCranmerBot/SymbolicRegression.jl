@@ -28,7 +28,7 @@ https://github.com/astroautomata/SymbolicRegression.jl/assets/7593028/f5b68f1f-9
 <td align="center"></td>
 </tr>
 <tr>
-<td align="center"><a href="https://github.com/astroautomata/SymbolicRegression.jl/actions/workflows/CI.yml?query=branch%3Amaster"><img src="https://github.com/astroautomata/SymbolicRegression.jl/actions/workflows/CI.yml/badge.svg?branch=master" alt="CI"></a></td>
+<td align="center"><a href="https://github.com/astroautomata/SymbolicRegression.jl/actions/workflows/CI_basic.yml?query=branch%3Amaster"><img src="https://github.com/astroautomata/SymbolicRegression.jl/actions/workflows/CI_basic.yml/badge.svg?branch=master" alt="CI"></a></td>
 <td align="center"><a href="https://codecov.io/gh/astroautomata/SymbolicRegression.jl/tree/master"><img src="https://codecov.io/gh/astroautomata/SymbolicRegression.jl/branch/master/graph/badge.svg" alt="Coverage Status"></a></td>
 <td align="center"></td>
 <td align="center"></td>
