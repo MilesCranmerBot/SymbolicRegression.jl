@@ -89,3 +89,15 @@ end
     )
     @test result == TemperatureAwareValue(0.25, 0.2, 0.01)
 end
+
+@testitem "Constant mutation negates with probability_negate" begin
+    using SymbolicRegression
+    using SymbolicRegression.MutationFunctionsModule: mutate_factor
+    using SymbolicRegression.CoreModule: ConstantMutation
+    using Random
+
+    rng = Xoshiro(0)
+    m = ConstantMutation(; probability_negate=0.01)
+    negated = count(_ -> mutate_factor(Float64, 1.0, m, rng) < 0, 1:10_000)
+    @test negated < 300
+end
