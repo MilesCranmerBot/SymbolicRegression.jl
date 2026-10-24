@@ -2,11 +2,10 @@ name: dependency-release-notes
 
 # pull_request_target gives PRs from forks a token that can edit the PR description.
 # This workflow never checks out or runs code from the PR; it only reads Project.toml as data.
+# It runs on every PR so that it also removes its block once a PR no longer raises a dependency.
 on:
   pull_request_target:
     types: [opened, edited, synchronize, reopened]
-    paths:
-      - Project.toml
 
 permissions:
   contents: read
@@ -38,7 +37,8 @@ jobs:
       # Writes body.md when the release-please override block in the description needs to change.
       # The block lists the dependency's own changelog-worthy commits between the newest releases
       # allowed by the old and new compat bounds. release-please links every "#N" to an issue in
-      # this repository, so links to dependency PRs avoid "#".
+      # this repository, so links to dependency PRs avoid "#". release-please reads only the block,
+      # so Release-As lines anywhere in the description are copied into it.
       - name: Write dependency changes into the override block
         shell: julia --color=yes {0}
         run: |
@@ -63,16 +63,15 @@ jobs:
                   push!(changes, replace(subject, r"#(\d+)" => m -> "[$pkg.jl PR $(m[2:end])](https://github.com/$repo/pull/$(m[2:end]))"))
               end
           end
-          isempty(changes) && exit()
 
           body = read("body.txt", String)
-          block_regex = r"BEGIN_COMMIT_OVERRIDE(.*?)END_COMMIT_OVERRIDE"s
-          old_block = match(block_regex, body)
-          release_as = isnothing(old_block) ? String[] : filter(startswith("Release-As:"), strip.(split(old_block[1], '\n')))
+          owned_block = r"\s*<!-- dependency-release-notes -->.*?END_COMMIT_OVERRIDE"s
+          rest = rstrip(replace(body, owned_block => ""))
+          release_as = unique(filter(startswith("Release-As:"), strip.(split(body, '\n'))))
           title = "$(strip(read("title.txt", String))) (#$(ENV["PR"]))"
-          block = join(["BEGIN_COMMIT_OVERRIDE", title, "", changes..., release_as..., "END_COMMIT_OVERRIDE"], '\n')
-          new_body = isnothing(old_block) ? rstrip(body) * "\n\n" * block * "\n" : replace(body, block_regex => block)
-          new_body == body || write("body.md", new_body)
+          block = join(["<!-- dependency-release-notes -->", "BEGIN_COMMIT_OVERRIDE", title, "", changes..., release_as..., "END_COMMIT_OVERRIDE"], '\n')
+          new_body = isempty(changes) ? rest : join(filter(!isempty, [rest, block]), "\n\n")
+          new_body == rstrip(body) || write("body.md", new_body)
 
       - name: Update the PR description
         if: hashFiles('body.md') != ''
