@@ -1,0 +1,79 @@
+name: dependency-release-notes
+
+# pull_request_target gives PRs from forks a token that can edit the PR description.
+# This workflow never checks out or runs code from the PR; it only reads Project.toml as data.
+on:
+  pull_request_target:
+    types: [opened, edited, synchronize, reopened]
+    paths:
+      - Project.toml
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  release-notes:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      PR: ${{ github.event.pull_request.number }}
+    steps:
+      - name: Fetch Project.toml before and after the PR, and the PR title and description
+        env:
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          gh api -H "Accept: application/vnd.github.raw" "repos/$REPO/contents/Project.toml?ref=$BASE_SHA" > base.toml
+          gh api -H "Accept: application/vnd.github.raw" "repos/$HEAD_REPO/contents/Project.toml?ref=$HEAD_SHA" > head.toml
+          gh api "repos/$REPO/pulls/$PR" --jq .title > title.txt
+          gh api "repos/$REPO/pulls/$PR" --jq '.body // ""' > body.txt
+
+      - uses: julia-actions/setup-julia@v3
+        with:
+          version: "1"
+
+      # Writes body.md when the release-please override block in the description needs to change.
+      # The block lists the dependency's own changelog-worthy commits between the newest releases
+      # allowed by the old and new compat bounds. release-please links every "#N" to an issue in
+      # this repository, so links to dependency PRs avoid "#".
+      - name: Write dependency changes into the override block
+        shell: julia --color=yes {0}
+        run: |
+          using Pkg, TOML
+
+          repos = ("DynamicExpressions" => "astroautomata/DynamicExpressions.jl",
+                   "DynamicDiff" => "MilesCranmer/DynamicDiff.jl")
+          old_compat = TOML.parsefile("base.toml")["compat"]
+          new_compat = TOML.parsefile("head.toml")["compat"]
+
+          newest(versions, spec) = "v" * string(maximum(filter(in(Pkg.Types.semver_spec(spec)), versions)))
+
+          changes = String[]
+          for (pkg, repo) in repos
+              old, new = get(old_compat, pkg, nothing), get(new_compat, pkg, nothing)
+              (old == new || isnothing(old) || isnothing(new)) && continue
+              dir = mktempdir()
+              run(`git clone --quiet --bare --filter=blob:none https://github.com/$repo $dir`)
+              versions = filter(!isnothing, tryparse.(VersionNumber, readlines(`git -C $dir tag --list 'v*'`)))
+              for subject in readlines(`git -C $dir log $(newest(versions, old))..$(newest(versions, new)) --format=%s`)
+                  occursin(r"^(feat|fix|perf|deps)(\([^)]*\))?!?: ", subject) || continue
+                  push!(changes, replace(subject, r"#(\d+)" => m -> "[$pkg.jl PR $(m[2:end])](https://github.com/$repo/pull/$(m[2:end]))"))
+              end
+          end
+          isempty(changes) && exit()
+
+          body = read("body.txt", String)
+          block_regex = r"BEGIN_COMMIT_OVERRIDE(.*?)END_COMMIT_OVERRIDE"s
+          old_block = match(block_regex, body)
+          release_as = isnothing(old_block) ? String[] : filter(startswith("Release-As:"), strip.(split(old_block[1], '\n')))
+          title = "$(strip(read("title.txt", String))) (#$(ENV["PR"]))"
+          block = join(["BEGIN_COMMIT_OVERRIDE", title, "", changes..., release_as..., "END_COMMIT_OVERRIDE"], '\n')
+          new_body = isnothing(old_block) ? rstrip(body) * "\n\n" * block * "\n" : replace(body, block_regex => block)
+          new_body == body || write("body.md", new_body)
+
+      - name: Update the PR description
+        if: hashFiles('body.md') != ''
+        run: gh api -X PATCH "repos/$REPO/pulls/$PR" -F body=@body.md
