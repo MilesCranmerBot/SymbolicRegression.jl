@@ -169,7 +169,6 @@ function calculate_pareto_frontier(hallOfFame::HallOfFame{T,L,N,PM}) where {T,L,
             continue
         end
         member = hallOfFame.members[size]
-        # A NaN loss fails every comparison below, so it would always count as dominating.
         isnan(member.loss) && continue
         # We check if this member is better than all members which are smaller than it and
         # also exist.
