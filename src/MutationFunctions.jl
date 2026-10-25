@@ -543,7 +543,6 @@ function crossover_trees(
     node1, parent1, index1 = _random_node_and_parent(tree1, rng)
     node2, parent2, index2 = _random_node_and_parent(tree2, rng)
 
-    # Preserve the donor before replacing a subtree in its arena.
     donor1 = copy_into!(storage.scratch.tree, node1)
     if index1 == 0
         child1 = with_contents(child1, copy_into!(first.tree, node2))

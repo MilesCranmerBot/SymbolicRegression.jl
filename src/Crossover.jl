@@ -190,7 +190,6 @@ function _crossover_generation(
         # Both trees satisfy constraints
         if check_constraints(child_tree1, options, curmaxsize, afterSize1) &&
             check_constraints(child_tree2, options, curmaxsize, afterSize2)
-            # The accepted children now own these arenas.
             if crossover_storage isa CrossoverStorage
                 crossover_storage.first = nothing
                 crossover_storage.second = nothing
