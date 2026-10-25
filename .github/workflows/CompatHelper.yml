@@ -17,7 +17,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           COMPATHELPER_PRIV: ${{ secrets.COMPATHELPER_PRIV }}
         run: julia -e 'using CompatHelper; CompatHelper.main()'
-      # release-please links every "#N" to an issue in this repository, so dependency PR links avoid "#".
       - name: List DynamicExpressions and DynamicDiff changes in CompatHelper PRs
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
